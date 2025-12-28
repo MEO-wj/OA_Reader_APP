@@ -5,6 +5,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Switch,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -13,18 +14,21 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { BellRinging, CaretRight, Code, HouseSimple } from 'phosphor-react-native';
+import { BellRinging, CaretRight, Code, HouseSimple, MoonStars, SunDim } from 'phosphor-react-native';
 
 import { AmbientBackground } from '@/components/ambient-background';
 import { BottomDock } from '@/components/bottom-dock';
 import { TopBar } from '@/components/top-bar';
-import { colors } from '@/constants/palette';
+import type { Palette } from '@/constants/palette';
 import { shadows } from '@/constants/shadows';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { usePalette } from '@/hooks/use-palette';
 import { useUserProfile } from '@/hooks/use-user-profile';
 import { setAuthToken } from '@/hooks/use-auth-token';
 import { clearAuthStorage } from '@/storage/auth-storage';
 import { clearChatHistory } from '@/storage/chat-storage';
 import { clearAllArticleCache } from '@/storage/article-storage';
+import { getThemePreference, setThemePreference, type ThemePreference } from '@/storage/theme-storage';
 import { disableNotifications } from '@/notifications/notification-task';
 import { setNotificationsEnabled } from '@/notifications/notification-storage';
 import { formatDateLabel } from '@/utils/date';
@@ -33,9 +37,13 @@ export default function SettingsScreen() {
   const router = useRouter();
   const profile = useUserProfile();
   const { width: windowWidth } = useWindowDimensions();
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette), [palette]);
 
   const [a2hsVisible, setA2hsVisible] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [themePreference, setThemePreferenceState] = useState<ThemePreference>('system');
 
   const isWeb = Platform.OS === 'web';
   const isIosWeb =
@@ -53,6 +61,18 @@ export default function SettingsScreen() {
     ],
     []
   );
+
+  useEffect(() => {
+    let mounted = true;
+    void getThemePreference().then((pref) => {
+      if (mounted) {
+        setThemePreferenceState(pref);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isWeb) {
@@ -93,7 +113,7 @@ export default function SettingsScreen() {
       return { text: '已过期', style: styles.vipExpiredTag, textStyle: styles.vipExpiredText };
     }
     return null;
-  }, [isVipActive, isVipExpired]);
+  }, [isVipActive, isVipExpired, styles]);
 
   const handleLogout = useCallback(async () => {
     await clearAuthStorage();
@@ -105,6 +125,30 @@ export default function SettingsScreen() {
     router.replace('/login');
   }, [router]);
 
+  const followSystem = themePreference === 'system';
+  const isDarkSelected = themePreference === 'dark';
+
+  const handleToggleFollowSystem = useCallback(async () => {
+    if (!followSystem) {
+      setThemePreferenceState('system');
+      await setThemePreference('system');
+      return;
+    }
+
+    const next: ThemePreference = colorScheme === 'dark' ? 'dark' : 'light';
+    setThemePreferenceState(next);
+    await setThemePreference(next);
+  }, [colorScheme, followSystem]);
+
+  const handleToggleDarkMode = useCallback(
+    async (nextValue: boolean) => {
+      const next: ThemePreference = nextValue ? 'dark' : 'light';
+      setThemePreferenceState(next);
+      await setThemePreference(next);
+    },
+    []
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <AmbientBackground variant="explore" />
@@ -113,7 +157,7 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profileBlock}>
           <LinearGradient
-            colors={[colors.gold300, colors.imperial100]}
+            colors={[palette.gold300, palette.imperial100]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.avatarRing}
@@ -137,12 +181,47 @@ export default function SettingsScreen() {
           >
             <View style={styles.cardRowLeft}>
               <View style={styles.cardIcon}>
-                <BellRinging size={16} color={colors.stone600} weight="fill" />
+                <BellRinging size={16} color={palette.stone600} weight="fill" />
               </View>
               <Text style={styles.cardRowText}>通知管理</Text>
             </View>
-            <CaretRight size={16} color={colors.stone300} weight="bold" />
+            <CaretRight size={16} color={palette.stone300} weight="bold" />
           </Pressable>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.cardRow}>
+            <View style={styles.cardRowLeft}>
+              <View style={styles.cardIcon}>
+                <SunDim size={16} color={palette.stone600} weight="fill" />
+              </View>
+              <Text style={styles.cardRowText}>跟随系统</Text>
+            </View>
+            <Switch
+              value={followSystem}
+              onValueChange={() => void handleToggleFollowSystem()}
+              trackColor={{ false: palette.stone200, true: palette.stone800 }}
+              thumbColor={palette.white}
+            />
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <View style={[styles.cardRow, followSystem && styles.cardRowDisabled]}>
+            <View style={styles.cardRowLeft}>
+              <View style={styles.cardIcon}>
+                <MoonStars size={16} color={palette.stone600} weight="fill" />
+              </View>
+              <Text style={styles.cardRowText}>夜间模式</Text>
+            </View>
+            <Switch
+              disabled={followSystem}
+              value={isDarkSelected}
+              onValueChange={(value) => void handleToggleDarkMode(value)}
+              trackColor={{ false: palette.stone200, true: palette.stone800 }}
+              thumbColor={palette.white}
+            />
+          </View>
         </View>
 
         {isWeb && (
@@ -153,11 +232,11 @@ export default function SettingsScreen() {
             >
               <View style={styles.cardRowLeft}>
                 <View style={styles.cardIcon}>
-                  <HouseSimple size={16} color={colors.stone600} weight="fill" />
+                  <HouseSimple size={16} color={palette.stone600} weight="fill" />
                 </View>
                 <Text style={styles.cardRowText}>添加到主屏幕</Text>
               </View>
-              <CaretRight size={16} color={colors.stone300} weight="bold" />
+              <CaretRight size={16} color={palette.stone300} weight="bold" />
             </Pressable>
           </View>
         )}
@@ -170,11 +249,11 @@ export default function SettingsScreen() {
             >
               <View style={styles.cardRowLeft}>
                 <View style={styles.cardIcon}>
-                  <Code size={16} color={colors.stone600} weight="fill" />
+                  <Code size={16} color={palette.stone600} weight="fill" />
                 </View>
                 <Text style={styles.cardRowText}>开发者模式</Text>
               </View>
-              <CaretRight size={16} color={colors.stone300} weight="bold" />
+              <CaretRight size={16} color={palette.stone300} weight="bold" />
             </Pressable>
           </View>
         )}
@@ -260,7 +339,8 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.surface,
@@ -325,10 +405,10 @@ const styles = StyleSheet.create({
     color: colors.imperial600,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: colors.white,
     borderRadius: 32,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: colors.stone100,
     padding: 8,
     ...shadows.cardSoft,
   },
@@ -340,7 +420,10 @@ const styles = StyleSheet.create({
   },
   cardRowPressed: {
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: colors.white,
+  },
+  cardRowDisabled: {
+    opacity: 0.6,
   },
   cardRowLeft: {
     flexDirection: 'row',
@@ -389,9 +472,9 @@ const styles = StyleSheet.create({
   a2hsCard: {
     borderRadius: 28,
     padding: 22,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: colors.stone100,
     ...shadows.cardSoft,
   },
   a2hsTitle: {
@@ -435,4 +518,5 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 2,
   },
-});
+  });
+}

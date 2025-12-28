@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { ChatMessage } from '@/types/chat';
-import { colors } from '@/constants/palette';
 import { ThinkingIndicator } from '@/components/thinking-indicator';
+import type { Palette } from '@/constants/palette';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { usePalette } from '@/hooks/use-palette';
 
 type ChatMessageProps = {
   message: ChatMessage;
@@ -12,6 +14,10 @@ type ChatMessageProps = {
 };
 
 export function ChatMessageItem({ message, renderMarkdown, isThinking }: ChatMessageProps) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette, colorScheme), [colorScheme, palette]);
+
   return (
     <View
       style={[
@@ -40,7 +46,13 @@ export function ChatMessageItem({ message, renderMarkdown, isThinking }: ChatMes
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
+  const aiBackground = colorScheme === 'dark' ? colors.white : 'rgba(255,255,255,0.9)';
+  const aiBorder = colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)';
+  const userBackground = colorScheme === 'dark' ? colors.stone200 : colors.stone800;
+  const userText = colorScheme === 'dark' ? colors.stone900 : colors.gold50;
+
+  return StyleSheet.create({
   messageWrap: {
     gap: 8,
   },
@@ -54,7 +66,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 2,
-    color: colors.stone300,
+    color: colors.stone400,
   },
   messageBubble: {
     maxWidth: '85%',
@@ -63,17 +75,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   messageUser: {
-    backgroundColor: colors.stone800,
+    backgroundColor: userBackground,
     borderBottomRightRadius: 6,
   },
   messageAi: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: aiBackground,
+    borderColor: aiBorder,
     borderWidth: 1,
     borderBottomLeftRadius: 6,
   },
   messageText: {
-    color: colors.gold50,
+    color: userText,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -93,4 +105,5 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.imperial600,
   },
-});
+  });
+}

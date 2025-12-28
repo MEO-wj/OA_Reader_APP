@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { RelatedArticle } from '@/types/article';
-import { colors } from '@/constants/palette';
 import { splitHighlightedText } from '@/utils/text';
+import type { Palette } from '@/constants/palette';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { usePalette } from '@/hooks/use-palette';
 
 type SourceCardProps = {
   article: RelatedArticle;
@@ -16,6 +18,10 @@ function buildSnippet(article: RelatedArticle) {
 }
 
 export function SourceCard({ article, highlights, onPress }: SourceCardProps) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette, colorScheme), [colorScheme, palette]);
+
   return (
     <Pressable style={styles.sourceCard} onPress={() => onPress(article)}>
       <View style={styles.sourceHeader}>
@@ -37,7 +43,8 @@ export function SourceCard({ article, highlights, onPress }: SourceCardProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
+  return StyleSheet.create({
   sourceCard: {
     padding: 12,
     borderRadius: 18,
@@ -63,7 +70,7 @@ const styles = StyleSheet.create({
   sourceTitleText: {
     fontSize: 13,
     fontWeight: '700',
-    color: colors.stone800,
+    color: colorScheme === 'dark' ? colors.stone900 : colors.stone800,
   },
   snippetText: {
     fontSize: 12,
@@ -74,4 +81,5 @@ const styles = StyleSheet.create({
     color: colors.imperial600,
     fontWeight: '700',
   },
-});
+  });
+}

@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { RelatedArticle } from '@/types/article';
-import { colors } from '@/constants/palette';
 import { SourceCard } from '@/components/source-card';
+import type { Palette } from '@/constants/palette';
+import { usePalette } from '@/hooks/use-palette';
 
 type SourceListProps = {
   related: RelatedArticle[];
@@ -20,6 +21,9 @@ export function SourceList({
   onToggle,
   onOpenArticle,
 }: SourceListProps) {
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   return (
     <View style={styles.sourceWrap}>
       <Pressable onPress={onToggle} style={styles.sourceHeaderRow}>
@@ -39,7 +43,8 @@ export function SourceList({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
   sourceWrap: {
     marginTop: 6,
     width: '100%',
@@ -60,4 +65,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.gold500,
   },
-});
+  });
+}

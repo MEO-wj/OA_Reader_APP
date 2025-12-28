@@ -1,22 +1,27 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Sparkle } from 'phosphor-react-native';
 
-import { colors } from '@/constants/palette';
+import type { Palette } from '@/constants/palette';
+import { usePalette } from '@/hooks/use-palette';
 
 export function ThinkingIndicator() {
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   return (
     <View style={styles.thinkingRow}>
       <View style={styles.thinkingBadge}>
-        <Sparkle size={12} color={colors.gold500} weight="fill" />
+        <Sparkle size={12} color={palette.gold500} weight="fill" />
       </View>
       <Text style={styles.thinkingText}>THINKING...</Text>
-      <ActivityIndicator size="small" color={colors.gold500} />
+      <ActivityIndicator size="small" color={palette.gold500} />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
   thinkingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -36,4 +41,5 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
     color: colors.gold500,
   },
-});
+  });
+}

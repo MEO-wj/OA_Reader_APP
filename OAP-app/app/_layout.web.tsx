@@ -117,6 +117,25 @@ export default function RootLayout() {
       return;
     }
 
+    const setMeta = (name: string, content: string) => {
+      let meta = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null;
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = name;
+        document.head.appendChild(meta);
+      }
+      meta.content = content;
+    };
+
+    setMeta('theme-color', colorScheme === 'dark' ? '#151718' : '#ffffff');
+    setMeta('apple-mobile-web-app-status-bar-style', colorScheme === 'dark' ? 'black' : 'default');
+  }, [colorScheme, isMounted]);
+
+  useEffect(() => {
+    if (!isMounted) {
+      return;
+    }
+
     const refreshIfVisible = () => {
       if (document.visibilityState === 'visible') {
         void refreshSessionOnForeground();

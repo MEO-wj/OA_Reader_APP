@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { ArrowUp } from 'phosphor-react-native';
 
-import { colors } from '@/constants/palette';
 import { shadows } from '@/constants/shadows';
+import type { Palette } from '@/constants/palette';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { usePalette } from '@/hooks/use-palette';
 
 type ChatInputProps = {
   value: string;
@@ -12,6 +14,10 @@ type ChatInputProps = {
 };
 
 export function ChatInput({ value, onChangeText, onSend }: ChatInputProps) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette, colorScheme), [colorScheme, palette]);
+
   return (
     <View style={styles.inputWrap}>
       <View style={styles.inputShell}>
@@ -19,20 +25,25 @@ export function ChatInput({ value, onChangeText, onSend }: ChatInputProps) {
           value={value}
           onChangeText={onChangeText}
           placeholder="输入指令..."
-          placeholderTextColor={colors.stone400}
+          placeholderTextColor={palette.stone400}
           style={styles.input}
           onSubmitEditing={onSend}
           returnKeyType="send"
         />
         <Pressable style={styles.sendButton} onPress={onSend}>
-          <ArrowUp size={16} color={colors.white} weight="bold" />
+          <ArrowUp size={16} color={palette.white} weight="bold" />
         </Pressable>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
+  const shellBackground =
+    colorScheme === 'dark' ? 'rgba(20, 19, 18, 0.92)' : 'rgba(255,255,255,0.7)';
+  const shellBorder = colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.8)';
+
+  return StyleSheet.create({
   inputWrap: {
     paddingHorizontal: 18,
     paddingBottom: 12,
@@ -40,16 +51,16 @@ const styles = StyleSheet.create({
   inputShell: {
     borderRadius: 26,
     padding: 6,
-    backgroundColor: 'rgba(255,255,255,0.7)',
+    backgroundColor: shellBackground,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: shellBorder,
   },
   input: {
     paddingLeft: 16,
     paddingRight: 56,
     paddingVertical: 12,
     fontSize: 14,
-    color: colors.stone800,
+    color: colorScheme === 'dark' ? colors.stone900 : colors.stone800,
   },
   sendButton: {
     position: 'absolute',
@@ -63,4 +74,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadows.glowImperialStrong,
   },
-});
+  });
+}

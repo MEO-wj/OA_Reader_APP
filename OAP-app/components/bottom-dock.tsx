@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Gear, House, Sparkle } from 'phosphor-react-native';
 
-import { colors } from '@/constants/palette';
 import { shadows } from '@/constants/shadows';
+import type { Palette } from '@/constants/palette';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { usePalette } from '@/hooks/use-palette';
 
 type DockTab = 'home' | 'ai' | 'settings';
 
@@ -16,6 +18,10 @@ type BottomDockProps = {
 };
 
 export function BottomDock({ activeTab, onHome, onAi, onSettings }: BottomDockProps) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   const activeStyle =
     activeTab === 'home'
       ? styles.dockButtonHome
@@ -25,14 +31,14 @@ export function BottomDock({ activeTab, onHome, onAi, onSettings }: BottomDockPr
 
   return (
     <View style={styles.dockWrap}>
-      <BlurView intensity={60} tint="light" style={styles.dock}>
+      <BlurView intensity={60} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={styles.dock}>
         <Pressable
           style={[styles.dockButton, activeTab === 'home' && activeStyle]}
           onPress={onHome}
         >
           <House
             size={22}
-            color={activeTab === 'home' ? colors.imperial600 : colors.stone400}
+            color={activeTab === 'home' ? palette.imperial600 : palette.stone400}
             weight={activeTab === 'home' ? 'fill' : 'bold'}
           />
         </Pressable>
@@ -42,7 +48,7 @@ export function BottomDock({ activeTab, onHome, onAi, onSettings }: BottomDockPr
         >
           <Sparkle
             size={22}
-            color={activeTab === 'ai' ? colors.gold500 : colors.stone400}
+            color={activeTab === 'ai' ? palette.gold500 : palette.stone400}
             weight={activeTab === 'ai' ? 'fill' : 'bold'}
           />
         </Pressable>
@@ -52,7 +58,7 @@ export function BottomDock({ activeTab, onHome, onAi, onSettings }: BottomDockPr
         >
           <Gear
             size={22}
-            color={activeTab === 'settings' ? colors.stone800 : colors.stone400}
+            color={activeTab === 'settings' ? palette.stone800 : palette.stone400}
             weight={activeTab === 'settings' ? 'fill' : 'bold'}
           />
         </Pressable>
@@ -61,7 +67,8 @@ export function BottomDock({ activeTab, onHome, onAi, onSettings }: BottomDockPr
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
   dockWrap: {
     position: 'absolute',
     bottom: 24,
@@ -76,9 +83,9 @@ const styles = StyleSheet.create({
     borderRadius: 999, 
     flexDirection: 'row',
     gap: 24,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: colors.stone100,
     overflow: 'hidden', 
     ...shadows.dock,
   },
@@ -101,4 +108,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.stone100,
     ...shadows.glowStone,
   },
-});
+  });
+}

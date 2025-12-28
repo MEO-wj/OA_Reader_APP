@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { colors } from '@/constants/palette';
+import type { Palette } from '@/constants/palette';
+import { usePalette } from '@/hooks/use-palette';
 
 type AmbientVariant = 'home' | 'explore' | 'login';
 
@@ -11,11 +12,14 @@ type AmbientBackgroundProps = {
 };
 
 export function AmbientBackground({ variant }: AmbientBackgroundProps) {
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   if (variant === 'home') {
     return (
       <View style={styles.ambientBg}>
         <LinearGradient
-          colors={[colors.surface, colors.surfaceWarm]}
+          colors={[palette.surface, palette.surfaceWarm]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFillObject}
@@ -46,9 +50,11 @@ export function AmbientBackground({ variant }: AmbientBackgroundProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
   ambientBg: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.surface,
   },
   ambientBgLogin: {
     position: 'absolute',
@@ -118,4 +124,5 @@ const styles = StyleSheet.create({
     marginLeft: -110,
     marginTop: -110,
   },
-});
+  });
+}

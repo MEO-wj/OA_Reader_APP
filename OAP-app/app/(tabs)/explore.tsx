@@ -2,7 +2,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Keyboard,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,18 +20,19 @@ import { BottomDock } from '@/components/bottom-dock';
 import { ChatInput } from '@/components/chat-input';
 import { ChatMessageItem } from '@/components/chat-message';
 import { SourceList } from '@/components/source-list';
-import { ThinkingIndicator } from '@/components/thinking-indicator';
 import { TopBar } from '@/components/top-bar';
-import { colors } from '@/constants/palette';
 import { shadows } from '@/constants/shadows';
 import { useAiChat } from '@/hooks/use-ai-chat';
 import { useAuthToken } from '@/hooks/use-auth-token';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDisplayName } from '@/hooks/use-display-name';
 import { useMermaidScript } from '@/hooks/use-mermaid';
+import { usePalette } from '@/hooks/use-palette';
+import type { Palette } from '@/constants/palette';
 import { buildArticleFromRelated, fetchArticleDetail } from '@/services/articles';
 import { formatDateLabel, getDayPeriod } from '@/utils/date';
 import type { Article, ArticleDetail, RelatedArticle } from '@/types/article';
-const mermaidHtml = (diagram: string, script: string) => `<!DOCTYPE html>
+const mermaidHtml = (diagram: string, script: string, theme: 'neutral' | 'dark') => `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -45,7 +45,7 @@ const mermaidHtml = (diagram: string, script: string) => `<!DOCTYPE html>
   <body>
     <div id="container" class="mermaid">${diagram}</div>
     <script>
-      mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+      mermaid.initialize({ startOnLoad: true, theme: '${theme}' });
     </script>
   </body>
 </html>`;
@@ -64,6 +64,10 @@ export default function AiAssistantScreen() {
   const mermaidScript = useMermaidScript();
   const { messages, isThinking, sendChat, clearChat } = useAiChat(token, displayName);
   const insets = useSafeAreaInsets();
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette, colorScheme), [colorScheme, palette]);
+  const markdownStyles = useMemo(() => createMarkdownStyles(palette, colorScheme), [colorScheme, palette]);
 
   // 键盘高度状态
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -94,7 +98,6 @@ export default function AiAssistantScreen() {
   }, [messages]);
   const dockHeight = 68;
   const dockSpacing = 24;
-  const inputHeight = 64;
   const dockOffset = dockHeight + dockSpacing + insets.bottom;
 
   const scrollToEnd = useCallback(() => {
@@ -146,7 +149,7 @@ export default function AiAssistantScreen() {
   }, [clearChat, closeArticle]);
 
   const renderMarkdownWithMermaid = useCallback((content: string) => {
-    const segments: Array<{ type: 'markdown' | 'mermaid'; content: string }> = [];
+    const segments: { type: 'markdown' | 'mermaid'; content: string }[] = [];
     const regex = /```mermaid\s*([\s\S]*?)```/g;
     let lastIndex = 0;
     let match = regex.exec(content);
@@ -174,7 +177,7 @@ export default function AiAssistantScreen() {
           <View key={`mermaid-${index}`} style={styles.mermaidWrap}>
             <WebView
               originWhitelist={['*']}
-              source={{ html: mermaidHtml(segment.content, mermaidScript) }}
+              source={{ html: mermaidHtml(segment.content, mermaidScript, colorScheme === 'dark' ? 'dark' : 'neutral') }}
               style={styles.mermaidWebview}
               scrollEnabled={false}
             />
@@ -187,7 +190,7 @@ export default function AiAssistantScreen() {
         </Markdown>
       );
     });
-  }, [mermaidScript]);
+  }, [colorScheme, markdownStyles, mermaidScript, styles.mermaidWebview, styles.mermaidWrap]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -198,7 +201,7 @@ export default function AiAssistantScreen() {
         dateText={formatDateLabel()}
         actions={(
           <Pressable style={styles.actionButton} onPress={handleNewChat}>
-            <ChatCircleDots size={18} color={colors.stone400} weight="fill" />
+            <ChatCircleDots size={18} color={palette.stone400} weight="fill" />
           </Pressable>
         )}
       />
@@ -215,8 +218,8 @@ export default function AiAssistantScreen() {
             <View style={styles.emptyState}>
               <View style={styles.emptyIconWrap}>
                 <View style={styles.emptyGlow} />
-                <View style={styles.emptyIcon}>
-                  <Crown size={28} color={colors.gold500} weight="fill" />
+              <View style={styles.emptyIcon}>
+                  <Crown size={28} color={palette.gold500} weight="fill" />
                 </View>
               </View>
               <Text style={styles.emptyTitle}>{greeting}</Text>
@@ -272,117 +275,129 @@ export default function AiAssistantScreen() {
   );
 }
 
-const markdownStyles = {
-  body: {
-    color: colors.stone700,
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  paragraph: {
-    marginTop: 0,
-    marginBottom: 8,
-  },
-  strong: {
-    color: colors.imperial600,
-    fontWeight: '700',
-  },
-  link: {
-    color: colors.gold500,
-  },
-  code_inline: {
-    backgroundColor: colors.gold50,
-    color: colors.stone800,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-};
+function createMarkdownStyles(colors: Palette, colorScheme: 'light' | 'dark') {
+  const inlineCodeBackground = colorScheme === 'dark' ? colors.stone100 : colors.gold50;
+  const inlineCodeText = colorScheme === 'dark' ? colors.stone900 : colors.stone800;
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  flex: {
-    flex: 1,
-  },
-  chatContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 140,
-    gap: 20,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 80,
-    paddingBottom: 80,
-  },
-  emptyIconWrap: {
-    width: 86,
-    height: 86,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyGlow: {
-    position: 'absolute',
-    width: 86,
-    height: 86,
-    borderRadius: 32,
-    backgroundColor: colors.gold400,
-    opacity: 0.15,
-  },
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 26,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.glowGoldSoft,
-  },
-  emptyTitle: {
-    marginTop: 18,
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.stone900,
-  },
-  emptySub: {
-    marginTop: 8,
-    fontSize: 12,
-    color: colors.stone400,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  messageBlock: {
-    marginTop: 0,
-  },
-  mermaidWrap: {
-    marginVertical: 8,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: colors.white,
-  },
-  mermaidWebview: {
-    width: '100%',
-    height: 240,
-    backgroundColor: 'transparent',
-  },
-  actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.gold100,
-    ...shadows.soft,
-  },
-  inputContainer: {
-    paddingHorizontal: 18,
-    paddingBottom: 12,
-  },
-});
+  return {
+    body: {
+      color: colors.stone700,
+      fontSize: 14,
+      lineHeight: 22,
+    },
+    paragraph: {
+      marginTop: 0,
+      marginBottom: 8,
+    },
+    strong: {
+      color: colors.imperial600,
+      fontWeight: '700' as const,
+    },
+    link: {
+      color: colors.gold500,
+    },
+    code_inline: {
+      backgroundColor: inlineCodeBackground,
+      color: inlineCodeText,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+    },
+  };
+}
+
+function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
+  const actionBg = colorScheme === 'dark' ? 'rgba(20, 19, 18, 0.9)' : colors.white;
+  const actionBorder = colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : colors.gold100;
+
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.surface,
+    },
+    flex: {
+      flex: 1,
+    },
+    chatContainer: {
+      flexGrow: 1,
+      paddingHorizontal: 18,
+      paddingTop: 10,
+      paddingBottom: 140,
+      gap: 20,
+    },
+    emptyState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: 80,
+      paddingBottom: 80,
+    },
+    emptyIconWrap: {
+      width: 86,
+      height: 86,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emptyGlow: {
+      position: 'absolute',
+      width: 86,
+      height: 86,
+      borderRadius: 32,
+      backgroundColor: colors.gold400,
+      opacity: 0.15,
+    },
+    emptyIcon: {
+      width: 72,
+      height: 72,
+      borderRadius: 26,
+      backgroundColor: colors.white,
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...shadows.glowGoldSoft,
+    },
+    emptyTitle: {
+      marginTop: 18,
+      fontSize: 18,
+      fontWeight: '700',
+      color: colorScheme === 'dark' ? colors.stone900 : colors.stone900,
+    },
+    emptySub: {
+      marginTop: 8,
+      fontSize: 12,
+      color: colors.stone400,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
+    messageBlock: {
+      marginTop: 0,
+    },
+    mermaidWrap: {
+      marginVertical: 8,
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : colors.stone100,
+    },
+    mermaidWebview: {
+      width: '100%',
+      height: 240,
+      backgroundColor: 'transparent',
+    },
+    actionButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: actionBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: actionBorder,
+      ...shadows.soft,
+    },
+    inputContainer: {
+      paddingHorizontal: 18,
+      paddingBottom: 12,
+    },
+  });
+}

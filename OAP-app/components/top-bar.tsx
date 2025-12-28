@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Bell } from 'phosphor-react-native';
-import { colors } from '@/constants/palette';
 import { shadows } from '@/constants/shadows';
+import type { Palette } from '@/constants/palette';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { usePalette } from '@/hooks/use-palette';
 
 type TopBarVariant = 'home' | 'explore';
 
@@ -26,10 +28,14 @@ export function TopBar({
   onPressAction,
   actions,
 }: TopBarProps) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   if (variant === 'home') {
     return (
       <View style={styles.homeWrap}>
-        <BlurView intensity={60} tint="light" style={styles.homeBlur}>
+        <BlurView intensity={60} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={styles.homeBlur}>
           <View style={[styles.homeBar, isScrolled && styles.homeBarScrolled]}>
             <View>
               <View style={styles.dateRowHome}>
@@ -42,7 +48,7 @@ export function TopBar({
               <View style={styles.actionRow}>{actions}</View>
             ) : (
               <Pressable style={styles.bellButton} onPress={onPressAction}>
-                <Bell size={18} color={colors.stone400} weight="fill" />
+                <Bell size={18} color={palette.stone400} weight="fill" />
                 {hasUnread && <View style={styles.bellDot} />}
               </Pressable>
             )}
@@ -54,7 +60,7 @@ export function TopBar({
 
   return (
     <View style={styles.exploreWrap}>
-      <BlurView intensity={60} tint="light" style={styles.exploreBlur}>
+      <BlurView intensity={60} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={styles.exploreBlur}>
         <View style={styles.exploreBar}>
           <View>
             <View style={styles.dateRowExplore}>
@@ -68,7 +74,7 @@ export function TopBar({
           ) : (
             onPressAction && (
               <Pressable style={styles.bellButton} onPress={onPressAction}>
-                <Bell size={18} color={colors.stone400} weight="fill" />
+                <Bell size={18} color={palette.stone400} weight="fill" />
                 {hasUnread && <View style={styles.bellDot} />}
               </Pressable>
             )
@@ -82,7 +88,8 @@ export function TopBar({
 const HOME_TOP_PADDING = 18;
 const EXPLORE_TOP_PADDING = 44;
 
-const styles = StyleSheet.create({
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
   homeWrap: {
     position: 'absolute',
     top: 0,
@@ -103,7 +110,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
   },
   homeBarScrolled: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: colors.white,
     paddingVertical: 8,
     paddingHorizontal: 8,
   },
@@ -192,4 +199,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.white,
   },
-});
+  });
+}
