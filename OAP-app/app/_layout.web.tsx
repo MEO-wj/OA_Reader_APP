@@ -14,6 +14,35 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { refreshSessionOnForeground } from '@/services/auth';
 
 export default function RootLayout() {
+  // 设置SEO元数据（组件级别）
+  useEffect(() => {
+    // 设置title
+    document.title = 'OA Reader - 校内OA通知助手';
+
+    // 设置meta标签
+    const setMeta = (name: string, content: string) => {
+      let meta = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null;
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = name;
+        document.head.appendChild(meta);
+      }
+      meta.content = content;
+    };
+
+    setMeta('description', '实时获取校园OA系统通知，AI智能摘要，便捷查阅。支持文章搜索、AI问答、个性化推送。');
+    setMeta('keywords', 'OA,校园通知,OA助手,智能摘要,AI问答');
+
+    // 设置viewport
+    let viewport = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
+    if (!viewport) {
+      viewport = document.createElement('meta');
+      viewport.name = 'viewport';
+      document.head.appendChild(viewport);
+    }
+    viewport.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+  }, []);
+
   const colorScheme = useColorScheme();
   const router = useRouter();
   const segments = useSegments();
@@ -81,13 +110,13 @@ export default function RootLayout() {
       <Stack initialRouteName="login">
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen 
-          name="modal" 
-          options={{ 
+        <Stack.Screen
+          name="modal"
+          options={{
             presentation: 'modal',
             title: 'Modal',
             headerShown: true
-          }} 
+          }}
         />
       </Stack>
       <StatusBar style="auto" />

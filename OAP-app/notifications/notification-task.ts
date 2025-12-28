@@ -156,7 +156,7 @@ TaskManager.defineTask(TASK_NAME, async () => {
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
-    const resp = await fetch(`${getApiBaseUrl()}/articles/${params}`, { headers });
+    const resp = await fetch(`${getApiBaseUrl()}/articles/today${params}`, { headers });
 
     if (resp.status === 401) {
       await notifyAuthExpired();
@@ -378,7 +378,7 @@ export async function delayedPollTest(
   }
 
   try {
-    const resp = await fetch(`${getApiBaseUrl()}/articles/${params}`, { headers });
+    const resp = await fetch(`${getApiBaseUrl()}/articles/today${params}`, { headers });
 
     // 处理 401
     if (resp.status === 401) {

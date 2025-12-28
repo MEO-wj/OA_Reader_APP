@@ -74,8 +74,13 @@ export function useAiChat(token?: string | null, displayName?: string) {
         if (result.related_articles?.length) {
           updateRelated(aiMessageId, result.related_articles);
         }
-      } catch {
-        setMessageText(aiMessageId, '抱歉，当前服务不可用，请稍后再试。');
+      } catch (err) {
+        if (err instanceof Error && err.message === 'missing token') {
+          setMessageText(aiMessageId, '登录已过期，请重新登录。');
+          return;
+        }
+        const errorMsg = err instanceof Error ? err.message : '抱歉，当前服务不可用，请稍后再试。';
+        setMessageText(aiMessageId, errorMsg);
       } finally {
         setIsThinking(false);
       }
