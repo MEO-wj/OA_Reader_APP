@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -62,6 +63,8 @@ class Config:
         self.api_key: Optional[str] = None  # AI服务API密钥
         self.ai_base_url: str = "https://open.bigmodel.cn/api/paas/v4/chat/completions"  # GLM API URL
         self.ai_model: str = "glm-4.5-flash"  # 默认AI模型
+        self.ai_models: list[dict] = []  # 多模型配置（JSON数组）
+        self.ai_enable_load_balancing: bool = True  # 是否启用AI负载均衡
         self.database_url: Optional[str] = None  # 数据库连接字符串
         self.embed_base_url: Optional[str] = None  # 嵌入服务URL
         self.embed_model: Optional[str] = None  # 嵌入模型名称
@@ -188,6 +191,8 @@ class Config:
             "API_KEY",          # AI服务API密钥
             "AI_BASE_URL",      # AI API基础URL
             "AI_MODEL",         # AI模型名称
+            "AI_MODELS",        # AI多模型配置
+            "AI_ENABLE_LOAD_BALANCING",  # 是否启用AI负载均衡
             "DATABASE_URL",     # 数据库连接字符串
             "EMBED_BASE_URL",   # 嵌入服务基础URL
             "EMBED_MODEL",      # 嵌入模型名称
@@ -242,6 +247,13 @@ class Config:
         elif key == "AI_MODEL":
             if value:
                 self.ai_model = value
+        elif key == "AI_MODELS":
+            try:
+                self.ai_models = json.loads(value)
+            except json.JSONDecodeError:
+                print(f"⚠️ AI_MODELS JSON解析失败: {value}")
+        elif key == "AI_ENABLE_LOAD_BALANCING":
+            self.ai_enable_load_balancing = value.lower() in ("1", "true", "yes", "on")
         elif key == "DATABASE_URL":
             self.database_url = value or None
         elif key == "EMBED_BASE_URL":

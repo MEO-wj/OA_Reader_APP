@@ -6,12 +6,57 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Optional
 
 import requests
 
 from crawler.config import Config
+from crawler.services.ai_load_balancer import AILoadBalancer, ModelConfig
+
+logger = logging.getLogger(__name__)
+
+_load_balancer: AILoadBalancer | None = None
+_load_balancer_initialized = False
+
+
+def _get_load_balancer(config: Config) -> AILoadBalancer | None:
+    """获取或创建负载均衡器单例。"""
+    global _load_balancer, _load_balancer_initialized
+    if _load_balancer_initialized:
+        return _load_balancer
+
+    if config.ai_enable_load_balancing and config.ai_models:
+        _load_balancer = AILoadBalancer(config.ai_models)
+        logger.info("爬虫AI负载均衡器已启用，共 %s 个配置组", len(config.ai_models))
+    else:
+        logger.debug("爬虫AI负载均衡器未启用或配置为空")
+
+    _load_balancer_initialized = True
+    return _load_balancer
+
+
+def _is_429_response(resp: requests.Response) -> bool:
+    """判断是否为429速率限制响应。"""
+    if resp.status_code == 429:
+        return True
+    try:
+        data = resp.json()
+        error = data.get("error", {})
+        if isinstance(error, dict):
+            return "429" in str(error.get("code", "")).lower()
+    except (ValueError, TypeError):
+        return False
+    return False
+
+
+def _mask_key(api_key: str) -> str:
+    if not api_key:
+        return "***"
+    if len(api_key) <= 12:
+        return "***"
+    return f"{api_key[:8]}...{api_key[-4:]}"
 
 
 class Summarizer:
@@ -38,20 +83,41 @@ class Summarizer:
         返回：
             str | None: 生成的摘要文本，AI 未配置或调用失败时返回 None
         """
-        # 构建请求头
-        headers = dict(self.config.ai_headers)
-        # 检查 AI 配置是否完整
-        if "Authorization" not in headers:
-            return "[AI 未配置]"
+        load_balancer = _get_load_balancer(self.config)
+        max_tries = len(load_balancer.models) if load_balancer else 1
 
-        # 构建 AI API 请求参数
-        payload = {
-            "model": self.config.ai_model,  # AI 模型名称
-            "messages": [
-                {
-                    "role": "system",  # 系统角色提示词
-                    "content": (
-                        """角色设定：
+        for attempt in range(max_tries):
+            # 选择模型配置
+            if load_balancer:
+                model_config = load_balancer.get_next_model()
+                if not model_config:
+                    return None
+            else:
+                if not (self.config.api_key and self.config.ai_base_url and self.config.ai_model):
+                    return "[AI 未配置]"
+                model_config = ModelConfig(
+                    api_key=self.config.api_key,
+                    base_url=self.config.ai_base_url,
+                    model=self.config.ai_model,
+                )
+
+            masked_key = _mask_key(model_config.api_key)
+            logger.info("使用模型: %s @ %s (key: %s)", model_config.model, model_config.base_url, masked_key)
+
+            # 构建请求头
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {model_config.api_key}",
+            }
+
+            # 构建 AI API 请求参数
+            payload = {
+                "model": model_config.model,
+                "messages": [
+                    {
+                        "role": "system",  # 系统角色提示词
+                        "content": (
+                            """角色设定：
 你是一个专业的事件通知摘要生成器，擅长从各类通知公告中提取核心信息，并生成客观、中立的简短摘要。
 
 目标任务：
@@ -75,37 +141,45 @@ class Summarizer:
    - 直接返回摘要文本，不输出任何其他信息。
 
 请基于以下通知生成摘要："""
-                    ),
-                },
-                {"role": "user", "content": content},  # 用户输入的文章内容
-            ],
-            "stream": False,  # 非流式返回
-            "temperature": 0.7,  # 生成温度（控制随机性）
-            "max_tokens": 2000,  # 最大生成令牌数
-        }
+                        ),
+                    },
+                    {"role": "user", "content": content},  # 用户输入的文章内容
+                ],
+                "stream": False,  # 非流式返回
+                "temperature": 0.7,  # 生成温度（控制随机性）
+                "max_tokens": 2000,  # 最大生成令牌数
+            }
 
-        try:
-            # 调用 AI API
-            resp = requests.post(self.config.ai_base_url, json=payload, headers=headers, timeout=60)
-            # 检查响应状态
-            if resp.status_code != 200:
-                print(f"AI API返回错误状态码: {resp.status_code}")
+            try:
+                # 调用 AI API
+                resp = requests.post(model_config.base_url, json=payload, headers=headers, timeout=60)
+                # 检查响应状态
+                if resp.status_code != 200:
+                    if load_balancer and _is_429_response(resp) and attempt < max_tries - 1:
+                        load_balancer.mark_model_429(model_config)
+                        logger.warning("检测到429，切换模型重试 (尝试 %s/%s)", attempt + 1, max_tries)
+                        continue
+                    print(f"AI API返回错误状态码: {resp.status_code}")
+                    return None
+
+                # 解析响应结果
+                data = resp.json()
+                choices = data.get("choices") or []
+                if not choices:
+                    return None
+
+                # 提取摘要文本
+                text = choices[-1]["message"].get("content", "").strip()
+                # 清理特殊格式（如思考过程标记）
+                text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+                # 移除可能的标题标记
+                text = text.lstrip("# ").lstrip()
+                return text
+            except requests.RequestException as exc:
+                if load_balancer and attempt < max_tries - 1:
+                    logger.warning("请求异常: %s，尝试下一个模型", exc)
+                    continue
+                print(f"调用AI失败: {exc}")
                 return None
-            
-            # 解析响应结果
-            data = resp.json()
-            choices = data.get("choices") or []
-            if not choices:
-                return None
-            
-            # 提取摘要文本
-            text = choices[-1]["message"].get("content", "").strip()
-            # 清理特殊格式（如思考过程标记）
-            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-            # 移除可能的标题标记
-            text = text.lstrip("# ").lstrip()
-            return text
-        except requests.RequestException as exc:
-            # 处理请求异常
-            print(f"调用AI失败: {exc}")
-            return None
+
+        return None
