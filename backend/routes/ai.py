@@ -66,6 +66,40 @@ def _get_load_balancer() -> AILoadBalancer | None:
     return _load_balancer
 
 
+def _create_llm_with_config(model_config: ModelConfig | None) -> ChatOpenAI:
+    """根据指定的模型配置创建LLM实例。
+
+    Args:
+        model_config: 模型配置，None表示使用传统配置
+
+    Returns:
+        ChatOpenAI实例
+    """
+    if model_config:
+        # 记录使用的模型（隐藏API Key的前8位）
+        masked_key = f"{model_config.api_key[:8]}...{model_config.api_key[-4:]}" if len(model_config.api_key) > 12 else "***"
+        logger.info(f"使用负载均衡模型: {model_config.model} @ {model_config.base_url} (key: {masked_key})")
+
+        return ChatOpenAI(
+            api_key=model_config.api_key,
+            base_url=_normalize_ai_base_url(model_config.base_url),
+            model=model_config.model,
+            temperature=0.2,
+        )
+
+    # 回退到传统单一配置
+    # 记录使用的传统单一配置
+    masked_key = f"{config.api_key[:8]}...{config.api_key[-4:]}" if len(config.api_key) > 12 else "***"
+    logger.info(f"使用传统单一配置: {config.ai_model} @ {config.ai_base_url} (key: {masked_key})")
+
+    return ChatOpenAI(
+        api_key=config.api_key,
+        base_url=_normalize_ai_base_url(config.ai_base_url),
+        model=config.ai_model,
+        temperature=0.2,
+    )
+
+
 def _create_llm_for_request() -> tuple[ModelConfig | None, ChatOpenAI]:
     """为单次请求创建LLM实例（支持负载均衡）。
 
@@ -152,35 +186,29 @@ def _normalize_ai_base_url(raw_url: str | None) -> str | None:
     return url
 
 
-def _format_message_for_log(message: BaseMessage) -> dict[str, Any]:
-    payload: dict[str, Any] = {"type": message.__class__.__name__}
-    content = getattr(message, "content", None)
-    if isinstance(content, str):
-        payload["content"] = content
-        payload["content_len"] = len(content)
-    else:
-        payload["content"] = content
-    tool_calls = getattr(message, "tool_calls", None)
-    if tool_calls:
-        payload["tool_calls"] = tool_calls
-    tool_call_id = getattr(message, "tool_call_id", None)
-    if tool_call_id:
-        payload["tool_call_id"] = tool_call_id
-    additional_kwargs = getattr(message, "additional_kwargs", None)
-    if additional_kwargs:
-        payload["additional_kwargs"] = additional_kwargs
-    return payload
-
-
 def _log_messages(stage: str, messages: list[BaseMessage]) -> None:
+    """记录AI消息摘要（不打印完整内容）"""
+    # 统计消息类型
+    msg_types = {}
+    for msg in messages:
+        msg_type = msg.__class__.__name__
+        msg_types[msg_type] = msg_types.get(msg_type, 0) + 1
+
+    # 提取用户问题预览（仅第一个HumanMessage的前50字符）
+    user_question_preview = ""
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            content = getattr(msg, "content", "")
+            if isinstance(content, str):
+                user_question_preview = content[:50] + "..." if len(content) > 50 else content
+            break
+
     logger.info(
-        "AI请求messages(%s): %s",
+        "AI请求 %s - 消息数: %d, 类型: %s, 问题: %s",
         stage,
-        json.dumps(
-            [_format_message_for_log(msg) for msg in messages],
-            ensure_ascii=False,
-            default=str,
-        ),
+        len(messages),
+        json.dumps(msg_types, ensure_ascii=False),
+        user_question_preview,
     )
 
 
@@ -398,30 +426,45 @@ class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 
-@lru_cache(maxsize=1)
-def _build_agent() -> Any:
-    """构建AI代理图结构（被缓存）。
+def _build_agent_with_config(fixed_model_config: ModelConfig | None) -> Any:
+    """构建AI代理图结构（使用固定的模型配置）。
 
-    保留LangGraph结构缓存，但agent_node中动态创建LLM实例以支持负载均衡。
+    Args:
+        fixed_model_config: 固定的模型配置，整个agent生命周期使用此配置
+                          None表示使用传统单一配置
+
+    Returns:
+        编译后的agent图
     """
     tools = [vector_search_tool]
 
+    # 使用固定配置创建LLM
+    llm = _create_llm_with_config(fixed_model_config)
+    llm_with_tools = llm.bind_tools(tools)
+
+    # 初始模型配置（用于429重试时的参考）
+    initial_config = fixed_model_config
+
     def agent_node(state: AgentState) -> dict[str, list[BaseMessage]]:
-        """代理节点：处理AI请求，支持429重试和模型切换。"""
+        """代理节点：处理AI请求，使用固定模型配置，支持429重试。"""
         load_balancer = _get_load_balancer()
         max_tries = len(load_balancer.models) if load_balancer else 1
         last_error: Exception | None = None
-        current_config: ModelConfig | None = None
 
-        # 尝试多个模型配置
+        # 尝试多个模型配置（仅在429时切换）
         for attempt in range(max_tries):
             try:
-                # 每次重新创建LLM实例（支持轮询）
-                current_config, llm = _create_llm_for_request()
-                llm_with_tools = llm.bind_tools(tools)
+                # 第一次使用固定配置，重试时使用负载均衡器选择的下一个模型
+                if attempt == 0:
+                    current_llm_config = initial_config
+                else:
+                    current_llm_config, _ = _create_llm_for_request()
+
+                current_llm = _create_llm_with_config(current_llm_config)
+                current_llm_with_tools = current_llm.bind_tools(tools)
 
                 _log_messages("before_llm", state["messages"])
-                response = llm_with_tools.invoke(state["messages"])
+                response = current_llm_with_tools.invoke(state["messages"])
                 _log_messages("after_llm", state["messages"] + [response])
 
                 # 成功则返回
@@ -432,24 +475,29 @@ def _build_agent() -> Any:
                 is_rate_limit = _is_rate_limit_error(e)
 
                 # 记录错误和模型信息
-                if current_config:
-                    masked_key = f"{current_config.api_key[:8]}...{current_config.api_key[-4:]}" if len(current_config.api_key) > 12 else "***"
-                    model_info = f"模型: {current_config.model} @ {current_config.base_url} (key: {masked_key})"
+                if attempt == 0:
+                    # 第一次使用的是固定配置
+                    if initial_config:
+                        masked_key = f"{initial_config.api_key[:8]}...{initial_config.api_key[-4:]}" if len(initial_config.api_key) > 12 else "***"
+                        model_info = f"模型: {initial_config.model} @ {initial_config.base_url} (key: {masked_key})"
+                    else:
+                        model_info = f"传统配置: {config.ai_model} @ {config.ai_base_url}"
                 else:
-                    model_info = f"传统配置: {config.ai_model} @ {config.ai_base_url}"
+                    # 重试时使用的模型信息（在create_llm_for_request中已记录）
+                    model_info = "重试模型"
 
                 if is_rate_limit and load_balancer and attempt < max_tries - 1:
                     # 标记刚才失败的模型为429状态
-                    if current_config:
+                    if attempt == 0 and initial_config:
                         logger.warning(
                             f"[429] {model_info} - 切换模型重试 (尝试 {attempt + 1}/{max_tries})"
                         )
-                        load_balancer.mark_model_429(current_config)
+                        load_balancer.mark_model_429(initial_config)
                     else:
                         logger.warning(
-                            f"[429] {model_info} - 切换模型重试 (尝试 {attempt + 1}/{max_tries})"
+                            f"[429] {model_info} - 继续切换模型重试 (尝试 {attempt + 1}/{max_tries})"
                         )
-                    # 继续下一次循环，使用新配置
+                    # 继续下一次循环
                     continue
                 else:
                     # 非429或最后一次尝试，记录错误并抛出
@@ -578,6 +626,13 @@ def _process_ai_request_internal(data: dict[str, Any]) -> dict[str, Any]:
     if not _is_ai_configured():
         return {"error": "AI服务配置不完整"}
 
+    # === 请求级别：选择模型 ===
+    # 这次请求的所有agent调用都将使用同一个模型配置
+    model_config_for_this_request: ModelConfig | None = None
+    load_balancer = _get_load_balancer()
+    if load_balancer and load_balancer.models:
+        model_config_for_this_request = load_balancer.get_next_model()
+
     # 构建消息
     history = _load_short_memory(user_id) if user_id else []
     messages: list[BaseMessage] = [
@@ -586,8 +641,8 @@ def _process_ai_request_internal(data: dict[str, Any]) -> dict[str, Any]:
         HumanMessage(content=question),
     ]
 
-    # 调用AI代理
-    agent = _build_agent()
+    # 使用选定的模型配置构建agent
+    agent = _build_agent_with_config(model_config_for_this_request)
     result = agent.invoke({"messages": messages})
     final_messages = result.get("messages", messages)
     answer = _extract_answer(final_messages) or "当前服务不可用，请稍后再试。"
@@ -660,7 +715,13 @@ def ask_question():
 
             return jsonify(result), 200
         else:
-            # 不使用队列，直接处理（原有逻辑）
+            # 不使用队列，直接处理
+            # === 请求级别：选择模型 ===
+            model_config_for_this_request: ModelConfig | None = None
+            load_balancer = _get_load_balancer()
+            if load_balancer and load_balancer.models:
+                model_config_for_this_request = load_balancer.get_next_model()
+
             history = _load_short_memory(user_id) if user_id else []
             logger.info(
                 "AI请求入参: %s",
@@ -683,7 +744,8 @@ def ask_question():
                 HumanMessage(content=question),
             ]
 
-            agent = _build_agent()
+            # 使用选定的模型配置构建agent
+            agent = _build_agent_with_config(model_config_for_this_request)
             result = agent.invoke({"messages": messages})
             final_messages = result.get("messages", messages)
             answer = _extract_answer(final_messages) or "当前服务不可用，请稍后再试。"
