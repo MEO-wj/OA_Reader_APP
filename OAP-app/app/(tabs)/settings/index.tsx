@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { BellRinging, CaretRight, Code, HouseSimple, MoonStars, SunDim } from 'phosphor-react-native';
+import { BellRinging, CaretRight, Code, HouseSimple, MoonStars, Package, SunDim } from 'phosphor-react-native';
+import Constants from 'expo-constants';
 
 import { AmbientBackground } from '@/components/ambient-background';
 import { BottomDock } from '@/components/bottom-dock';
@@ -40,6 +41,11 @@ export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const palette = usePalette();
   const styles = useMemo(() => createStyles(palette), [palette]);
+
+  const appVersion =
+    Constants.expoConfig?.version ??
+    ((Constants as any).nativeAppVersion as string | undefined) ??
+    '1.0.1';
 
   const [a2hsVisible, setA2hsVisible] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -221,6 +227,18 @@ export default function SettingsScreen() {
               trackColor={{ false: palette.stone200, true: palette.stone800 }}
               thumbColor={palette.white}
             />
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.cardRow}>
+            <View style={styles.cardRowLeft}>
+              <View style={styles.cardIcon}>
+                <Package size={16} color={palette.stone600} weight="fill" />
+              </View>
+              <Text style={styles.cardRowText}>当前版本</Text>
+            </View>
+            <Text style={styles.versionText}>v{appVersion}</Text>
           </View>
         </View>
 
@@ -438,16 +456,22 @@ function createStyles(colors: Palette) {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardRowText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.stone700,
-  },
-  logoutButton: {
-    paddingVertical: 14,
-    borderRadius: 18,
-    backgroundColor: colors.white,
-    borderWidth: 1,
+    cardRowText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.stone700,
+    },
+    versionText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: colors.stone400,
+      letterSpacing: 1.2,
+    },
+    logoutButton: {
+      paddingVertical: 14,
+      borderRadius: 18,
+      backgroundColor: colors.white,
+      borderWidth: 1,
     borderColor: colors.imperial100,
     alignItems: 'center',
     ...shadows.cardSoft,
