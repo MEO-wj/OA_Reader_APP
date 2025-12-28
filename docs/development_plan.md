@@ -192,3 +192,138 @@
 
 ## 未来计划
 - 监控与结构化日志：补充指标采集与结构化日志输出
+
+---
+
+# 待实现优化方案（2024-12）
+
+## 问题1: AI 429错误与模型负载均衡
+
+### 背景
+当前AI请求使用单一API密钥和模型配置，高并发时容易触发429速率限制错误。
+
+### 解决方案
+实现**轮询式负载均衡 + 429错误自动重试**机制。
+
+### 配置格式
+```bash
+# 多模型配置（JSON数组格式）
+# 每个配置项包含 api_key、base_url 和可用的模型列表
+AI_MODELS=[
+  {
+    "api_key": "sk-key1",
+    "base_url": "https://api1.com/v1",
+    "models": ["glm-4-flash", "glm-4-plus"]
+  },
+  {
+    "api_key": "sk-key2",
+    "base_url": "https://api2.com/v1",
+    "models": ["qwen-max", "glm-4-flash"]
+  }
+]
+
+# 启用负载均衡（默认true）
+AI_ENABLE_LOAD_BALANCING=true
+```
+
+### 设计要点
+- 负载均衡器将所有（api_key, model）组合展开进行轮询
+- 保留 `@lru_cache` 缓存LangGraph结构
+- 每次 `agent_node` 执行时动态获取LLM实例
+- 检测到429错误时自动切换到下一个配置重试
+
+### 实现文件
+- `backend/config.py` - 添加JSON解析支持
+- `backend/services/ai_load_balancer.py` - 新建负载均衡器
+- `backend/routes/ai.py` - 重构 `_build_agent` 和 `agent_node`
+
+---
+
+## 问题2: AI请求消息队列
+
+### 背景
+当前AI请求直接同步处理，无并发控制，高并发时可能压垮后端。
+
+### 解决方案
+使用**内存队列**（`threading.Queue`）实现请求排队。
+
+### 配置格式
+```bash
+# 启用AI请求队列（默认true）
+AI_QUEUE_ENABLED=true
+
+# 最大队列长度（默认20）
+AI_QUEUE_MAX_SIZE=20
+
+# 请求处理超时时间（秒，默认30）
+AI_QUEUE_TIMEOUT=30
+```
+
+### 设计要点
+- 队列满时直接返回503状态码，不阻塞
+- 请求入队后阻塞等待处理结果
+- 单独的工作线程在Flask app_context中处理队列
+- 返回503时附带明确的错误信息供前端展示
+
+### 实现文件
+- `backend/config.py` - 添加队列配置
+- `backend/services/ai_queue.py` - 新建队列处理器
+- `backend/routes/ai.py` - 修改AI路由使用队列
+- `OAP-app/services/ai.ts` - 根据HTTP状态码返回不同错误
+- `OAP-app/hooks/use-ai-chat.ts` - 显示具体错误信息
+
+---
+
+## 问题3: 后台任务400错误
+
+### 背景
+移动端延迟测试使用 `/articles/?since=xxx` 格式，但后端 `/articles/` 端点要求 `before_id` 参数为必填，导致400错误。
+
+### 解决方案
+修改移动端请求，改用 `/articles/today` 端点。
+
+### 修改内容
+- `OAP-app/notifications/notification-task.ts` 第159行：普通后台任务
+- `OAP-app/notifications/notification-task.ts` 第381行：延迟测试
+
+---
+
+## 问题4: Web端SEO优化（轻量级）
+
+### 背景
+Lighthouse检测显示Web端缺少页面标题和meta描述。
+
+### 解决方案
+修改 `OAP-app/app/_layout.web.tsx`，添加 `<Head>` 组件和SEO元数据。
+
+### 实现内容
+```typescript
+import { Head } from 'expo-router';
+
+// 在return中添加
+<Head>
+  <title>OA Reader - 校内OA通知助手</title>
+  <meta name="description" content="实时获取校园OA系统通知，AI智能摘要，便捷查阅。支持文章搜索、AI问答、个性化推送。" />
+  <meta name="keywords" content="OA,校园通知,OA助手,智能摘要,AI问答" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+</Head>
+```
+
+### 预期效果
+- 搜索引擎正确识别页面标题
+- 社交媒体分享显示预览信息
+- SEO基础得分提升
+
+### 修改文件
+- `OAP-app/app/_layout.web.tsx`
+
+---
+
+## 实施优先级
+
+| 阶段 | 问题 | 工作量 |
+|------|------|--------|
+| 第一阶段 | 问题3：后台任务400错误 | 15分钟 |
+| 第二阶段 | 问题4：Web端SEO优化 | 15分钟 |
+| 第三阶段 | 问题1+2：AI负载均衡+消息队列 | 4-5小时 |
+| 第四阶段 | 问题4：Web端深度性能优化（Vite迁移） | 暂缓 |

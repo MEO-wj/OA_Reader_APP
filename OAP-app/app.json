@@ -14,7 +14,10 @@
         "foregroundImage": "./assets/images/icon.png"
       },
       "supportsTablet": true,
-      "bundleIdentifier": "top.handywote.oareader"
+      "bundleIdentifier": "top.handywote.oareader",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
