@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { Asset } from 'expo-asset';
 
 import { useAuthTokenState } from '@/hooks/use-auth-token';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -30,8 +31,58 @@ export default function RootLayout() {
       meta.content = content;
     };
 
-    setMeta('description', '实时获取校园OA系统通知，AI智能摘要，便捷查阅。支持文章搜索、AI问答、个性化推送。');
+    setMeta('description', '实时获取校内OA系统通知，AI智能摘要，便捷查阅。支持文章搜索、AI问答、个性化推送。');
     setMeta('keywords', 'OA,校园通知,OA助手,智能摘要,AI问答');
+
+    // iOS Web Clip（添加到主屏幕后全屏打开）
+    setMeta('apple-mobile-web-app-capable', 'yes');
+    setMeta('apple-mobile-web-app-status-bar-style', 'default');
+    setMeta('apple-mobile-web-app-title', 'OA Reader');
+
+    // Android/Chrome 等
+    setMeta('mobile-web-app-capable', 'yes');
+    setMeta('theme-color', '#ffffff');
+    setMeta('format-detection', 'telephone=no');
+
+    // 设置link标签（Web Clip 图标）
+    const setLink = (id: string, rel: string, href: string) => {
+      let link = document.querySelector(`link#${id}`) as HTMLLinkElement | null;
+      if (!link) {
+        link = document.createElement('link');
+        link.id = id;
+        link.rel = rel;
+        document.head.appendChild(link);
+      }
+      link.href = href;
+    };
+
+    let manifestObjectUrl: string | null = null;
+
+    try {
+      const iconHref = Asset.fromModule(require('../assets/images/icon.png')).uri;
+      setLink('oareader-apple-touch-icon', 'apple-touch-icon', iconHref);
+      setLink('oareader-icon', 'icon', iconHref);
+
+      const manifest = {
+        name: 'OA Reader',
+        short_name: 'OA Reader',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#ffffff',
+        theme_color: '#ffffff',
+        icons: [
+          { src: iconHref, sizes: '1024x1024', type: 'image/png', purpose: 'any' },
+          { src: iconHref, sizes: '1024x1024', type: 'image/png', purpose: 'maskable' },
+        ],
+      };
+
+      manifestObjectUrl = URL.createObjectURL(
+        new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' })
+      );
+      setLink('oareader-manifest', 'manifest', manifestObjectUrl);
+    } catch {
+      // ignore
+    }
 
     // 设置viewport
     let viewport = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
@@ -40,7 +91,14 @@ export default function RootLayout() {
       viewport.name = 'viewport';
       document.head.appendChild(viewport);
     }
-    viewport.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+    viewport.content =
+      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+
+    return () => {
+      if (manifestObjectUrl) {
+        URL.revokeObjectURL(manifestObjectUrl);
+      }
+    };
   }, []);
 
   const colorScheme = useColorScheme();

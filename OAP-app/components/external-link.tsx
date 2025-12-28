@@ -5,9 +5,14 @@ import { type ComponentProps } from 'react';
 type Props = Omit<ComponentProps<typeof Link>, 'href'> & { href: Href & string };
 
 export function ExternalLink({ href, ...rest }: Props) {
+  const isStandalone =
+    typeof window !== 'undefined' &&
+    ((window.matchMedia?.('(display-mode: standalone)')?.matches ?? false) ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true);
+
   return (
     <Link
-      target="_blank"
+      target={isStandalone ? '_self' : '_blank'}
       {...rest}
       href={href}
       onPress={async (event) => {

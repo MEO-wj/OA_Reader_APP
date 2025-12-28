@@ -1,9 +1,19 @@
-import React, { useCallback, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Image,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { BellRinging, CaretRight, Code } from 'phosphor-react-native';
+import { BellRinging, CaretRight, Code, HouseSimple } from 'phosphor-react-native';
 
 import { AmbientBackground } from '@/components/ambient-background';
 import { BottomDock } from '@/components/bottom-dock';
@@ -22,6 +32,47 @@ import { formatDateLabel } from '@/utils/date';
 export default function SettingsScreen() {
   const router = useRouter();
   const profile = useUserProfile();
+  const { width: windowWidth } = useWindowDimensions();
+
+  const [a2hsVisible, setA2hsVisible] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  const isWeb = Platform.OS === 'web';
+  const isIosWeb =
+    isWeb &&
+    typeof navigator !== 'undefined' &&
+    /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  const guideCardWidth = Math.min(420, windowWidth - 48);
+  const guideImageHeight = 320;
+  const a2hsGuideImages = useMemo(
+    () => [
+      require('../../../assets/images/pic1.png'),
+      require('../../../assets/images/pic2.png'),
+      require('../../../assets/images/pic3.png'),
+    ],
+    []
+  );
+
+  useEffect(() => {
+    if (!isWeb) {
+      return;
+    }
+
+    const calcStandalone = () => {
+      const nav = navigator as Navigator & { standalone?: boolean };
+      const byMedia = window.matchMedia?.('(display-mode: standalone)')?.matches ?? false;
+      const byIos = nav.standalone === true;
+      setIsStandalone(byMedia || byIos);
+    };
+
+    calcStandalone();
+    window.addEventListener('resize', calcStandalone);
+
+    return () => {
+      window.removeEventListener('resize', calcStandalone);
+    };
+  }, [isWeb]);
 
   const displayName = profile?.display_name || profile?.username || '用户';
   const initials = displayName.trim().charAt(0) || '?';
@@ -94,6 +145,23 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
 
+        {isWeb && (
+          <View style={styles.card}>
+            <Pressable
+              onPress={() => setA2hsVisible(true)}
+              style={({ pressed }) => [styles.cardRow, pressed && styles.cardRowPressed]}
+            >
+              <View style={styles.cardRowLeft}>
+                <View style={styles.cardIcon}>
+                  <HouseSimple size={16} color={colors.stone600} weight="fill" />
+                </View>
+                <Text style={styles.cardRowText}>添加到主屏幕</Text>
+              </View>
+              <CaretRight size={16} color={colors.stone300} weight="bold" />
+            </Pressable>
+          </View>
+        )}
+
         {isAdmin && (
           <View style={styles.card}>
             <Pressable
@@ -118,6 +186,69 @@ export default function SettingsScreen() {
           <Text style={styles.logoutText}>退出登录</Text>
         </Pressable>
       </ScrollView>
+
+      {isWeb && (
+        <Modal
+          transparent
+          visible={a2hsVisible}
+          animationType="fade"
+          onRequestClose={() => setA2hsVisible(false)}
+        >
+          <View style={styles.a2hsOverlay}>
+            <Pressable style={styles.a2hsBackdrop} onPress={() => setA2hsVisible(false)} />
+            <View style={[styles.a2hsCard, { width: guideCardWidth }]}>
+              <Text style={styles.a2hsTitle}>添加到主屏幕</Text>
+
+              {isStandalone ? (
+                <Text style={styles.a2hsText}>
+                  你当前已经在「主屏幕模式」打开，界面会保持全屏（无浏览器栏）。
+                </Text>
+              ) : isIosWeb ? (
+                <>
+                  <Text style={styles.a2hsText}>
+                    按步骤操作（左右滑动查看）：{'\n'}
+                    1. 点击 Safari 下方的「分享」按钮{'\n'}
+                    2. 选择「添加到主屏幕」{'\n'}
+                    3. 回到桌面，从「OA Reader」图标进入即可全屏使用（无浏览器栏）。
+                  </Text>
+
+                  <ScrollView
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.a2hsGuideScrollContent}
+                    style={{ height: guideImageHeight }}
+                  >
+                    {a2hsGuideImages.map((source, index) => (
+                      <View
+                        key={String(index)}
+                        style={[styles.a2hsGuidePage, { width: guideCardWidth - 44 }]}
+                      >
+                        <Image
+                          source={source}
+                          resizeMode="contain"
+                          style={[styles.a2hsGuideImage, { height: guideImageHeight }]}
+                        />
+                      </View>
+                    ))}
+                  </ScrollView>
+                </>
+              ) : (
+                <Text style={styles.a2hsText}>
+                  请在浏览器菜单中选择「安装应用」或「添加到主屏幕」，之后从桌面图标进入即可全屏使用。
+                </Text>
+              )}
+
+              <Pressable
+                style={({ pressed }) => [styles.a2hsPrimaryButton, pressed && styles.a2hsPrimaryPressed]}
+                onPress={() => setA2hsVisible(false)}
+              >
+                <Text style={styles.a2hsPrimaryText}>我知道了</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       <BottomDock
         activeTab="settings"
@@ -245,5 +376,63 @@ const styles = StyleSheet.create({
     color: colors.imperial600,
     fontSize: 12,
     fontWeight: '700',
+  },
+  a2hsOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  a2hsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(28, 25, 23, 0.45)',
+  },
+  a2hsCard: {
+    borderRadius: 28,
+    padding: 22,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.8)',
+    ...shadows.cardSoft,
+  },
+  a2hsTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.stone900,
+    marginBottom: 10,
+  },
+  a2hsText: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.stone700,
+    marginBottom: 18,
+  },
+  a2hsGuideScrollContent: {
+    paddingBottom: 16,
+  },
+  a2hsGuidePage: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.stone100,
+    ...shadows.cardSoft,
+  },
+  a2hsGuideImage: {
+    width: '100%',
+  },
+  a2hsPrimaryButton: {
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: colors.stone900,
+    alignItems: 'center',
+  },
+  a2hsPrimaryPressed: {
+    transform: [{ scale: 0.98 }],
+  },
+  a2hsPrimaryText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 2,
   },
 });
