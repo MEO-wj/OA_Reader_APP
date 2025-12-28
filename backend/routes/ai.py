@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import date, datetime
-from typing import Any, Iterable, TypedDict, Annotated
+from typing import Any, Iterable, TypedDict, Annotated, Optional
 import json
 from functools import lru_cache
 from datetime import datetime
@@ -25,6 +26,8 @@ from backend.db import db_session
 from backend.routes.auth import login_required
 from backend.config import Config
 from backend.utils.redis_cache import get_cache
+from backend.services.ai_load_balancer import AILoadBalancer, ModelConfig
+from backend.services.ai_queue import AIRequestQueue
 
 # 初始化蓝图
 bp = Blueprint('ai', __name__)
@@ -36,8 +39,107 @@ logger = logging.getLogger(__name__)
 config = Config()
 cache = get_cache()
 
+# 负载均衡器单例
+_load_balancer: AILoadBalancer | None = None
+_load_balancer_lock = threading.Lock()
+
+# 消息队列单例
+_ai_queue: AIRequestQueue | None = None
+_queue_lock = threading.Lock()
+_queue_initialized = False
+
 MEMORY_TTL_SECONDS = 24 * 60 * 60
 MEMORY_MAX_ITEMS = 5
+
+
+def _get_load_balancer() -> AILoadBalancer | None:
+    """获取或创建负载均衡器单例。"""
+    global _load_balancer
+    if _load_balancer is None:
+        with _load_balancer_lock:
+            if _load_balancer is None:
+                if config.ai_enable_load_balancing and config.ai_models:
+                    _load_balancer = AILoadBalancer(config.ai_models)
+                    logger.info(f"AI负载均衡器已启用，共 {len(config.ai_models)} 个配置组")
+                else:
+                    logger.debug("AI负载均衡器未启用或配置为空")
+    return _load_balancer
+
+
+def _create_llm_for_request() -> tuple[ModelConfig | None, ChatOpenAI]:
+    """为单次请求创建LLM实例（支持负载均衡）。
+
+    Returns:
+        (ModelConfig实例或None, ChatOpenAI实例)
+    """
+    load_balancer = _get_load_balancer()
+    if load_balancer:
+        model_config = load_balancer.get_next_model()
+        if model_config:
+            # 记录使用的模型（隐藏API Key的前8位）
+            masked_key = f"{model_config.api_key[:8]}...{model_config.api_key[-4:]}" if len(model_config.api_key) > 12 else "***"
+            logger.info(f"使用负载均衡模型: {model_config.model} @ {model_config.base_url} (key: {masked_key})")
+
+            llm = ChatOpenAI(
+                api_key=model_config.api_key,
+                base_url=_normalize_ai_base_url(model_config.base_url),
+                model=model_config.model,
+                temperature=0.2,
+            )
+            return model_config, llm
+        # 负载均衡启用但没有可用模型时，直接报错避免回退到未配置的单模型
+        raise RuntimeError("所有AI模型均不可用，请稍后再试。")
+
+    # 回退到单一配置（返回None表示没有ModelConfig）
+    if not (config.api_key and config.ai_base_url and config.ai_model):
+        raise RuntimeError("AI服务配置不完整")
+
+    # 记录使用的传统单一配置
+    masked_key = f"{config.api_key[:8]}...{config.api_key[-4:]}" if len(config.api_key) > 12 else "***"
+    logger.info(f"使用传统单一配置: {config.ai_model} @ {config.ai_base_url} (key: {masked_key})")
+
+    llm = ChatOpenAI(
+        api_key=config.api_key,
+        base_url=_normalize_ai_base_url(config.ai_base_url),
+        model=config.ai_model,
+        temperature=0.2,
+    )
+    return None, llm
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    """检查错误是否为429速率限制错误。"""
+    error_msg = str(error).lower()
+    return (
+        "429" in error_msg
+        or "rate limit" in error_msg
+        or "rate_limit" in error_msg
+        or "too many requests" in error_msg
+        or "quota" in error_msg
+    )
+
+
+def _is_ai_configured() -> bool:
+    """检查AI服务是否已配置。
+
+    支持两种配置方式：
+    1. 传统方式：AI_BASE_URL + API_KEY + AI_MODEL
+    2. 负载均衡方式：AI_MODELS（多模型配置）
+
+    Returns:
+        True表示已配置，False表示未配置
+    """
+    # 检查负载均衡器配置
+    load_balancer = _get_load_balancer()
+    if load_balancer and load_balancer.models:
+        return True
+
+    # 检查传统单一配置
+    return bool(
+        config.ai_base_url
+        and config.api_key
+        and config.ai_model
+    )
 
 
 def _normalize_ai_base_url(raw_url: str | None) -> str | None:
@@ -298,20 +400,66 @@ class AgentState(TypedDict):
 
 @lru_cache(maxsize=1)
 def _build_agent() -> Any:
+    """构建AI代理图结构（被缓存）。
+
+    保留LangGraph结构缓存，但agent_node中动态创建LLM实例以支持负载均衡。
+    """
     tools = [vector_search_tool]
-    llm = ChatOpenAI(
-        api_key=config.api_key,
-        base_url=_normalize_ai_base_url(config.ai_base_url),
-        model=config.ai_model,
-        temperature=0.2,
-    )
-    llm_with_tools = llm.bind_tools(tools)
 
     def agent_node(state: AgentState) -> dict[str, list[BaseMessage]]:
-        _log_messages("before_llm", state["messages"])
-        response = llm_with_tools.invoke(state["messages"])
-        _log_messages("after_llm", state["messages"] + [response])
-        return {"messages": state["messages"] + [response]}
+        """代理节点：处理AI请求，支持429重试和模型切换。"""
+        load_balancer = _get_load_balancer()
+        max_tries = len(load_balancer.models) if load_balancer else 1
+        last_error: Exception | None = None
+        current_config: ModelConfig | None = None
+
+        # 尝试多个模型配置
+        for attempt in range(max_tries):
+            try:
+                # 每次重新创建LLM实例（支持轮询）
+                current_config, llm = _create_llm_for_request()
+                llm_with_tools = llm.bind_tools(tools)
+
+                _log_messages("before_llm", state["messages"])
+                response = llm_with_tools.invoke(state["messages"])
+                _log_messages("after_llm", state["messages"] + [response])
+
+                # 成功则返回
+                return {"messages": state["messages"] + [response]}
+
+            except Exception as e:
+                last_error = e
+                is_rate_limit = _is_rate_limit_error(e)
+
+                # 记录错误和模型信息
+                if current_config:
+                    masked_key = f"{current_config.api_key[:8]}...{current_config.api_key[-4:]}" if len(current_config.api_key) > 12 else "***"
+                    model_info = f"模型: {current_config.model} @ {current_config.base_url} (key: {masked_key})"
+                else:
+                    model_info = f"传统配置: {config.ai_model} @ {config.ai_base_url}"
+
+                if is_rate_limit and load_balancer and attempt < max_tries - 1:
+                    # 标记刚才失败的模型为429状态
+                    if current_config:
+                        logger.warning(
+                            f"[429] {model_info} - 切换模型重试 (尝试 {attempt + 1}/{max_tries})"
+                        )
+                        load_balancer.mark_model_429(current_config)
+                    else:
+                        logger.warning(
+                            f"[429] {model_info} - 切换模型重试 (尝试 {attempt + 1}/{max_tries})"
+                        )
+                    # 继续下一次循环，使用新配置
+                    continue
+                else:
+                    # 非429或最后一次尝试，记录错误并抛出
+                    logger.error(f"[AI请求失败] {model_info} - 错误: {e}")
+                    raise
+
+        # 所有尝试都失败
+        if last_error:
+            raise last_error
+        raise Exception("所有AI模型均不可用，请稍后再试")
 
     graph = StateGraph(AgentState)
     graph.add_node("agent", agent_node)
@@ -386,84 +534,178 @@ def _build_related_articles(articles: Iterable[dict[str, Any]]) -> list[dict[str
     return related
 
 
+def _initialize_queue(app=None) -> None:
+    """初始化AI请求队列（由app.py调用）。
+
+    Args:
+        app: Flask应用实例，如果为None则使用current_app
+    """
+    global _ai_queue, _queue_initialized
+    if _queue_initialized:
+        return
+    if config.ai_queue_enabled:
+        from flask import current_app
+
+        # 获取真实的app对象（使用_get_current_object避免Proxy问题）
+        flask_app = app if app is not None else current_app._get_current_object()
+
+        _ai_queue = AIRequestQueue(
+            app=flask_app,
+            max_size=config.ai_queue_max_size,
+            timeout=config.ai_queue_timeout,
+        )
+        _ai_queue.set_handler(_process_ai_request_internal)
+        _ai_queue.start()
+        _queue_initialized = True
+        logger.info("AI请求队列已启动")
+
+
+def _process_ai_request_internal(data: dict[str, Any]) -> dict[str, Any]:
+    """队列处理函数：实际执行AI请求（无Flask request上下文）。
+
+    Args:
+        data: 请求数据，包含 question、top_k、display_name、user_id
+
+    Returns:
+        响应数据，包含 answer 和 related_articles
+    """
+    question = data.get("question")
+    top_k_hint = data.get("top_k", 3)
+    display_name = data.get("display_name")
+    user_id = data.get("user_id", "")
+
+    # 验证配置（支持负载均衡和传统配置）
+    if not _is_ai_configured():
+        return {"error": "AI服务配置不完整"}
+
+    # 构建消息
+    history = _load_short_memory(user_id) if user_id else []
+    messages: list[BaseMessage] = [
+        SystemMessage(content=_build_system_prompt(top_k_hint, display_name)),
+        *_build_memory_messages(history),
+        HumanMessage(content=question),
+    ]
+
+    # 调用AI代理
+    agent = _build_agent()
+    result = agent.invoke({"messages": messages})
+    final_messages = result.get("messages", messages)
+    answer = _extract_answer(final_messages) or "当前服务不可用，请稍后再试。"
+    related_articles = _extract_related_articles(final_messages)
+
+    # 保存短记忆
+    if user_id:
+        _save_short_memory(user_id, question, answer)
+
+    return {"answer": answer, "related_articles": related_articles}
+
+
 @bp.route('/ask', methods=['POST'])
 @login_required
 def ask_question():
-    """基于向量的问答API。
-    
-    根据用户的问题，使用向量相似度搜索找到相关文章，然后生成回答。
-    
+    """基于向量的问答API（支持队列模式）。
+
     请求体：
-        {"question": "你的问题", "top_k": 3, "display_name": "张三"}  # top_k是可选的
-        
+        {"question": "你的问题", "top_k": 3, "display_name": "张三"}
+
     返回：
         包含回答和相关文章的JSON响应
+        队列满时返回503状态码
     """
     try:
         data = request.get_json()
-        
+
         if not data or 'question' not in data:
             return jsonify({"error": "请求参数错误，缺少question字段"}), 400
-        
+
         question = data['question']
         top_k_hint = data.get('top_k', 3)
         display_name = data.get('display_name')
-        if not config.ai_base_url or not config.api_key or not config.ai_model:
+
+        # 验证配置（支持负载均衡和传统配置）
+        if not _is_ai_configured():
             return jsonify({"error": "AI服务配置不完整"}), 500
 
+        # 获取用户信息
         user_claims = getattr(request, "auth_claims", {})
         user_id = str(user_claims.get("sub") or "")
-        history = _load_short_memory(user_id) if user_id else []
-        logger.info(
-            "AI请求入参: %s",
-            json.dumps(
-                {
-                    "question": question,
-                    "top_k_hint": top_k_hint,
-                    "display_name": display_name,
-                    "user_id": user_id,
-                    "ai_base_url": config.ai_base_url,
-                    "normalized_base_url": _normalize_ai_base_url(config.ai_base_url),
-                    "ai_model": config.ai_model,
-                    "history_len": len(history),
-                },
-                ensure_ascii=False,
-                default=str,
-            ),
-        )
 
-        messages: list[BaseMessage] = [
-            SystemMessage(content=_build_system_prompt(top_k_hint, display_name)),
-            *_build_memory_messages(history),
-            HumanMessage(content=question),
-        ]
+        # 检查是否使用队列
+        if _ai_queue and config.ai_queue_enabled:
+            # 准备队列请求数据
+            queue_data = {
+                "question": question,
+                "top_k": top_k_hint,
+                "display_name": display_name,
+                "user_id": user_id,
+            }
 
-        agent = _build_agent()
-        result = agent.invoke({"messages": messages})
-        final_messages = result.get("messages", messages)
-        answer = _extract_answer(final_messages) or "当前服务不可用，请稍后再试。"
-        related_articles = _extract_related_articles(final_messages)
+            logger.info(
+                "AI请求入队: %s",
+                json.dumps(
+                    {
+                        "question": question,
+                        "user_id": user_id,
+                        "queue_enabled": True,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
 
-        if user_id:
-            _save_short_memory(user_id, question, answer)
+            # 入队并等待结果
+            success, result = _ai_queue.enqueue(queue_data)
+            if not success:
+                # 返回503状态码和用户友好的错误信息
+                return jsonify({"error": result}), 503
 
-        logger.info(
-            "AI响应摘要: %s",
-            json.dumps(
-                {
-                    "answer_len": len(answer),
-                    "answer_preview": answer[:500],
-                    "related_articles_len": len(related_articles),
-                },
-                ensure_ascii=False,
-                default=str,
-            ),
-        )
-        return jsonify({
-            "answer": answer,
-            "related_articles": related_articles
-        }), 200
-        
+            return jsonify(result), 200
+        else:
+            # 不使用队列，直接处理（原有逻辑）
+            history = _load_short_memory(user_id) if user_id else []
+            logger.info(
+                "AI请求入参: %s",
+                json.dumps(
+                    {
+                        "question": question,
+                        "top_k_hint": top_k_hint,
+                        "display_name": display_name,
+                        "user_id": user_id,
+                        "queue_enabled": False,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+
+            messages: list[BaseMessage] = [
+                SystemMessage(content=_build_system_prompt(top_k_hint, display_name)),
+                *_build_memory_messages(history),
+                HumanMessage(content=question),
+            ]
+
+            agent = _build_agent()
+            result = agent.invoke({"messages": messages})
+            final_messages = result.get("messages", messages)
+            answer = _extract_answer(final_messages) or "当前服务不可用，请稍后再试。"
+            related_articles = _extract_related_articles(final_messages)
+
+            if user_id:
+                _save_short_memory(user_id, question, answer)
+
+            logger.info(
+                "AI响应摘要: %s",
+                json.dumps(
+                    {
+                        "answer_len": len(answer),
+                        "answer_preview": answer[:500],
+                        "related_articles_len": len(related_articles),
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+            return jsonify({"answer": answer, "related_articles": related_articles}), 200
+
     except Exception as e:
         logger.error(f"AI问答失败: {e}")
         return jsonify({"error": "AI问答失败"}), 500

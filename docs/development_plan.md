@@ -321,9 +321,58 @@ import { Head } from 'expo-router';
 
 ## 实施优先级
 
-| 阶段 | 问题 | 工作量 |
-|------|------|--------|
-| 第一阶段 | 问题3：后台任务400错误 | 15分钟 |
-| 第二阶段 | 问题4：Web端SEO优化 | 15分钟 |
-| 第三阶段 | 问题1+2：AI负载均衡+消息队列 | 4-5小时 |
-| 第四阶段 | 问题4：Web端深度性能优化（Vite迁移） | 暂缓 |
+| 阶段 | 问题 | 状态 | 工作量 |
+|------|------|------|--------|
+| 第一阶段 | 问题3：后台任务400错误 | ✅ 已完成 | 15分钟 |
+| 第二阶段 | 问题4：Web端SEO优化 | ✅ 已完成 | 15分钟 |
+| 第三阶段 | 问题1+2：AI负载均衡+消息队列 | ✅ 已完成 | 4-5小时 |
+| 第四阶段 | 问题4：Web端深度性能优化（Vite迁移） | 暂缓 | - |
+
+---
+
+## 实现记录（2025-12）
+
+### 问题3：后台任务400错误 ✅
+**修改文件**: `OAP-app/notifications/notification-task.ts`
+- 第159行：普通后台任务请求URL从 `/articles/` 改为 `/articles/today`
+- 第381行：延迟测试请求URL从 `/articles/` 改为 `/articles/today`
+
+### 问题4：Web端SEO优化 ✅
+**修改文件**: `OAP-app/app/_layout.web.tsx`
+- 添加 `Head` 组件导入
+- 添加 `<title>`、`<meta name="description">`、`<meta name="keywords">`、`<meta name="viewport">` 标签
+
+### 问题1：AI模型负载均衡 ✅
+**新建文件**:
+- `backend/services/ai_load_balancer.py` - 负载均衡器核心实现
+
+**修改文件**:
+- `backend/config.py` - 添加 `AI_MODELS`、`AI_ENABLE_LOAD_BALANCING` 配置解析
+- `backend/routes/ai.py` - 修改 `_build_agent` 支持动态LLM创建和429重试
+- `backend/env.example` - 添加负载均衡配置示例
+
+**配置格式**:
+```bash
+AI_MODELS=[{"api_key":"sk-key1","base_url":"https://api1.com/v1","models":["glm-4-flash","glm-4-plus"]}]
+AI_ENABLE_LOAD_BALANCING=true
+```
+
+### 问题2：AI请求消息队列 ✅
+**新建文件**:
+- `backend/services/ai_queue.py` - 队列处理器核心实现
+
+**修改文件**:
+- `backend/config.py` - 添加 `AI_QUEUE_ENABLED`、`AI_QUEUE_MAX_SIZE`、`AI_QUEUE_TIMEOUT` 配置
+- `backend/routes/ai.py` - 添加 `_initialize_queue()` 和 `_process_ai_request_internal()`，修改 `/ask` 路由
+- `backend/app.py` - 在路由注册后初始化队列
+- `backend/env.example` - 添加队列配置示例
+- `OAP-app/services/ai.ts` - 区分503/500错误，返回用户友好错误信息
+- `OAP-app/hooks/use-ai-chat.ts` - 显示具体错误信息
+
+**配置格式**:
+```bash
+AI_QUEUE_ENABLED=true
+AI_QUEUE_MAX_SIZE=20
+AI_QUEUE_TIMEOUT=30
+```
+

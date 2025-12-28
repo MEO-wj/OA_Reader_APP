@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -44,6 +45,13 @@ class Config:
         self.ai_vector_limit_count: Optional[int] = None
         self.ai_recency_half_life_days: float = 180.0
         self.ai_recency_weight: float = 0.2
+        # AI负载均衡配置
+        self.ai_models: list[dict] = []  # 多模型配置（JSON数组）
+        self.ai_enable_load_balancing: bool = True  # 启用负载均衡
+        # AI请求队列配置
+        self.ai_queue_enabled: bool = True  # 启用AI请求队列
+        self.ai_queue_max_size: int = 20  # 最大队列长度
+        self.ai_queue_timeout: int = 30  # 请求处理超时时间（秒）
 
         self.load()
 
@@ -103,6 +111,11 @@ class Config:
             "AI_VECTOR_LIMIT_COUNT",
             "AI_RECENCY_HALF_LIFE_DAYS",
             "AI_RECENCY_WEIGHT",
+            "AI_MODELS",
+            "AI_ENABLE_LOAD_BALANCING",
+            "AI_QUEUE_ENABLED",
+            "AI_QUEUE_MAX_SIZE",
+            "AI_QUEUE_TIMEOUT",
         ]
         for key in keys:
             value = os.getenv(key)
@@ -200,6 +213,25 @@ class Config:
         elif key == "AI_RECENCY_WEIGHT":
             try:
                 self.ai_recency_weight = float(value)
+            except ValueError:
+                pass
+        elif key == "AI_MODELS":
+            try:
+                self.ai_models = json.loads(value)
+            except json.JSONDecodeError:
+                pass
+        elif key == "AI_ENABLE_LOAD_BALANCING":
+            self.ai_enable_load_balancing = value.lower() in ("1", "true", "yes", "on")
+        elif key == "AI_QUEUE_ENABLED":
+            self.ai_queue_enabled = value.lower() in ("1", "true", "yes", "on")
+        elif key == "AI_QUEUE_MAX_SIZE":
+            try:
+                self.ai_queue_max_size = int(value)
+            except ValueError:
+                pass
+        elif key == "AI_QUEUE_TIMEOUT":
+            try:
+                self.ai_queue_timeout = int(value)
             except ValueError:
                 pass
 

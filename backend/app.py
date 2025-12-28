@@ -158,6 +158,12 @@ app.register_blueprint(auth.bp, url_prefix='/api/auth')
 app.register_blueprint(articles.bp, url_prefix='/api/articles')
 app.register_blueprint(ai.bp, url_prefix='/api/ai')
 
+# 初始化AI请求队列（在路由注册之后，传入Flask app实例）
+try:
+    ai._initialize_queue(app)
+except Exception as e:
+    logger.warning(f"AI队列初始化失败（可能已禁用）: {e}")
+
 if __name__ == '__main__':
     # 开发环境运行
     app.run(host='0.0.0.0', port=4420, debug=True)
