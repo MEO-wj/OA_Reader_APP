@@ -25,6 +25,7 @@ import { TopBar } from '@/components/top-bar';
 import { colors } from '@/constants/palette';
 import { useArticles } from '@/hooks/use-articles';
 import { useAuthToken } from '@/hooks/use-auth-token';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatDateLabel } from '@/utils/date';
 import { getAttachmentsCount, getPriority } from '@/utils/article';
 
@@ -33,6 +34,7 @@ import type { Article } from '@/types/article';
 export default function HomeScreen() {
   const router = useRouter();
   const [isScrolled, setIsScrolled] = useState(false);
+  const colorScheme = useColorScheme() ?? 'light';
 
   const fadeIn = useRef(new Animated.Value(0)).current;
 
@@ -105,7 +107,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       <AmbientBackground variant="home" />
       <TopBar
         variant="explore"

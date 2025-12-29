@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
@@ -6,8 +6,10 @@ import { BellRinging, CaretLeft } from 'phosphor-react-native';
 
 import { AmbientBackground } from '@/components/ambient-background';
 import { TopBar } from '@/components/top-bar';
-import { colors } from '@/constants/palette';
 import { shadows } from '@/constants/shadows';
+import type { Palette } from '@/constants/palette';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { usePalette } from '@/hooks/use-palette';
 import { isExpoGo } from '@/notifications/notification-env';
 import { registerNotificationTask, disableNotifications } from '@/notifications/notification-task';
 import { getNotificationsEnabled, setNotificationsEnabled } from '@/notifications/notification-storage';
@@ -16,6 +18,9 @@ import { formatDateLabel } from '@/utils/date';
 export default function NotificationSettingsScreen() {
   const router = useRouter();
   const [enabled, setEnabled] = useState(false);
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette, colorScheme), [colorScheme, palette]);
 
   const loadEnabled = useCallback(async () => {
     const stored = await getNotificationsEnabled();
@@ -76,7 +81,7 @@ export default function NotificationSettingsScreen() {
           <View style={styles.cardRow}>
             <View style={styles.cardRowLeft}>
               <View style={styles.cardIcon}>
-                <BellRinging size={16} color={colors.stone600} weight="fill" />
+                <BellRinging size={16} color={palette.stone600} weight="fill" />
               </View>
               <Text style={styles.cardRowText}>系统通知</Text>
             </View>
@@ -84,14 +89,14 @@ export default function NotificationSettingsScreen() {
               value={enabled}
               onValueChange={handleToggle}
               disabled={Platform.OS !== 'android'}
-              trackColor={{ false: colors.stone200, true: colors.gold100 }}
-              thumbColor={enabled ? colors.gold500 : colors.stone300}
+              trackColor={{ false: palette.stone200, true: palette.gold100 }}
+              thumbColor={enabled ? palette.gold500 : palette.stone300}
             />
           </View>
         </View>
 
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <CaretLeft size={16} color={colors.stone500} weight="bold" />
+          <CaretLeft size={16} color={palette.stone500} weight="bold" />
           <Text style={styles.backText}>返回</Text>
         </Pressable>
       </View>
@@ -99,63 +104,66 @@ export default function NotificationSettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  content: {
-    paddingTop: 16,
-    paddingHorizontal: 20,
-    gap: 16,
-  },
-  card: {
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    borderRadius: 32,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
-    padding: 8,
-    ...shadows.cardSoft,
-  },
-  cardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 24,
-  },
-  cardRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  cardIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.stone100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardRowText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.stone700,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.stone100,
-  },
-  backText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.stone500,
-  },
-});
+function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
+  const isDark = colorScheme === 'dark';
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.surface,
+    },
+    content: {
+      paddingTop: 16,
+      paddingHorizontal: 20,
+      gap: 16,
+    },
+    card: {
+      backgroundColor: isDark ? 'rgba(20, 19, 18, 0.7)' : 'rgba(255,255,255,0.8)',
+      borderRadius: 32,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.8)',
+      padding: 8,
+      ...shadows.cardSoft,
+    },
+    cardRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderRadius: 24,
+    },
+    cardRowLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    cardIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.stone100,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cardRowText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.stone700,
+    },
+    backButton: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 999,
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,255,255,0.08)' : colors.stone100,
+    },
+    backText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: colors.stone500,
+    },
+  });
+}

@@ -42,9 +42,18 @@ export default function SettingsScreen() {
   const palette = usePalette();
   const styles = useMemo(() => createStyles(palette), [palette]);
 
+  const appJsonVersion = useMemo(() => {
+    try {
+      return (require('../../../app.json') as any)?.expo?.version as string | undefined;
+    } catch {
+      return undefined;
+    }
+  }, []);
+
   const appVersion =
-    Constants.expoConfig?.version ??
     ((Constants as any).nativeAppVersion as string | undefined) ??
+    appJsonVersion ??
+    Constants.expoConfig?.version ??
     '1.3.0';
 
   const [a2hsVisible, setA2hsVisible] = useState(false);
@@ -332,7 +341,7 @@ export default function SettingsScreen() {
                 </>
               ) : (
                 <Text style={styles.a2hsText}>
-                  请在浏览器菜单中选择「安装应用」或「添加到主屏幕」，之后从桌面图标进入即可全屏使用。
+                  请在手机浏览器菜单中选择「安装应用」或「添加到主屏幕」，之后从桌面图标进入即可全屏使用。
                 </Text>
               )}
 

@@ -12,7 +12,9 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Buildings, Sparkle, X } from 'phosphor-react-native';
 
-import { colors } from '@/constants/palette';
+import type { Palette } from '@/constants/palette';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { usePalette } from '@/hooks/use-palette';
 import type { Article, ArticleDetail } from '@/types/article';
 
 type ArticleDetailSheetProps = {
@@ -43,6 +45,10 @@ export function ArticleDetailSheet({
   detail,
   onClose,
 }: ArticleDetailSheetProps) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const palette = usePalette();
+  const styles = useMemo(() => createStyles(palette, colorScheme), [colorScheme, palette]);
+
   const sheetAnim = useRef(new Animated.Value(screenHeight)).current;
   const [mounted, setMounted] = useState(visible);
 
@@ -75,6 +81,13 @@ export function ArticleDetailSheet({
     return null;
   }
 
+  const aiCardColors =
+    colorScheme === 'dark'
+      ? [palette.stone200, palette.stone300]
+      : [palette.stone900, palette.stone800];
+
+  const aiTextColor = colorScheme === 'dark' ? palette.stone850 : '#E7E2D8';
+
   return (
     <Modal transparent visible={mounted} animationType="none">
       <View style={styles.sheetOverlay}>
@@ -87,7 +100,7 @@ export function ArticleDetailSheet({
         >
           <View style={styles.sheetHandle} />
           <Pressable style={styles.sheetClose} onPress={onClose}>
-            <X size={16} color={colors.stone500} weight="bold" />
+            <X size={16} color={palette.stone500} weight="bold" />
           </Pressable>
           <ScrollView
             contentContainerStyle={styles.sheetContent}
@@ -95,7 +108,7 @@ export function ArticleDetailSheet({
           >
             <View style={styles.detailHeader}>
               <View style={styles.detailIcon}>
-                <Buildings size={20} color={colors.imperial600} weight="fill" />
+                <Buildings size={20} color={palette.imperial600} weight="fill" />
               </View>
               <View>
                 <Text style={styles.detailUnit}>{article?.unit || '公告'}</Text>
@@ -106,17 +119,17 @@ export function ArticleDetailSheet({
             <Text style={styles.detailTitle}>{article?.title || ''}</Text>
 
             <LinearGradient
-              colors={[colors.stone900, colors.stone800]}
+              colors={aiCardColors}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.aiCard}
             >
               <View style={styles.aiLine} />
               <View style={styles.aiBadgeRow}>
-                <Sparkle size={14} color={colors.gold300} weight="fill" />
+                <Sparkle size={14} color={palette.gold300} weight="fill" />
                 <Text style={styles.aiBadge}>AI SUMMARY</Text>
               </View>
-              <Text style={styles.aiText}>{displaySummary}</Text>
+              <Text style={[styles.aiText, { color: aiTextColor }]}>{displaySummary}</Text>
             </LinearGradient>
 
             <View style={styles.detailContentWrap}>
@@ -130,126 +143,128 @@ export function ArticleDetailSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  sheetOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  sheetBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(28, 25, 23, 0.4)',
-  },
-  sheetContainer: {
-    height: screenHeight * 0.9,
-    backgroundColor: '#FFFEFC',
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
-    overflow: 'hidden',
-  },
-  sheetHandle: {
-    position: 'absolute',
-    top: 12,
-    alignSelf: 'center',
-    width: 44,
-    height: 5,
-    borderRadius: 99,
-    backgroundColor: colors.stone200,
-    zIndex: 2,
-  },
-  sheetClose: {
-    position: 'absolute',
-    top: 18,
-    right: 18,
-    zIndex: 2,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.stone100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetContent: {
-    paddingTop: 48,
-    paddingHorizontal: 26,
-    paddingBottom: 40,
-  },
-  detailHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  detailIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.imperial50,
-    borderWidth: 1,
-    borderColor: colors.imperial100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  detailUnit: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.stone400,
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
-  detailDate: {
-    marginTop: 2,
-    fontSize: 10,
-    color: colors.stone300,
-  },
-  detailTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.stone900,
-    lineHeight: 30,
-    marginBottom: 18,
-  },
-  aiCard: {
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
-  },
-  aiLine: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: colors.gold400,
-  },
-  aiBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
-  },
-  aiBadge: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 2,
-    color: colors.gold300,
-  },
-  aiText: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: '#E7E2D8',
-  },
-  detailContentWrap: {
-    marginTop: 4,
-  },
-  detailLead: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.stone900,
-    marginBottom: 8,
-  },
-  detailContent: {
-    fontSize: 13,
-    lineHeight: 22,
-    color: colors.stone600,
-  },
-});
+function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
+  const isDark = colorScheme === 'dark';
+  return StyleSheet.create({
+    sheetOverlay: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    sheetBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.65)' : 'rgba(28, 25, 23, 0.4)',
+    },
+    sheetContainer: {
+      height: screenHeight * 0.9,
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 40,
+      borderTopRightRadius: 40,
+      overflow: 'hidden',
+    },
+    sheetHandle: {
+      position: 'absolute',
+      top: 12,
+      alignSelf: 'center',
+      width: 44,
+      height: 5,
+      borderRadius: 99,
+      backgroundColor: isDark ? colors.stone300 : colors.stone200,
+      zIndex: 2,
+    },
+    sheetClose: {
+      position: 'absolute',
+      top: 18,
+      right: 18,
+      zIndex: 2,
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: colors.stone100,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sheetContent: {
+      paddingTop: 48,
+      paddingHorizontal: 26,
+      paddingBottom: 40,
+    },
+    detailHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    detailIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.imperial50,
+      borderWidth: 1,
+      borderColor: colors.imperial100,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    detailUnit: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: colors.stone400,
+      textTransform: 'uppercase',
+      letterSpacing: 1.2,
+    },
+    detailDate: {
+      marginTop: 2,
+      fontSize: 10,
+      color: colors.stone300,
+    },
+    detailTitle: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: colors.stone900,
+      lineHeight: 30,
+      marginBottom: 18,
+    },
+    aiCard: {
+      borderRadius: 24,
+      padding: 20,
+      marginBottom: 18,
+    },
+    aiLine: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 4,
+      backgroundColor: colors.gold400,
+    },
+    aiBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 10,
+    },
+    aiBadge: {
+      fontSize: 10,
+      fontWeight: '700',
+      letterSpacing: 2,
+      color: colors.gold300,
+    },
+    aiText: {
+      fontSize: 13,
+      lineHeight: 20,
+    },
+    detailContentWrap: {
+      marginTop: 4,
+    },
+    detailLead: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.stone900,
+      marginBottom: 8,
+    },
+    detailContent: {
+      fontSize: 13,
+      lineHeight: 22,
+      color: colors.stone600,
+    },
+  });
+}

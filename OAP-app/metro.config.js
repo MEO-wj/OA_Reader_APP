@@ -5,6 +5,10 @@ const config = getDefaultConfig(__dirname);
 
 const maxWorkersFromEnv = Number(process.env.METRO_MAX_WORKERS);
 config.maxWorkers =
-  Number.isFinite(maxWorkersFromEnv) && maxWorkersFromEnv > 0 ? maxWorkersFromEnv : 2;
+  Number.isFinite(maxWorkersFromEnv) && maxWorkersFromEnv > 0
+    ? maxWorkersFromEnv
+    : process.platform === 'win32'
+      ? 1
+      : 2;
 
 module.exports = config;
