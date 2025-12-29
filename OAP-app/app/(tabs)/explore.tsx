@@ -10,9 +10,10 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import Markdown from 'react-native-markdown-display';
 import { WebView } from 'react-native-webview';
-import { ChatCircleDots, Crown } from 'phosphor-react-native';
+import { Crown } from 'phosphor-react-native';
 
 import { AmbientBackground } from '@/components/ambient-background';
 import { ArticleDetailSheet } from '@/components/article-detail-sheet';
@@ -200,8 +201,13 @@ export default function AiAssistantScreen() {
         title="智能助理"
         dateText={formatDateLabel()}
         actions={(
-          <Pressable style={styles.actionButton} onPress={handleNewChat}>
-            <ChatCircleDots size={18} color={palette.stone400} weight="fill" />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="清空当前对话"
+            style={styles.actionButton}
+            onPress={handleNewChat}
+          >
+            <MaterialIcons name="delete-sweep" size={18} color={palette.stone400} />
           </Pressable>
         )}
       />
