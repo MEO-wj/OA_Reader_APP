@@ -210,7 +210,7 @@ export default function SettingsScreen() {
               <View style={styles.cardIcon}>
                 <SunDim size={16} color={palette.stone600} weight="fill" />
               </View>
-              <Text style={styles.cardRowText}>跟随系统</Text>
+              <Text style={styles.cardRowTextToggle}>跟随系统</Text>
             </View>
             <Switch
               value={followSystem}
@@ -227,7 +227,7 @@ export default function SettingsScreen() {
               <View style={styles.cardIcon}>
                 <MoonStars size={16} color={palette.stone600} weight="fill" />
               </View>
-              <Text style={styles.cardRowText}>夜间模式</Text>
+              <Text style={styles.cardRowTextToggle}>夜间模式</Text>
             </View>
             <Switch
               disabled={followSystem}
@@ -468,6 +468,11 @@ function createStyles(colors: Palette) {
     cardRowText: {
       fontSize: 14,
       fontWeight: '600',
+      color: colors.stone700,
+    },
+    cardRowTextToggle: {
+      fontSize: 14,
+      fontWeight: Platform.OS === 'android' ? '500' : '600',
       color: colors.stone700,
     },
     versionText: {
