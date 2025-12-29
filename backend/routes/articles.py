@@ -136,19 +136,21 @@ def get_today_articles():
         # 准备响应数据
         next_before_id = articles[-1]['id'] if articles else None
 
-        # 检查是否存在更早的文章（published_on < today）
+        # 检查是否有历史文章（无论今天是否有文章）
         has_more = False
-        if articles:
-            check_sql = """
-                SELECT EXISTS(
-                    SELECT 1 FROM articles
-                    WHERE published_on < %s
-                ) as has_more
-            """
-            with db_session() as conn, conn.cursor() as cur:
-                cur.execute(check_sql, (today,))
+        with db_session() as conn, conn.cursor() as cur:
+            if articles:
+                # 今天有文章：检查是否存在 ID 更小的文章
+                min_id = articles[-1]['id']
+                cur.execute("SELECT EXISTS(SELECT 1 FROM articles WHERE id < %s) as has_more", (min_id,))
                 result = cur.fetchone()
                 has_more = result['has_more'] if result else False
+            else:
+                # 今天没有文章：查询数据库中最大ID作为分页起点
+                cur.execute("SELECT MAX(id) as max_id FROM articles")
+                result = cur.fetchone()
+                next_before_id = result['max_id'] if result and result['max_id'] else None
+                has_more = next_before_id is not None  # 有最大ID说明有历史文章
 
         response_data = {
             "articles": articles,
