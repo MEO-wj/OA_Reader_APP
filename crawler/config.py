@@ -41,16 +41,16 @@ class Config:
 
     def __init__(self, env_file: str | Path | None = None) -> None:
         """使用默认值初始化配置并从源加载。
-        
+
         参数：
             env_file: 环境文件的可选自定义路径。
-                     如果未提供，则使用 project_root/env
+                     如果未提供，则使用 crawler/.env
         """
         # 确定项目根目录（此文件上两级）
         self.project_root = Path(__file__).resolve().parents[1]
-        
+
         # 设置默认环境文件路径（仅供爬虫使用）
-        default_env = Path(__file__).resolve().parent / "env"
+        default_env = Path(__file__).resolve().parent / ".env"
         self.env_file = self._resolve_path(env_file) if env_file else default_env
 
         # 本地开发的默认配置值
@@ -74,6 +74,16 @@ class Config:
         self.redis_port: int = 6379
         self.redis_db: int = 0
         self.redis_password: Optional[str] = None
+
+        # 回填配置
+        self.backfill_start_date: Optional[str] = None  # 回填起始日期
+        self.backfill_end_date: Optional[str] = None  # 回填结束日期
+        self.backfill_batch_size: int = 2  # 每次爬几天
+        self.backfill_delay_min: float = 2.0  # 详情页最小延迟(秒)
+        self.backfill_delay_max: float = 5.0  # 详情页最大延迟(秒)
+        self.backfill_day_delay_min: int = 60  # 天间最小延迟(秒)
+        self.backfill_day_delay_max: int = 180  # 天间最大延迟(秒)
+        self.backfill_enable_random_delay: bool = True  # 是否启用随机延迟
 
         # 从所有源加载配置
         self.load()
@@ -202,6 +212,15 @@ class Config:
             "REDIS_PORT",       # Redis端口
             "REDIS_DB",         # Redis数据库
             "REDIS_PASSWORD",   # Redis密码
+            # 回填配置
+            "BACKFILL_START_DATE",  # 回填起始日期
+            "BACKFILL_END_DATE",    # 回填结束日期
+            "BACKFILL_BATCH_SIZE",  # 每次爬几天
+            "BACKFILL_DELAY_MIN",   # 详情页最小延迟
+            "BACKFILL_DELAY_MAX",   # 详情页最大延迟
+            "BACKFILL_DAY_DELAY_MIN",  # 天间最小延迟
+            "BACKFILL_DAY_DELAY_MAX",  # 天间最大延迟
+            "BACKFILL_ENABLE_RANDOM_DELAY",  # 是否启用随机延迟
         ]
         
         for key in keys:
@@ -283,6 +302,37 @@ class Config:
                 pass
         elif key == "REDIS_PASSWORD":
             self.redis_password = value or None
+        elif key == "BACKFILL_START_DATE":
+            self.backfill_start_date = value or None
+        elif key == "BACKFILL_END_DATE":
+            self.backfill_end_date = value or None
+        elif key == "BACKFILL_BATCH_SIZE":
+            try:
+                self.backfill_batch_size = int(value)
+            except ValueError:
+                pass
+        elif key == "BACKFILL_DELAY_MIN":
+            try:
+                self.backfill_delay_min = float(value)
+            except ValueError:
+                pass
+        elif key == "BACKFILL_DELAY_MAX":
+            try:
+                self.backfill_delay_max = float(value)
+            except ValueError:
+                pass
+        elif key == "BACKFILL_DAY_DELAY_MIN":
+            try:
+                self.backfill_day_delay_min = int(value)
+            except ValueError:
+                pass
+        elif key == "BACKFILL_DAY_DELAY_MAX":
+            try:
+                self.backfill_day_delay_max = int(value)
+            except ValueError:
+                pass
+        elif key == "BACKFILL_ENABLE_RANDOM_DELAY":
+            self.backfill_enable_random_delay = value.lower() in ("1", "true", "yes", "on")
 
 
 __all__ = ["Config"]  # 此模块的公共API

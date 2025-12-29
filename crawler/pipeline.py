@@ -21,7 +21,7 @@ from typing import List
 
 from crawler.config import Config
 from crawler.embeddings import Embedder
-from crawler.fetcher import fetch_detail, fetch_list
+from crawler.fetcher import fetch_detail, fetch_list, fetch_list_paged
 from crawler.models import ArticleRecord, ArticleMeta
 from crawler.storage import ArticleRepository
 from crawler.summarizer import Summarizer
@@ -48,22 +48,25 @@ def _normalize_date(raw: str | None) -> str:
 
 class Crawler:
     """OA 系统增量爬虫类。
-    
+
     实现了按天、按时的增量爬取逻辑，包含完整的爬取流程控制。
     支持指定日期的历史数据补抓。
     """
 
-    def __init__(self, target_date: str | None = None) -> None:
+    def __init__(self, target_date: str | None = None, enable_delay: bool = False) -> None:
         """初始化爬虫实例。
-        
+
         参数：
             target_date: 目标日期，格式为 YYYY-MM-DD；若为 None 则使用当前日期
+            enable_delay: 是否启用文章间延迟（用于回填场景）
         """
         self.config = Config()
         self.target_date = _normalize_date(target_date)
+        self.enable_delay = enable_delay
         self.summarizer = Summarizer(self.config)  # 摘要生成器
         self.embedder = Embedder(self.config)  # 向量生成器
         self.repo = ArticleRepository()  # 数据仓库
+        self._article_count = 0  # 本次爬取的文章数
 
     def _within_hours(self) -> bool:
         """检查是否在允许的运行时段内。
@@ -78,6 +81,28 @@ class Crawler:
         if self.target_date != now.strftime("%Y-%m-%d"):
             return True  # 历史日期始终运行
         return 7 <= now.hour < 24  # 当天仅在 07-24 点运行
+
+    def _random_delay(self) -> None:
+        """文章间随机延迟。
+
+        根据配置中的延迟参数进行随机延迟，用于回填场景避免触发反爬。
+        """
+        if not self.config.backfill_enable_random_delay:
+            return
+
+        import random
+        delay_min = self.config.backfill_delay_min
+        delay_max = self.config.backfill_delay_max
+        delay = random.uniform(delay_min, delay_max)
+        time.sleep(delay)
+
+    def get_article_count(self) -> int:
+        """获取本次运行爬取的文章数。
+
+        返回：
+            int: 爬取的文章数量
+        """
+        return self._article_count
 
     def run(self) -> None:
         """执行完整的爬取流程。
@@ -128,7 +153,10 @@ class Crawler:
         try:
             # 获取当天文章列表
             print("正在获取文章列表...")
-            candidates = fetch_list(self.target_date)
+            if self.enable_delay:
+                candidates = fetch_list_paged(self.target_date)
+            else:
+                candidates = fetch_list(self.target_date)
             if not candidates:
                 print("未获取到当天列表，结束")
                 # 如果数据库连接已建立，关闭连接
@@ -165,6 +193,9 @@ class Crawler:
                         "附件": detail.attachments,
                     }
                 )
+                # 文章间随机延迟（用于回填场景）
+                if self.enable_delay and i < len(new_items):
+                    self._random_delay()
             print(f"✅ 获取到 {len(detailed)} 篇文章详情")
 
             if not detailed:
@@ -196,8 +227,10 @@ class Crawler:
                 ]
                 try:
                     inserted = self.repo.insert_articles(conn, records)
+                    self._article_count = inserted  # 记录实际入库文章数
                     print(f"✅ 入库完成，新增 {inserted} 条")
-                    if inserted > 0:
+                    # 仅在非回填模式下刷新缓存（回填数据量大，不需要实时刷新）
+                    if inserted > 0 and not self.enable_delay:
                         cached_articles = self.repo.fetch_for_cache(conn, self.target_date)
 
                         # 刷新 today 缓存（新逻辑）

@@ -23,8 +23,10 @@ from crawler.models import ArticleMeta, DetailResult
 
 # OA 系统基础 URL
 BASE_URL = "http://oa.stu.edu.cn"
-# 文章列表页面 URL
+# 文章列表页面 URL（增量抓取）
 LIST_URL = f"{BASE_URL}/login/Login.jsp?logintype=1"
+# 回填分页列表接口
+PAGED_LIST_URL = f"{BASE_URL}/csweb/list.jsp"
 # 请求文章详情时的默认参数
 DETAIL_PAYLOAD = {"pageindex": "1", "pagesize": "50", "fwdw": "-1"}
 
@@ -102,6 +104,80 @@ def fetch_list(target_date: str) -> list[ArticleMeta]:
                 published_on=date_str,  # 发布日期
             )
         )
+    return results
+
+
+def fetch_list_paged(target_date: str, page_size: int = 10) -> list[ArticleMeta]:
+    """回填场景使用的分页列表抓取。
+
+    通过分页接口遍历列表，直到命中目标日期或越过日期范围。
+
+    参数：
+        target_date: 目标日期，格式为 YYYY-MM-DD
+        page_size: 每页条数
+
+    返回：
+        list[ArticleMeta]: 文章元数据列表
+    """
+    results: list[ArticleMeta] = []
+    page_index = 1
+
+    while True:
+        payload = {
+            "pageindex": str(page_index),
+            "pagesize": str(page_size),
+            "totalcount": "",
+            "totalindex": "",
+            "keyword": "",
+            "fwdw": "-1",
+        }
+        page = _post(PAGED_LIST_URL, payload)
+        if not page:
+            break
+
+        soup = BeautifulSoup(page, "html.parser")
+        tbody = soup.find("tbody")
+        if not tbody:
+            break
+
+        rows = tbody.find_all("tr", class_="datalight")
+        if not rows:
+            break
+
+        page_dates: list[str] = []
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) < 3:
+                continue
+
+            date_str = cells[2].get_text(strip=True)
+            if date_str:
+                page_dates.append(date_str)
+            if date_str != target_date:
+                continue
+
+            link_tag = cells[0].find("a")
+            if not link_tag:
+                continue
+            href = link_tag.get("href", "").strip()
+            if not href:
+                continue
+
+            results.append(
+                ArticleMeta(
+                    title=link_tag.get("title", "").strip() or link_tag.get_text(strip=True),
+                    unit=cells[1].get_text(strip=True),
+                    link=urljoin(BASE_URL, href),
+                    published_on=date_str,
+                )
+            )
+
+        # 页面日期都早于目标日期，说明已越过目标区间
+        if page_dates and min(page_dates) < target_date:
+            break
+
+        page_index += 1
+
     return results
 
 
