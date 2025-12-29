@@ -54,6 +54,14 @@ function normalizeParagraphs(text: string) {
   return normalized;
 }
 
+function stripAttachmentLines(text: string) {
+  if (!text) {
+    return '';
+  }
+  const cleaned = text.replace(/^[\s\t]*附件[:：].*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+  return cleaned;
+}
+
 type AttachmentItem = {
   name: string;
   url: string;
@@ -288,7 +296,8 @@ export function ArticleDetailSheet({
   const displaySummary = detail?.summary || article?.summary || '暂无摘要';
   const displayContent = useMemo(() => {
     const normalized = normalizeParagraphs(detail?.content || '');
-    return normalized || '暂无正文内容，稍后再试。';
+    const cleaned = stripAttachmentLines(normalized);
+    return cleaned || '暂无正文内容，稍后再试。';
   }, [detail?.content]);
   const handleOpenAttachment = useCallback(async (url: string) => {
     if (!url) {
@@ -305,7 +314,7 @@ export function ArticleDetailSheet({
     return null;
   }
 
-  const aiCardColors =
+  const aiCardColors: readonly [string, string] =
     colorScheme === 'dark'
       ? [palette.stone200, palette.stone300]
       : [palette.stone900, palette.stone800];
