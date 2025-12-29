@@ -70,9 +70,9 @@ export default function SettingsScreen() {
   const guideImageHeight = 320;
   const a2hsGuideImages = useMemo(
     () => [
-      require('../../../assets/images/pic1.png'),
-      require('../../../assets/images/pic2.png'),
-      require('../../../assets/images/pic3.png'),
+      require('../../../assets/images/pic1.webp'),
+      require('../../../assets/images/pic2.webp'),
+      require('../../../assets/images/pic3.webp'),
     ],
     []
   );

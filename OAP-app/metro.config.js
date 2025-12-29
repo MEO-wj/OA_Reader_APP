@@ -3,6 +3,11 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
+// 允许业务图片使用 webp 资源
+if (!config.resolver.assetExts.includes('webp')) {
+  config.resolver.assetExts.push('webp');
+}
+
 const maxWorkersFromEnv = Number(process.env.METRO_MAX_WORKERS);
 config.maxWorkers =
   Number.isFinite(maxWorkersFromEnv) && maxWorkersFromEnv > 0
