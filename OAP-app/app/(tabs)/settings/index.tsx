@@ -45,7 +45,7 @@ export default function SettingsScreen() {
   const appVersion =
     Constants.expoConfig?.version ??
     ((Constants as any).nativeAppVersion as string | undefined) ??
-    '1.0.1';
+    '1.3.0';
 
   const [a2hsVisible, setA2hsVisible] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
