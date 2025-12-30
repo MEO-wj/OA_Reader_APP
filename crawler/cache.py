@@ -69,7 +69,7 @@ def refresh_today_cache(
 
     # 计算 next_before_id 和 has_more
     next_before_id = None
-    has_more = False
+    has_more = True
 
     if serialized:
         # 最后一个元素的 id 作为 next_before_id
