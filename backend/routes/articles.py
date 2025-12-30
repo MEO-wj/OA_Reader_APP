@@ -435,6 +435,20 @@ def get_articles():
         return jsonify({"error": "获取文章列表失败"}), 500
 
 
+@bp.route('/count', methods=['GET'])
+def get_articles_count():
+    """获取文章总数（不分页）。"""
+    try:
+        with db_session() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) as total FROM articles")
+            result = cur.fetchone()
+        total = int(result['total']) if result and result.get('total') is not None else 0
+        return jsonify({"total": total}), 200
+    except Exception as e:
+        logger.error(f"获取文章总数失败: {e}")
+        return jsonify({"error": "获取文章总数失败"}), 500
+
+
 @bp.route('/<int:article_id>', methods=['GET'])
 def get_article_detail(article_id: int):
     """获取文章详情。

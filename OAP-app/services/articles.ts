@@ -45,6 +45,57 @@ export async function fetchArticlesPage(
   return (await resp.json()) as PaginatedArticlesResponse;
 }
 
+export async function fetchArticlesPageById(
+  beforeId: number,
+  token?: string | null,
+  limit: number = 20
+): Promise<PaginatedArticlesResponse> {
+  const url = `${getApiBaseUrl()}/articles/?v=1&before_id=${beforeId}&limit=${limit}`;
+  const resp = await fetch(url, {
+    headers: buildAuthHeaders(token),
+  });
+  if (!resp.ok) {
+    throw new Error('paginated articles fetch failed');
+  }
+  return (await resp.json()) as PaginatedArticlesResponse;
+}
+
+export async function fetchArticlesCount(token?: string | null) {
+  const url = `${getApiBaseUrl()}/articles/count`;
+  try {
+    const resp = await fetch(url, {
+      headers: buildAuthHeaders(token),
+    });
+    if (!resp.ok) {
+      throw new Error('articles count fetch failed');
+    }
+    const data = await resp.json();
+    if (typeof data?.total === 'number') {
+      return data.total;
+    }
+    if (typeof data?.total === 'string') {
+      const parsed = Number.parseInt(data.total, 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  } catch {
+    return await fetchArticlesCountFallback(token);
+  }
+}
+
+async function fetchArticlesCountFallback(token?: string | null) {
+  try {
+    const response = await fetchArticlesPageById(Number.MAX_SAFE_INTEGER, token, 1);
+    const first = response.articles?.[0];
+    if (first?.id && typeof first.id === 'number') {
+      return first.id;
+    }
+  } catch {
+    // 忽略回退失败，交由调用方处理
+  }
+  return null;
+}
+
 export async function fetchArticleDetail(id: number, token?: string | null) {
   const resp = await fetch(`${getApiBaseUrl()}/articles/${id}`, {
     headers: buildAuthHeaders(token),
