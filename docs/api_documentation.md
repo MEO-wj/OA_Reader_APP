@@ -34,7 +34,7 @@
 
 **缓存键设计**：
 - `articles:today` - 当天所有文章，TTL 24h
-- `articles:page:{before_id}:{limit}` - 分页文章，TTL 3天
+- `articles:page:{before_date}:{before_id}:{limit}` - 分页文章，TTL 3天
 - `articles:detail:{id}` - 文章详情，TTL 3天
 
 **ETag/304 支持**：
@@ -188,6 +188,7 @@ GET /articles/today
     }
     // ... 当天所有文章
   ],
+  "next_before_date": "2023-06-15",
   "next_before_id": 81,
   "has_more": true
 }
@@ -195,7 +196,8 @@ GET /articles/today
 
 **说明**：
 - 返回当天发布的所有文章（无分页）
-- `next_before_id`：当天最小 ID，用于加载更早日期的文章
+- `next_before_date`：下一页游标日期；若当天无文章，则为最近发布日期
+- `next_before_id`：该游标日期下的最大 ID，用于继续加载更早文章
 - `has_more`：是否存在更早日期的文章
 - 支持 ETag/304 缓存
 - 缓存键：`articles:today`，TTL 24h
@@ -203,11 +205,13 @@ GET /articles/today
 #### 2.2 分页加载更旧的文章
 
 ```
-GET /articles?before_id=81&limit=20
+GET /articles?v=2&before_date=2023-06-15&before_id=81&limit=20
 ```
 
 **查询参数**:
-- `before_id`（必填）：加载 ID 小于此值的文章
+- `v`（可选）：接口版本，`1`=仅 before_id（兼容模式），`2`=before_date + before_id（新逻辑）
+- `before_date`（v=2 必填）：游标日期，格式 `YYYY-MM-DD`
+- `before_id`（必填）：游标 ID，用于同一天内继续向后翻页
 - `limit`（可选）：返回数量，默认 20，最大 100
 
 **响应**:
@@ -227,20 +231,23 @@ GET /articles?before_id=81&limit=20
     }
     // ... ID 范围 [61, 80] 的文章
   ],
+  "next_before_date": "2023-06-15",
   "next_before_id": 61,
   "has_more": true
 }
 ```
 
 **说明**：
-- 返回 ID < before_id 的文章，按 ID 降序排列
+- 返回满足 `(published_on, id) < (before_date, before_id)` 的文章
+- 排序规则：`published_on DESC, id DESC`
 - 支持预缓存策略：返回当前页时异步缓存下一页
 - 支持 ETag/304 缓存
-- 缓存键：`articles:page:{before_id}:{limit}`，TTL 3天
+- 缓存键：`articles:page:{before_date}:{before_id}:{limit}`，TTL 3天
 - `has_more` 为 false 时表示已到最早文章
+ - 兼容模式：`v=1` 仅支持 `before_id`，按 `id DESC` 排序（计划弃用）
 
 **错误响应**:
-- 400：缺少 `before_id` 参数
+- 400：`v=2` 缺少 `before_date` 或 `before_id` 参数
 
 #### 2.3 获取文章详情
 
@@ -334,14 +341,14 @@ POST /ai/embed
 | 缓存键格式 | 数据范围 | TTL | 说明 |
 |-----------|----------|-----|------|
 | `articles:today` | 当天所有文章列表 | 86400s（24小时） | 首页专用，crawler 覆盖刷新 |
-| `articles:page:{before_id}:{limit}` | 以 {before_id} 为边界的一页文章 | 259200s（3天） | 分页加载用，支持预缓存 |
+| `articles:page:{before_date}:{before_id}:{limit}` | 以 {before_date, before_id} 为边界的一页文章 | 259200s（3天） | 分页加载用，支持预缓存 |
 | `articles:detail:{id}` | 单篇文章详情（含 content） | 259200s（3天） | 文章详情页用 |
 
 ### 预缓存策略
 
-当用户请求分页数据时（如 `before_id=81, limit=20`），后端会：
-1. 返回 ID 范围 [61, 80] 的文章
-2. 异步预缓存下一页（ID 范围 [41, 60]）
+当用户请求分页数据时（如 `before_date=2023-06-15, before_id=81, limit=20`），后端会：
+1. 返回排序后的一页文章
+2. 异步预缓存下一页（使用返回的 `next_before_date` + `next_before_id`）
 3. 用户继续滑动时直接命中缓存
 
 ### Crawler 刷新逻辑

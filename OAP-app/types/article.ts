@@ -28,6 +28,7 @@ export type RelatedArticle = {
 /** 新增分页响应类型 */
 export type PaginatedArticlesResponse = {
   articles: Article[];
+  next_before_date: string | null;
   next_before_id: number | null;
   has_more: boolean;
 };

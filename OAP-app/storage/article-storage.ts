@@ -26,6 +26,7 @@ type CachedDetail = {
 
 /** 分页状态存储 */
 export type PaginationState = {
+  next_before_date: string | null;
   next_before_id: number | null;
   has_more: boolean;
   updated_at: number;

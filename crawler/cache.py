@@ -69,14 +69,17 @@ def refresh_today_cache(
 
     # 计算 next_before_id 和 has_more
     next_before_id = None
+    next_before_date = None
     has_more = True
 
     if serialized:
         # 最后一个元素的 id 作为 next_before_id
         next_before_id = serialized[-1].get("id")
+        next_before_date = target_date
 
     payload = {
         "articles": [{k: v for k, v in item.items() if k != "content"} for item in serialized],
+        "next_before_date": next_before_date,
         "next_before_id": next_before_id,
         "has_more": has_more,  # crawler 无法判断是否有更早文章，由 backend 查询时确定
     }

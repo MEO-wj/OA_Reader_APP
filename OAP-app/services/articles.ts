@@ -28,12 +28,14 @@ export async function fetchTodayArticles(
 }
 
 /** 加载更旧的文章（分页） */
-export async function fetchArticlesBeforeId(
+export async function fetchArticlesPage(
+  beforeDate: string,
   beforeId: number,
   token?: string | null,
   limit: number = 20
 ): Promise<PaginatedArticlesResponse> {
-  const url = `${getApiBaseUrl()}/articles/?before_id=${beforeId}&limit=${limit}`;
+  const encodedDate = encodeURIComponent(beforeDate);
+  const url = `${getApiBaseUrl()}/articles/?v=2&before_date=${encodedDate}&before_id=${beforeId}&limit=${limit}`;
   const resp = await fetch(url, {
     headers: buildAuthHeaders(token),
   });
