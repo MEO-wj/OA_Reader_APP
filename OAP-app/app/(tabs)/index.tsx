@@ -62,6 +62,7 @@ export default function HomeScreen() {
   const token = useAuthToken();
   const [filterVisible, setFilterVisible] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
+  const [recentUnits, setRecentUnits] = useState<string[]>([]);
   const [unitExpanded, setUnitExpanded] = useState(false);
   const defaultDateRef = useRef(getTodayDateKey());
   const [selectedDate, setSelectedDate] = useState<string | null>(() => defaultDateRef.current);
@@ -114,6 +115,7 @@ export default function HomeScreen() {
   );
 
   const TOTAL_COUNT_CACHE_KEY = 'articles:total_count';
+  const RECENT_UNITS_CACHE_KEY = 'articles:recent_units';
 
   const sortedUnits = useMemo(() => sortUnitsByPinyin(STATIC_UNITS), []);
   const unitsWithoutSelected = useMemo(
@@ -184,6 +186,40 @@ export default function HomeScreen() {
 
   useEffect(() => {
     let mounted = true;
+    getItem(RECENT_UNITS_CACHE_KEY)
+      .then((value) => {
+        if (!mounted || !value) {
+          return;
+        }
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed
+              .filter((item) => typeof item === 'string')
+              .map((item) => item.trim())
+              .filter((item) => item.length > 0);
+            const unique = Array.from(new Set(cleaned));
+            setRecentUnits(unique.slice(0, MAX_RECENT_UNITS));
+          }
+        } catch {
+          // 忽略解析失败
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (recentUnits.length === 0) {
+      return;
+    }
+    void setItem(RECENT_UNITS_CACHE_KEY, JSON.stringify(recentUnits));
+  }, [recentUnits]);
+
+  useEffect(() => {
+    let mounted = true;
     getItem(TOTAL_COUNT_CACHE_KEY)
       .then((value) => {
         if (!mounted || value === null) {
@@ -231,6 +267,17 @@ export default function HomeScreen() {
   useEffect(() => {
     void loadTotalCount(true);
   }, [loadTotalCount, token]);
+
+  const handleUnitSelect = useCallback((unit: string | null) => {
+    setSelectedUnit(unit);
+    if (!unit) {
+      return;
+    }
+    setRecentUnits((prev) => {
+      const next = [unit, ...prev.filter((item) => item !== unit)];
+      return next.slice(0, MAX_RECENT_UNITS);
+    });
+  }, []);
 
   useEffect(() => {
     if (filterVisible && totalCountRef.current === null) {
@@ -822,11 +869,40 @@ export default function HomeScreen() {
                     </Pressable>
                   )}
                 </View>
+                {recentUnits.length > 0 && (
+                  <View style={filterStyles.recentWrap}>
+                    <Text style={filterStyles.recentLabel}>{'最近选用'}</Text>
+                    <View style={filterStyles.chipGroup}>
+                      {recentUnits.map((unit) => (
+                        <Pressable
+                          key={`recent-${unit}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`最近选择${unit}`}
+                          onPress={() => handleUnitSelect(unit)}
+                          style={({ pressed }) => [
+                            filterStyles.chip,
+                            selectedUnit === unit && filterStyles.chipSelected,
+                            pressed && filterStyles.chipPressed,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              filterStyles.chipText,
+                              selectedUnit === unit && filterStyles.chipTextSelected,
+                            ]}
+                          >
+                            {unit}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                )}
                 <View style={filterStyles.chipGroup}>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="全部发布单位"
-                    onPress={() => setSelectedUnit(null)}
+                    onPress={() => handleUnitSelect(null)}
                     style={({ pressed }) => [
                       filterStyles.chip,
                       selectedUnit === null && filterStyles.chipSelected,
@@ -846,7 +922,7 @@ export default function HomeScreen() {
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`已选择${selectedUnit}`}
-                      onPress={() => setSelectedUnit(selectedUnit)}
+                      onPress={() => handleUnitSelect(selectedUnit)}
                       style={({ pressed }) => [
                         filterStyles.chip,
                         filterStyles.chipSelected,
@@ -863,7 +939,7 @@ export default function HomeScreen() {
                       key={unit}
                       accessibilityRole="button"
                       accessibilityLabel={`选择${unit}`}
-                      onPress={() => setSelectedUnit(unit)}
+                      onPress={() => handleUnitSelect(unit)}
                       style={({ pressed }) => [
                         filterStyles.chip,
                         selectedUnit === unit && filterStyles.chipSelected,
@@ -1212,7 +1288,10 @@ function buildDateRangeKeys(start: string, end: string) {
   return keys;
 }
 
-function getMissingDateSpans(rangeKeys: string[], completed: Set<string>) {
+function getMissingDateSpans(
+  rangeKeys: string[],
+  completed: Set<string>
+): Array<{ start: string; end: string }> {
   const spans: Array<{ start: string; end: string }> = [];
   let spanStart: string | null = null;
   let spanEnd: string | null = null;
@@ -1265,7 +1344,7 @@ function buildArticlesFromDateCache(
   return sortArticlesByDateDesc(list);
 }
 
-function getOldestDateKey(spanBuckets: Map<string, Map<number, Article>>) {
+function getOldestDateKey(spanBuckets: Map<string, Map<number, Article>>): string | null {
   let oldest: string | null = null;
   spanBuckets.forEach((_bucket, dateKey) => {
     if (!oldest || dateKey < oldest) {
@@ -1305,6 +1384,7 @@ function countArticlesFromDateCache(
 }
 
 const UNIT_COLLAPSE_COUNT = 18;
+const MAX_RECENT_UNITS = 6;
 
 function sortUnitsByPinyin(list: string[]) {
   try {
@@ -1557,6 +1637,15 @@ function createFilterStyles(palette: typeof colors, colorScheme: 'light' | 'dark
       fontSize: 10,
       fontWeight: '700',
       color: palette.stone600,
+    },
+    recentWrap: {
+      marginBottom: 10,
+      gap: 8,
+    },
+    recentLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: palette.stone500,
     },
     dateToolbar: {
       flexDirection: 'row',
