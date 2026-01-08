@@ -12,6 +12,8 @@ import {
   StyleSheet,
   Text,
   View,
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -49,9 +51,10 @@ export default function HomeScreen() {
   const [isScrolled, setIsScrolled] = useState(false);
   const colorScheme = useColorScheme() ?? 'light';
   const palette = usePalette();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const filterStyles = useMemo(
-    () => createFilterStyles(palette, colorScheme),
-    [colorScheme, palette]
+    () => createFilterStyles(palette, colorScheme, viewportWidth, viewportHeight),
+    [colorScheme, palette, viewportHeight, viewportWidth]
   );
 
   const fadeIn = useRef(new Animated.Value(0)).current;
@@ -1508,7 +1511,26 @@ const STATIC_UNITS = Array.from(
   ])
 );
 
-function createFilterStyles(palette: typeof colors, colorScheme: 'light' | 'dark') {
+function createFilterStyles(
+  palette: typeof colors,
+  colorScheme: 'light' | 'dark',
+  viewportWidth: number,
+  viewportHeight: number
+) {
+  const isWeb = Platform.OS === 'web';
+  const isNarrow = viewportWidth < 480;
+  const isWide = viewportWidth >= 1024;
+  const calendarFontScale = isWeb && isNarrow ? 0.9 : 1;
+  const calendarAspectRatio = isWeb ? (isWide ? 1 : isNarrow ? 1.15 : 1.05) : 1;
+  const overlayPaddingX = isWeb ? 24 : 20;
+  const overlayPaddingTop = isWeb ? 64 : 80;
+  const cardWidth = isWeb
+    ? Math.min(760, Math.max(320, viewportWidth - overlayPaddingX * 2))
+    : undefined;
+  const calendarWidth = isWeb
+    ? Math.min(520, Math.max(280, viewportWidth - overlayPaddingX * 2 - 32))
+    : undefined;
+  const cardMaxHeight = isWeb ? Math.max(360, Math.min(760, viewportHeight * 0.78)) : '82%';
   const actionBg = colorScheme === 'dark' ? 'rgba(20, 19, 18, 0.9)' : palette.white;
   const actionBorder = colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : palette.gold100;
 
@@ -1555,8 +1577,9 @@ function createFilterStyles(palette: typeof colors, colorScheme: 'light' | 'dark
     },
     filterOverlay: {
       flex: 1,
-      paddingHorizontal: 20,
-      paddingTop: 80,
+      paddingHorizontal: overlayPaddingX,
+      paddingTop: overlayPaddingTop,
+      alignItems: isWeb ? 'center' : 'stretch',
     },
     filterBackdrop: {
       ...StyleSheet.absoluteFillObject,
@@ -1564,11 +1587,12 @@ function createFilterStyles(palette: typeof colors, colorScheme: 'light' | 'dark
     },
     filterCard: {
       backgroundColor: palette.white,
-      borderRadius: 24,
-      padding: 18,
+      borderRadius: isWeb ? 20 : 24,
+      padding: isWeb ? 16 : 18,
       borderWidth: 1,
       borderColor: palette.stone100,
-      maxHeight: '82%',
+      maxHeight: cardMaxHeight,
+      width: cardWidth,
     },
     filterHeader: {
       flexDirection: 'row',
@@ -1693,11 +1717,13 @@ function createFilterStyles(palette: typeof colors, colorScheme: 'light' | 'dark
       fontWeight: '700',
     },
     calendarWrap: {
-      padding: 12,
+      padding: isWeb ? 10 : 12,
       borderRadius: 16,
       borderWidth: 1,
       borderColor: palette.stone100,
       backgroundColor: palette.white,
+      width: calendarWidth,
+      alignSelf: isWeb ? 'center' : 'auto',
     },
     calendarHeader: {
       flexDirection: 'row',
@@ -1720,7 +1746,7 @@ function createFilterStyles(palette: typeof colors, colorScheme: 'light' | 'dark
       transform: [{ scale: 0.96 }],
     },
     calendarMonthText: {
-      fontSize: 13,
+      fontSize: isWeb ? 12 * calendarFontScale : 13,
       fontWeight: '700',
       color: palette.stone800,
     },
@@ -1732,7 +1758,7 @@ function createFilterStyles(palette: typeof colors, colorScheme: 'light' | 'dark
     calendarWeekText: {
       width: '14.28%',
       textAlign: 'center',
-      fontSize: 10,
+      fontSize: isWeb ? 9 * calendarFontScale : 10,
       color: palette.stone400,
       fontWeight: '600',
     },
@@ -1742,11 +1768,11 @@ function createFilterStyles(palette: typeof colors, colorScheme: 'light' | 'dark
     },
     calendarCell: {
       width: '14.28%',
-      aspectRatio: 1,
+      aspectRatio: calendarAspectRatio,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: 10,
-      marginBottom: 4,
+      borderRadius: isWeb ? 8 : 10,
+      marginBottom: isWeb ? 3 : 4,
     },
     calendarCellInRange: {
       backgroundColor: palette.gold50,
@@ -1761,7 +1787,7 @@ function createFilterStyles(palette: typeof colors, colorScheme: 'light' | 'dark
       transform: [{ scale: 0.96 }],
     },
     calendarCellText: {
-      fontSize: 12,
+      fontSize: isWeb ? 11 * calendarFontScale : 12,
       color: palette.stone700,
       fontWeight: '600',
     },
