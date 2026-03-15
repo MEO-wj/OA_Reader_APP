@@ -56,7 +56,7 @@ class AIRequestQueue:
         self.app = app
         self.queue = queue.Queue(maxsize=max_size)
         self.timeout = timeout
-        self.worker_thread: threading.Thread | None = None
+        self.worker_thread: Optional[threading.Thread] = None
         self.running = False
         self.request_handler: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None
 

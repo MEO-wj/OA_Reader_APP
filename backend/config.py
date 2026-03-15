@@ -33,25 +33,8 @@ class Config:
         self.cors_allow_origins: list[str] = ["*"]
         self.rate_limit_per_day: Optional[int] = None
         self.rate_limit_per_hour: Optional[int] = None
-        # AI/Embedding（供后端问答接口使用）
-        self.embed_base_url: Optional[str] = None
-        self.embed_model: Optional[str] = None
-        self.embed_api_key: Optional[str] = None
-        self.embed_dim: int = 1024
-        self.ai_base_url: Optional[str] = None
-        self.ai_model: Optional[str] = None
-        self.api_key: Optional[str] = None
-        self.ai_vector_limit_days: Optional[int] = None
-        self.ai_vector_limit_count: Optional[int] = None
-        self.ai_recency_half_life_days: float = 180.0
-        self.ai_recency_weight: float = 0.2
-        # AI负载均衡配置
-        self.ai_models: list[dict] = []  # 多模型配置（JSON数组）
-        self.ai_enable_load_balancing: bool = True  # 启用负载均衡
-        # AI请求队列配置
-        self.ai_queue_enabled: bool = True  # 启用AI请求队列
-        self.ai_queue_max_size: int = 20  # 最大队列长度
-        self.ai_queue_timeout: int = 30  # 请求处理超时时间（秒）
+        # AI End 服务地址
+        self.ai_end_url: Optional[str] = "http://localhost:4421"
 
         self.load()
 
@@ -100,22 +83,7 @@ class Config:
             "CORS_ALLOW_ORIGINS",
             "RATE_LIMIT_PER_DAY",
             "RATE_LIMIT_PER_HOUR",
-            "EMBED_BASE_URL",
-            "EMBED_MODEL",
-            "EMBED_API_KEY",
-            "EMBED_DIM",
-            "AI_BASE_URL",
-            "AI_MODEL",
-            "API_KEY",
-            "AI_VECTOR_LIMIT_DAYS",
-            "AI_VECTOR_LIMIT_COUNT",
-            "AI_RECENCY_HALF_LIFE_DAYS",
-            "AI_RECENCY_WEIGHT",
-            "AI_MODELS",
-            "AI_ENABLE_LOAD_BALANCING",
-            "AI_QUEUE_ENABLED",
-            "AI_QUEUE_MAX_SIZE",
-            "AI_QUEUE_TIMEOUT",
+            "AI_END_URL",
         ]
         for key in keys:
             value = os.getenv(key)
@@ -178,62 +146,8 @@ class Config:
                 self.rate_limit_per_hour = limit if limit > 0 else None
             except ValueError:
                 pass
-        elif key == "EMBED_BASE_URL":
-            self.embed_base_url = value or None
-        elif key == "EMBED_MODEL":
-            self.embed_model = value or None
-        elif key == "EMBED_API_KEY":
-            self.embed_api_key = value or None
-        elif key == "EMBED_DIM":
-            try:
-                self.embed_dim = int(value)
-            except ValueError:
-                pass
-        elif key == "AI_BASE_URL":
-            self.ai_base_url = value or None
-        elif key == "AI_MODEL":
-            self.ai_model = value or None
-        elif key == "API_KEY":
-            self.api_key = value or None
-        elif key == "AI_VECTOR_LIMIT_DAYS":
-            try:
-                self.ai_vector_limit_days = int(value)
-            except ValueError:
-                pass
-        elif key == "AI_VECTOR_LIMIT_COUNT":
-            try:
-                self.ai_vector_limit_count = int(value)
-            except ValueError:
-                pass
-        elif key == "AI_RECENCY_HALF_LIFE_DAYS":
-            try:
-                self.ai_recency_half_life_days = float(value)
-            except ValueError:
-                pass
-        elif key == "AI_RECENCY_WEIGHT":
-            try:
-                self.ai_recency_weight = float(value)
-            except ValueError:
-                pass
-        elif key == "AI_MODELS":
-            try:
-                self.ai_models = json.loads(value)
-            except json.JSONDecodeError:
-                pass
-        elif key == "AI_ENABLE_LOAD_BALANCING":
-            self.ai_enable_load_balancing = value.lower() in ("1", "true", "yes", "on")
-        elif key == "AI_QUEUE_ENABLED":
-            self.ai_queue_enabled = value.lower() in ("1", "true", "yes", "on")
-        elif key == "AI_QUEUE_MAX_SIZE":
-            try:
-                self.ai_queue_max_size = int(value)
-            except ValueError:
-                pass
-        elif key == "AI_QUEUE_TIMEOUT":
-            try:
-                self.ai_queue_timeout = int(value)
-            except ValueError:
-                pass
+        elif key == "AI_END_URL":
+            self.ai_end_url = value or None
 
     @staticmethod
     def _parse_ttl(raw: str, fallback: timedelta) -> timedelta:

@@ -131,7 +131,7 @@ class AILoadBalancer:
             return None
 
     def mark_model_429(
-        self, model: ModelConfig | None, cooldown_seconds: int = 60
+        self, model: Optional[ModelConfig], cooldown_seconds: int = 60
     ) -> None:
         """标记指定模型为429状态。
 

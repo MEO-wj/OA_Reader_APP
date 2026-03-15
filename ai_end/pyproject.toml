@@ -1,0 +1,23 @@
+[project]
+name = "ai-end"
+version = "0.1.0"
+description = "AI 服务 - 提供 AI 问答和向量嵌入功能"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.1.2",
+    "flask-cors>=6.0.2",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langgraph>=0.4.0",
+    "psycopg[binary]>=3.3.2",
+    "redis>=7.1.0",
+    "requests>=2.32.5",
+    "gunicorn>=21.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-mock>=3.12.0",
+]
