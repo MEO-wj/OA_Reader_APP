@@ -1,78 +1,115 @@
-# Repository Guidelines
-##  TOP RULES
-!!!回复请使用中文!!!
-## 工作原则
-- **明确需求**: 用户表达模糊时，主AI必须用多轮提问澄清，可质疑思路并提出更优解。
-- **语义理解**:
-- 外部检索：优先使用仓库搜索MCP；
-- 引用资料必须写明来源与用途，保持可追溯。
-- **诉诸现有方案**: 必须首先使用工具检索官方 / 社区方案，优先复用现有方案。
-## 架构优先级
-标准化、复用官方 SDK / 社区成熟方案 > 常规搜索 > 本地资料。
-必须首先使用工具检索官方/社区方案，禁止无参考自研（除非已有方案无法满足需求且获特批）。
-引入外部能力必须确认兼容并写明复用指引。
-旧有自研实现需规划替换或下线。
-## 代码质量标准
-### 注释要求
-- **简体中文，UTF-8（无 BOM）**
-- 解释意图、约束、行为。
-- 禁止写“修改说明式注释”。
-- 对复杂依赖必须写明设计理由。
-### 设计原则
-- 遵循 SOLID、DRY、关注点分离。
-- 依赖倒置、接口隔离优先。
-- 复用原则：严格优先使用项目现有的组件、工具类和架构模式。
-  - 注意：由于你可能无法读取全量代码，如果你推测可能存在相关组件但不确定位置，请先询问我，而不是直接制造重复轮子。
-### 实现标准
-- 禁止占位符或未完成实现（除非用户要求）。
-- 必须删除过时代码。
-- 破坏性改动无需兼容，但需给出迁移或回滚方案。
-- 拒绝一切 CI、远程流水线或人工外包验证，所有验证均由本地 AI 自动执行。
-## 开发哲学
-- 渐进式、小步交付、每次可编译可验证。
-- 简单优先、拒绝炫技。
-- 风格、命名、格式必须与现有保持一致。
-- 有额外解释代表过于复杂，应继续简化。
-### 简单性定义
-- 每个函数或类建议仅承担单一责任
-- 禁止过早抽象；重复出现三次以上再考虑通用化
-- 禁止使用"聪明"技巧，以可读性为先
-- 如果需要额外解释，说明实现仍然过于复杂，应继续简化
-## Project Structure
-TODO：放一个项目结构树
+# CLAUDE.md
+
+## Top Rules
+!!!回复使用中文!!!
+使用superpower skill指导开发
+使用TDD开发模式(REG)
+优先复用项目中已有的组件
+除非我明确要你帮我 git commit 其他情况一律不许commit
+如果存在多个方案优先输出未来技术债最少的方案
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+OAP (智能校园OA助手) - 一款为学校OA系统打造的智能移动助手，提供AI摘要、智能搜索和推送通知功能。项目采用微服务架构，分为三个核心模块：
+
+- **OAP-app**: React Native 多端客户端 (Expo 54)
+- **backend**: Flask API 服务
+- **crawler**: 数据爬取与处理管道
+
 ## Common Commands
-TODO：放一些可能需要用到的命令
-    
-## Project Structure & Module Organization
-This repository is a multi-module project:
-- `OAP-app/`: Expo React Native client. Screens live in `OAP-app/app/`, shared UI in `OAP-app/components/`, hooks in `OAP-app/hooks/`, assets in `OAP-app/assets/`.
-- `backend/`: Flask API service. Entry point is `backend/app.py`, routes in `backend/routes/`, data access in `backend/repository/`, domain logic in `backend/services/`.
-- `crawler/`: Data ingestion and summarization pipeline. Main runner is `crawler/main.py`.
-- `docs/`: API docs and project notes (e.g., `docs/api_documentation.md`).
 
-## Build, Test, and Development Commands
-- `cd OAP-app && npm install && npm run start`: start Expo dev server (client).
-- `cd OAP-app && npm run android|ios|web`: platform-specific Expo launches.
-- `cd OAP-app && npm run lint`: run ESLint for the app.
-- `python backend/app.py`: run Flask API locally (configure `backend/env.example`).
-- `python crawler/main.py`: run crawler locally (configure `crawler/env.example`).
-Note: `crawler/run.sh` is environment-specific; prefer direct `python` or `uv run`.
+### Frontend (OAP-app)
+```bash
+cd OAP-app
+npm install          # 安装依赖
+npm start            # 启动开发服务器
+npm run android      # Android 开发
+npm run ios          # iOS 开发
+npm run web          # Web 开发
+npm run lint         # ESLint 检查
+```
 
-## Coding Style & Naming Conventions
-- TypeScript/React: follow existing file-based routing in `OAP-app/app/` and component naming in `PascalCase` (e.g., `ArticleCard`).
-- Python: follow 4-space indentation and module organization in `backend/` and `crawler/`.
-- Linting: Expo app uses `eslint-config-expo` via `npm run lint`. No formatter is enforced for Python; keep style consistent with nearby files.
+### Backend
+```bash
+cd backend
+uv sync              # 安装依赖（使用 uv）
+python app.py        # 启动服务 (http://localhost:4420)
+uv run pytest        # 运行测试
+uv run ruff check .  # 代码检查
+```
 
-## Testing Guidelines
-- No dedicated test suites are present in the repo.
-- If adding backend tests, use `pytest` and place files under `backend/tests/` (example command in docs: `uv run pytest`).
-- For app tests, add a clear runner command and document it in this file.
+### Crawler
+```bash
+cd crawler
+uv sync
+python main.py                    # 运行当天爬取
+python main.py --date 2024-01-01  # 指定日期爬取
+```
 
-## Commit & Pull Request Guidelines
-- Recent commit messages are short and action-focused, often in Chinese (e.g., `fix：修复对话框被遮挡`) and sometimes include a scope like `deploy(android): ...`. Follow this style for consistency.
-- PRs should include: a clear description, linked issues if applicable, and screenshots for UI changes (especially under `OAP-app/`).
-- Note any new env vars or config changes in the PR description.
+## Architecture
 
-## Security & Configuration Tips
-- Use the provided `env.example` files in `backend/` and `crawler/`. For the app, set `EXPO_PUBLIC_API_BASE_URL` via `.env` or EAS build envs.
-- Do not commit secrets or local credentials.
+### Frontend Structure (OAP-app)
+```
+OAP-app/
+├── app/                    # Expo Router 页面
+│   ├── (tabs)/            # 底部标签页路由
+│   ├── login.tsx          # 登录页
+│   └── _layout.tsx       # 根布局
+├── components/            # 可复用UI组件
+├── hooks/                 # 自定义Hooks (useAiChat, useArticles等)
+├── services/              # API服务层
+└── storage/               # 本地数据持久化 (AsyncStorage)
+```
+
+### Backend Structure
+```
+backend/
+├── routes/                # API路由 (auth, articles, ai)
+├── services/              # 业务逻辑
+├── repository/            # 数据访问层
+├── models/                # 数据模型
+├── middleware/            # 中间件
+├── app.py                 # 应用入口
+├── config.py              # 配置管理
+└── db.py                  # 数据库连接
+```
+
+### Crawler Structure
+```
+crawler/
+├── fetcher.py             # OA数据获取
+├── summarizer.py          # AI摘要生成
+├── embeddings.py          # 向量嵌入生成
+├── pipeline.py            # 完整爬取流程
+├── storage.py             # 数据存储
+└── main.py                # 入口文件
+```
+
+## Key Technical Details
+
+### Data Flow
+1. **文章查询**: 请求 → Redis缓存 → PostgreSQL → 返回 (三层缓存: today/page/detail)
+2. **AI搜索**: 问题 → 向量嵌入 → pgvector相似度搜索 → LLM生成回答 → 返回
+3. **爬取流程**: 爬取列表 → 过滤新增 → 获取详情 → AI摘要 → 向量嵌入 → 存储
+
+### Caching Strategy (Backend)
+- `articles:today` - 24小时TTL
+- `articles:page:{before_id}:{limit}` - 3天TTL
+- `articles:detail:{id}` - 3天TTL
+- AI对话历史: Redis存储，24小时TTL
+
+### Environment Configuration
+- 后端: `backend/.env` (参考 `backend/env.example`)
+- 爬虫: `crawler/.env` (参考 `crawler/env.example`)
+- 客户端: `OAP-app/.env` (参考 `OAP-app/.env.example`)
+
+核心配置项：数据库连接(PostgreSQL+pgvector)、Redis缓存、JWT密钥、AI服务配置(OpenAI兼容API)
+
+## Development Notes
+
+- 后端使用 `uv` 作为包管理工具
+- 前端使用 Expo Router 进行文件路由
+- 数据库需支持 pgvector 扩展
+- 爬虫运行时段：当天数据仅在07:00-24:00运行

@@ -1,315 +1,115 @@
 # CLAUDE.md
 
-## TOP RULES
-## 工作原则
-- **明确需求**: 用户表达模糊时，主AI必须用多轮提问澄清，可质疑思路并提出更优解。
-- **语义理解**:
-- 外部检索：优先使用仓库搜索MCP；
-- 引用资料必须写明来源与用途，保持可追溯。
-- **诉诸现有方案**: 必须首先使用工具检索官方 / 社区方案，优先复用现有方案。
-## 架构优先级
-标准化、复用官方 SDK / 社区成熟方案 > 常规搜索 > 本地资料。
-必须首先使用工具检索官方/社区方案，禁止无参考自研（除非已有方案无法满足需求且获特批）。
-引入外部能力必须确认兼容并写明复用指引。
-旧有自研实现需规划替换或下线。
-## 代码质量标准
-### 注释要求
-- **简体中文，UTF-8（无 BOM）**
-- 解释意图、约束、行为。
-- 禁止写“修改说明式注释”。
-- 对复杂依赖必须写明设计理由。
-### 设计原则
-- 遵循 SOLID、DRY、关注点分离。
-- 依赖倒置、接口隔离优先。
-- 复用原则：严格优先使用项目现有的组件、工具类和架构模式。
-  - 注意：由于你可能无法读取全量代码，如果你推测可能存在相关组件但不确定位置，请先询问我，而不是直接制造重复轮子。
-### 实现标准
-- 禁止占位符或未完成实现（除非用户要求）。
-- 必须删除过时代码。
-- 破坏性改动无需兼容，但需给出迁移或回滚方案。
-- 拒绝一切 CI、远程流水线或人工外包验证，所有验证均由本地 AI 自动执行。
-## 开发哲学
-- 渐进式、小步交付、每次可编译可验证。
-- 简单优先、拒绝炫技。
-- 风格、命名、格式必须与现有保持一致。
-- 有额外解释代表过于复杂，应继续简化。
-### 简单性定义
-- 每个函数或类建议仅承担单一责任
-- 禁止过早抽象；重复出现三次以上再考虑通用化
-- 禁止使用"聪明"技巧，以可读性为先
-- 如果需要额外解释，说明实现仍然过于复杂，应继续简化
-## Project Structure
-TODO：放一个项目结构树
-## Common Commands
-TODO：放一些可能需要用到的命令
+## Top Rules
+!!!回复使用中文!!!
+使用superpower skill指导开发
+使用TDD开发模式(REG)
+优先复用项目中已有的组件
+除非我明确要你帮我 git commit 其他情况一律不许commit
+如果存在多个方案优先输出未来技术债最少的方案
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-OAP (Office Automation Platform) is a three-tier system that crawls, processes, and serves university OA notifications through a mobile app. It consists of:
+OAP (智能校园OA助手) - 一款为学校OA系统打造的智能移动助手，提供AI摘要、智能搜索和推送通知功能。项目采用微服务架构，分为三个核心模块：
 
-1. **Crawler** (`crawler/`): Python-based incremental crawler that fetches articles, generates AI summaries, and creates embeddings
-2. **Backend** (`backend/`): Flask REST API with JWT auth, Redis caching, and AI Q&A capabilities
-3. **Mobile App** (`OAP-app/`): Expo React Native app with background polling and local notifications
+- **OAP-app**: React Native 多端客户端 (Expo 54)
+- **backend**: Flask API 服务
+- **crawler**: 数据爬取与处理管道
 
-**Key Architecture Principles:**
-- Incremental crawling: Crawls daily articles every hour (07:00-24:00), stores only new items
-- Vector-based Q&A: Uses pgvector for semantic search over configurable time windows
-- Campus SSO integration: Backend validates credentials against campus authentication system
-- Redis caching: Implements ETag/Last-Modified for 304 responses on article lists
-- Client-side state: Read/unread status maintained locally in app, not on backend
+## Common Commands
 
-## Database Architecture
-
-**PostgreSQL with pgvector extension**
-
-Tables:
-- `articles`: Main article storage with `link` as unique constraint for deduplication
-  - Fields: `id, title, unit, link (unique), published_on, content, summary, attachments (jsonb), created_at, updated_at`
-- `embeddings`: Vector embeddings for semantic search, indexed by `published_on` for time-based filtering
-  - Fields: `id, article_id, embedding (vector), published_on, created_at`
-- `users`: Authentication with bcrypt password hashing
-  - Fields: `id, username, display_name, password_hash, password_algo, password_cost, roles, created_at, updated_at`
-
-**Critical Database Details:**
-- Embeddings are only generated for articles on the target date (not historical)
-- Vector search is constrained by `AI_VECTOR_LIMIT_DAYS` or `AI_VECTOR_LIMIT_COUNT` (backend config)
-- Article deduplication uses `link` field - crawler queries existing links before fetching details
-
-## Development Commands
-
-### Crawler
+### Frontend (OAP-app)
 ```bash
-# From project root or crawler/
-cd crawler/
-
-# Run for current date
-python -m crawler.main
-
-# Run for specific date (historical backfill)
-python -m crawler.main --date 2025-01-15
-
-# Install dependencies
-pip install -e .  # or uv pip install -e .
+cd OAP-app
+npm install          # 安装依赖
+npm start            # 启动开发服务器
+npm run android      # Android 开发
+npm run ios          # iOS 开发
+npm run web          # Web 开发
+npm run lint         # ESLint 检查
 ```
-
-**Crawler Configuration:**
-- Config file: `crawler/env` (see `crawler/env.example`)
-- Required: `DATABASE_URL`, `API_KEY`, `EMBED_BASE_URL`, `EMBED_API_KEY`, `REDIS_HOST`
-- The crawler runs hourly in production (07:00-24:00 window)
 
 ### Backend
 ```bash
-# From project root or backend/
-cd backend/
-
-# Development server
-python -m backend.app
-# Or directly:
-python app.py
-
-# Docker Compose
-docker-compose up
-
-# Install dependencies
-pip install -e .  # or uv pip install -e .
+cd backend
+uv sync              # 安装依赖（使用 uv）
+python app.py        # 启动服务 (http://localhost:4420)
+uv run pytest        # 运行测试
+uv run ruff check .  # 代码检查
 ```
 
-**Backend Configuration:**
-- Config file: `backend/.env` (see `backend/env.example`)
-- Required: `DATABASE_URL`, `AUTH_JWT_SECRET`, `AUTH_REFRESH_HASH_KEY`
-- Optional but recommended: Redis for caching, AI/embedding configs for Q&A endpoint
-
-**Backend runs on port 5000** with the following blueprint structure:
-- `/api/auth` - Authentication endpoints (login, refresh)
-- `/api/articles` - Article listing and details
-- `/api/ai` - AI question answering endpoint
-
-### Mobile App
+### Crawler
 ```bash
-# From OAP-app/
-cd OAP-app/
-
-# Start development server
-npm start
-# Or with specific platform:
-npm run android
-npm run ios
-npm run web
-
-# Linting
-npm run lint
-
-# Install dependencies
-npm install
-# Or with bun:
-bun install
+cd crawler
+uv sync
+python main.py                    # 运行当天爬取
+python main.py --date 2024-01-01  # 指定日期爬取
 ```
 
-**Mobile App Stack:**
-- Expo Router for navigation
-- expo-secure-store for JWT storage
-- Background fetch not yet implemented (planned)
-- Uses Markdown rendering for article content
+## Architecture
 
-## Configuration Management
+### Frontend Structure (OAP-app)
+```
+OAP-app/
+├── app/                    # Expo Router 页面
+│   ├── (tabs)/            # 底部标签页路由
+│   ├── login.tsx          # 登录页
+│   └── _layout.tsx       # 根布局
+├── components/            # 可复用UI组件
+├── hooks/                 # 自定义Hooks (useAiChat, useArticles等)
+├── services/              # API服务层
+└── storage/               # 本地数据持久化 (AsyncStorage)
+```
 
-**Both crawler and backend use a unified Config class pattern:**
-1. Default values set in `__init__`
-2. Load from env file (`.env` or `env`)
-3. Override with environment variables (highest priority)
+### Backend Structure
+```
+backend/
+├── routes/                # API路由 (auth, articles, ai)
+├── services/              # 业务逻辑
+├── repository/            # 数据访问层
+├── models/                # 数据模型
+├── middleware/            # 中间件
+├── app.py                 # 应用入口
+├── config.py              # 配置管理
+└── db.py                  # 数据库连接
+```
 
-**Configuration Priority:** Environment variables > env file > defaults
+### Crawler Structure
+```
+crawler/
+├── fetcher.py             # OA数据获取
+├── summarizer.py          # AI摘要生成
+├── embeddings.py          # 向量嵌入生成
+├── pipeline.py            # 完整爬取流程
+├── storage.py             # 数据存储
+└── main.py                # 入口文件
+```
 
-**Key Config Differences:**
-- Crawler config (`crawler/config.py`): Includes SMTP settings for email notifications (legacy)
-- Backend config (`backend/config.py`): Includes AUTH, CORS, and campus SSO settings
+## Key Technical Details
 
-**Environment Files:**
-- Backend: `backend/.env` (never commit)
-- Crawler: `crawler/env` (never commit)
-- Templates: `*/env.example` (commit these)
+### Data Flow
+1. **文章查询**: 请求 → Redis缓存 → PostgreSQL → 返回 (三层缓存: today/page/detail)
+2. **AI搜索**: 问题 → 向量嵌入 → pgvector相似度搜索 → LLM生成回答 → 返回
+3. **爬取流程**: 爬取列表 → 过滤新增 → 获取详情 → AI摘要 → 向量嵌入 → 存储
 
-## API Endpoints
+### Caching Strategy (Backend)
+- `articles:today` - 24小时TTL
+- `articles:page:{before_id}:{limit}` - 3天TTL
+- `articles:detail:{id}` - 3天TTL
+- AI对话历史: Redis存储，24小时TTL
 
-### Authentication (`/api/auth`)
-- `POST /api/auth/token` - Login with username/password (validates against campus SSO if enabled)
-  - Returns: `access_token`, `refresh_token`, `user` object
-- `POST /api/auth/token/refresh` - Refresh access token using refresh token
+### Environment Configuration
+- 后端: `backend/.env` (参考 `backend/env.example`)
+- 爬虫: `crawler/.env` (参考 `crawler/env.example`)
+- 客户端: `OAP-app/.env` (参考 `OAP-app/.env.example`)
 
-### Articles (`/api/articles`)
-- Query params support ETag/Last-Modified for 304 responses
-- See development plan for full endpoint specification (needs alignment with `?date=YYYY-MM-DD&since=ts` pattern)
+核心配置项：数据库连接(PostgreSQL+pgvector)、Redis缓存、JWT密钥、AI服务配置(OpenAI兼容API)
 
-### AI (`/api/ai`)
-- `POST /api/ai/ask` - Question answering over article embeddings
-  - Vector search window controlled by backend config: `AI_VECTOR_LIMIT_DAYS` or `AI_VECTOR_LIMIT_COUNT`
-  - Backend-only mode (no "proxy mode" - all AI calls use backend-configured keys)
+## Development Notes
 
-## Critical Implementation Details
-
-### Crawler Pipeline Flow
-1. Parse target date from CLI args (defaults to today)
-2. Fetch article list page from OA system
-3. Filter articles by `published_on == target_date`
-4. Query database for existing article links on target date (deduplication)
-5. For new articles only:
-   - Fetch article detail page
-   - Parse content, attachments (metadata only - not downloaded)
-   - Generate AI summary (retry up to 3 times on failure)
-   - Store article in database
-   - Generate embedding and store in embeddings table
-6. Update Redis cache to invalidate stale article lists
-
-**Attachment Handling:**
-- Attachments are parsed into JSON metadata: `[{"name": "file.pdf", "url": "http://..."}]`
-- Files are NOT downloaded - only metadata is stored in `articles.attachments` jsonb field
-- Attachment info is appended to article content for embedding generation
-
-### Authentication Flow
-1. User submits username/password to `/api/auth/token`
-2. Backend validates against campus SSO (if `CAMPUS_AUTH_ENABLED=true`)
-3. If SSO succeeds and user doesn't exist, auto-create user (if `AUTH_ALLOW_AUTO_USER_CREATION=true`)
-4. Generate JWT access token (default TTL: 1 hour) and refresh token (default TTL: 7 days)
-5. Client stores tokens in secure storage
-6. Client includes `Authorization: Bearer <access_token>` header on protected endpoints
-7. Backend decorator `@login_required` validates token and injects `request.auth_claims`
-
-**JWT Token Structure:**
-- Access token contains: `user_id`, `username`, `roles`, `exp`, `iat`
-- Refresh token is hashed and stored server-side for validation
-
-### Redis Caching Strategy
-- Cache key pattern: Article lists cached by date range
-- TTL: 5 days for article list cache
-- ETag generation: Hash of article list JSON
-- Last-Modified: `MAX(created_at)` from articles in the response
-- 304 handling: Compare `If-None-Match` (ETag) or `If-Modified-Since` headers
-
-### AI Summary Generation
-- First pass: Attempt summary for all new articles
-- Retry logic: Collect failures, retry up to 3 times
-- Fallback: If still failing after 3 retries, insert placeholder summary and log error
-- Never block article insertion on summary failure
-
-### Mobile App Architecture
-- **Navigation**: Expo Router with file-based routing in `app/(tabs)/`
-- **State**: Read/unread maintained locally (not synced to backend)
-- **Polling**: Planned background fetch to check `/articles?since=<last_check_timestamp>`
-- **Notifications**: Local notifications on new articles (not push notifications)
-- **Cache**: Article content and metadata cached locally for offline access
-
-## Common Pitfalls
-
-1. **Database connection errors**: Ensure `DATABASE_URL` is set and PostgreSQL is running with pgvector extension installed
-2. **Redis connection failures**: Backend continues to work without Redis, but caching and 304 responses are disabled
-3. **Crawler scheduling**: Production crawler should run every hour but ONLY between 07:00-24:00 (check cron/scheduler config)
-4. **Campus SSO timeout**: Set `CAMPUS_AUTH_TIMEOUT` appropriately (default 10s) to avoid blocking login on network issues
-5. **JWT secret rotation**: Changing `AUTH_JWT_SECRET` invalidates all existing tokens - users must re-login
-6. **Embedding dimension mismatch**: `EMBED_DIM` must match the model's output dimension (e.g., 1024 for text-embedding-3-small)
-7. **Date format consistency**: Always use `YYYY-MM-DD` format for dates in API params and database queries
-
-## Testing Approach
-
-**No formal test suite currently exists.** When adding tests:
-- Use pytest for Python components
-- Mock external dependencies (OA system, AI APIs, campus SSO)
-- Test crawler deduplication logic thoroughly (critical for data integrity)
-- Test authentication flow end-to-end (campus SSO integration is complex)
-- Test Redis cache invalidation logic
-
-## Project Status & Gaps
-
-Based on `docs/development_plan.md`, the following gaps exist:
-
-1. **Backend article endpoint**: Current implementation uses `start_date/end_date/limit/offset`, but plan requires `/articles?date=YYYY-MM-DD&since=ts` for incremental polling
-2. **Background polling**: Mobile app lacks implementation of background fetch and notification triggering
-3. **Monitoring & structured logging**: Not yet implemented (future plan)
-4. **Rate limiting**: Basic rate limiting exists via flask-limiter but needs tuning for production
-5. **Campus SSO error handling**: May need more robust retry/fallback logic
-
-## Directory Structure Notes
-
-- `backend/routes/` - Flask blueprints for each API domain
-- `backend/services/` - Business logic (auth_service, campus_auth)
-- `backend/repository/` - Database access layer (user_repository)
-- `crawler/models.py` - Dataclasses for article metadata and detail results
-- `crawler/pipeline.py` - Main Crawler class orchestrating the fetch-summarize-store flow
-- `crawler/fetcher.py` - HTTP requests and HTML parsing for OA system
-- `crawler/summarizer.py` - AI summary generation with retry logic
-- `crawler/storage.py` - Database writes for articles and embeddings
-- `OAP-app/app/(tabs)/` - Main tab navigation screens
-- `OAP-app/components/` - Reusable React components
-
-## External Dependencies
-
-- OA system: `http://oa.stu.edu.cn` (university internal network required)
-- Campus SSO: `http://a.stu.edu.cn/ac_portal/login.php`
-- AI services: GLM-4.5-flash for summarization (default), configurable embedding service
-- PostgreSQL with pgvector extension
-- Redis (optional but recommended for production)
-
-## Development Workflow
-
-1. Set up PostgreSQL with pgvector and create database
-2. Copy `env.example` files to `.env`/`env` and configure
-3. Run backend: `cd backend && python -m backend.app`
-4. Run crawler once to populate data: `cd crawler && python -m crawler.main`
-5. Start mobile app: `cd OAP-app && npm start`
-6. Test login flow with valid campus credentials
-
-**When modifying crawler:**
-- Always test with `--date` parameter to avoid polluting production data
-- Check database for duplicates after run (should be zero if deduplication works)
-- Monitor AI summary failure rate in logs
-
-**When modifying backend:**
-- Test with/without Redis to ensure graceful degradation
-- Verify JWT token expiry and refresh flow
-- Check CORS settings match your frontend origin
-
-**When modifying mobile app:**
-- Test on both iOS and Android if changing native modules
-- Verify secure storage is working (JWT should persist across app restarts)
-- Test offline mode - app should show cached articles when network is unavailable
+- 后端使用 `uv` 作为包管理工具
+- 前端使用 Expo Router 进行文件路由
+- 数据库需支持 pgvector 扩展
+- 爬虫运行时段：当天数据仅在07:00-24:00运行
