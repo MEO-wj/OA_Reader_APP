@@ -20,14 +20,6 @@ from ai_end.config import Config
 class TestConfigDefaults:
     """测试配置默认值。"""
 
-    def test_default_redis_config(self):
-        """测试 Redis 默认配置。"""
-        config = Config(env_file="/nonexistent.env")
-        assert config.redis_host == "localhost"
-        assert config.redis_port == 6379
-        assert config.redis_db == 0
-        assert config.redis_password is None
-
     def test_default_embed_config(self):
         """测试 Embedding 默认配置。"""
         config = Config(env_file="/nonexistent.env")
@@ -69,22 +61,6 @@ class TestConfigDefaults:
 
 class TestConfigEnvFileLoading:
     """测试环境文件加载。"""
-
-    def test_load_redis_config_from_env_file(self, tmp_path):
-        """测试从环境文件加载 Redis 配置。"""
-        env_file = tmp_path / ".env"
-        env_file.write_text(
-            "REDIS_HOST=redis.example.com\n"
-            "REDIS_PORT=6380\n"
-            "REDIS_DB=1\n"
-            "REDIS_PASSWORD=testpass\n"
-        )
-
-        config = Config(env_file=str(env_file))
-        assert config.redis_host == "redis.example.com"
-        assert config.redis_port == 6380
-        assert config.redis_db == 1
-        assert config.redis_password == "testpass"
 
     def test_load_ai_config_from_env_file(self, tmp_path):
         """测试从环境文件加载 AI 配置。"""
@@ -146,15 +122,6 @@ class TestConfigEnvFileLoading:
 class TestConfigEnvVarOverride:
     """测试环境变量覆盖。"""
 
-    def test_env_var_override_redis(self, monkeypatch):
-        """测试环境变量覆盖 Redis 配置。"""
-        monkeypatch.setenv("REDIS_HOST", "env-redis.example.com")
-        monkeypatch.setenv("REDIS_PORT", "6381")
-
-        config = Config(env_file="/nonexistent.env")
-        assert config.redis_host == "env-redis.example.com"
-        assert config.redis_port == 6381
-
     def test_env_var_override_ai(self, monkeypatch):
         """测试环境变量覆盖 AI 配置。"""
         monkeypatch.setenv("AI_MODEL", "gpt-4-turbo")
@@ -180,14 +147,6 @@ class TestConfigEnvVarOverride:
 
 class TestConfigInvalidValues:
     """测试无效值处理。"""
-
-    def test_invalid_redis_port(self, tmp_path):
-        """测试无效的 Redis 端口。"""
-        env_file = tmp_path / ".env"
-        env_file.write_text("REDIS_PORT=invalid\n")
-
-        config = Config(env_file=str(env_file))
-        assert config.redis_port == 6379  # 应该保持默认值
 
     def test_invalid_ai_queue_max_size(self, tmp_path):
         """测试无效的队列大小。"""

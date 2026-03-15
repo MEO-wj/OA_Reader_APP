@@ -16,27 +16,6 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 @pytest.fixture
-def mock_redis_client():
-    """Mock Redis 客户端。"""
-    client = Mock()
-    client.ping.return_value = True
-    client.get.return_value = None
-    client.set.return_value = True
-    client.delete.return_value = True
-    return client
-
-
-@pytest.fixture
-def mock_cache(mock_redis_client):
-    """Mock Redis 缓存。"""
-    cache = Mock()
-    cache.get.return_value = None
-    cache.set.return_value = True
-    cache.delete.return_value = True
-    return cache
-
-
-@pytest.fixture
 def mock_db_session():
     """Mock 数据库会话。"""
     mock_conn = Mock()
@@ -57,10 +36,6 @@ def mock_db_session():
 def mock_config():
     """Mock 配置对象。"""
     config = Mock()
-    config.redis_host = "localhost"
-    config.redis_port = 6379
-    config.redis_db = 0
-    config.redis_password = None
     config.embed_base_url = "https://api.example.com/v1/embeddings"
     config.embed_model = "text-embedding-3-small"
     config.embed_api_key = "sk-test-key"
@@ -133,14 +108,6 @@ def app_context(mock_config, mock_cache, mock_db_session, monkeypatch):
 
     # Mock config
     monkeypatch.setattr("ai_end.config.Config", lambda: mock_config)
-
-    # Mock redis
-    mock_redis = Mock()
-    mock_redis.ping.return_value = True
-    monkeypatch.setattr("ai_end.app.redis_client", mock_redis)
-
-    # Mock cache
-    monkeypatch.setattr("ai_end.app.cache", mock_cache)
 
     # Mock db_session
     monkeypatch.setattr("ai_end.app.db_session", mock_db_session)

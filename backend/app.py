@@ -1,6 +1,6 @@
 """Flask应用主入口文件。
 
-该文件初始化Flask应用，配置CORS、日志、Redis连接等基础设置，并注册路由。
+该文件初始化Flask应用，配置CORS、日志等基础设置，并注册路由。
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-import redis
 
 # 确保脚本运行时能找到 backend 包
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -57,24 +56,6 @@ try:
 except Exception as e:
     logger.error(f"数据库初始化/迁移失败: {e}")
 
-# 初始化Redis连接
-# 用于缓存API响应，提升性能并减少数据库压力
-redis_client = None
-try:
-    redis_client = redis.Redis(
-        host=config.redis_host,  # Redis服务器地址
-        port=config.redis_port,  # Redis端口
-        db=config.redis_db,      # Redis数据库
-        password=config.redis_password  # Redis密码
-    )
-    # 测试连接
-    redis_client.ping()
-    logger.info("成功连接到Redis服务器")
-except Exception as e:
-    logger.error(f"无法连接到Redis服务器: {e}")
-    redis_client = None
-    # 注意：Redis连接失败不影响API基本功能，只是缓存功能不可用
-
 # 配置API限流
 # 使用真实客户端IP作为唯一标识，避免反向代理导致同IP限流
 def _get_client_ip() -> str:
@@ -94,25 +75,13 @@ if config.rate_limit_per_day:
 if config.rate_limit_per_hour:
     rate_limits.append(f"{config.rate_limit_per_hour} per hour")
 
-def _build_redis_storage_uri() -> str:
-    if config.redis_password:
-        return f"redis://:{config.redis_password}@{config.redis_host}:{config.redis_port}/{config.redis_db}"
-    return f"redis://{config.redis_host}:{config.redis_port}/{config.redis_db}"
-
-storage_uri = _build_redis_storage_uri() if redis_client else "memory://"
-
 limiter = Limiter(
     _get_client_ip,
     app=app,
     default_limits=rate_limits,
-    storage_uri=storage_uri,
+    storage_uri="memory://",
     enabled=bool(rate_limits),
 )
-
-# 初始化缓存
-# 封装Redis缓存功能，支持304 Not Modified响应
-from backend.utils.redis_cache import init_cache, RedisCache
-redis_cache = init_cache(redis_client)
 
 # 全局错误处理
 @app.errorhandler(400)

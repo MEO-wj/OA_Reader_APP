@@ -26,7 +26,6 @@ from crawler.models import ArticleRecord, ArticleMeta
 from crawler.storage import ArticleRepository
 from crawler.summarizer import Summarizer
 from crawler.db import db_session
-from crawler.cache import refresh_today_cache, refresh_article_detail_cache
 
 
 
@@ -229,17 +228,6 @@ class Crawler:
                     inserted = self.repo.insert_articles(conn, records)
                     self._article_count = inserted  # 记录实际入库文章数
                     print(f"✅ 入库完成，新增 {inserted} 条")
-                    # 仅在非回填模式下刷新缓存（回填数据量大，不需要实时刷新）
-                    if inserted > 0 and not self.enable_delay:
-                        cached_articles = self.repo.fetch_for_cache(conn, self.target_date)
-
-                        # 刷新 today 缓存（新逻辑）
-                        today_refreshed = refresh_today_cache(cached_articles, self.target_date)
-
-                        # 刷新 article detail 缓存
-                        detail_refreshed = refresh_article_detail_cache(cached_articles, self.target_date)
-
-                        print(f"✅ 已刷新文章缓存: today={today_refreshed}, detail={detail_refreshed}")
 
                     # 为新增文章生成向量
                     print("正在生成文章向量...")

@@ -1,20 +1,20 @@
 """文章API路由模块。
 
 该模块提供文章相关的API端点，包括文章列表、详情查询等功能。
-新缓存策略：articles:today（24h）、articles:page:{before_date}:{before_id}:{limit}（3天，v2）
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 from datetime import datetime, date, timezone
 from typing import Any
 
-from flask import Blueprint, jsonify, request, make_response, current_app
+from flask import Blueprint, jsonify, make_response, request
 
 from backend.db import db_session
-from backend.utils.redis_cache import get_cache
 
 # 初始化蓝图
 bp = Blueprint('articles', __name__)
@@ -22,8 +22,28 @@ bp = Blueprint('articles', __name__)
 # 设置日志
 logger = logging.getLogger(__name__)
 
-# 获取缓存实例
-cache = get_cache()
+
+def _generate_etag(value: Any) -> str:
+    """生成内容的ETag"""
+    if isinstance(value, (dict, list)):
+        content = json.dumps(value, sort_keys=True, ensure_ascii=False)
+    else:
+        content = str(value)
+    return hashlib.md5(content.encode('utf-8')).hexdigest()
+
+
+def _build_conditional_response(payload: Any) -> tuple[Any, int]:
+    """根据 ETag/If-None-Match 构造条件响应。"""
+    etag = _generate_etag(payload)
+    if etag and request.if_none_match.contains(etag):
+        response = make_response("", 304)
+    else:
+        response = make_response(jsonify(payload), 200)
+
+    if etag:
+        response.headers['ETag'] = etag
+        response.headers['Cache-Control'] = 'max-age=3600, public'
+    return response, response.status_code
 
 
 def _serialize_value(value: Any) -> Any:
@@ -52,10 +72,6 @@ def _prefetch_next_page_v1(before_id: int, limit: int):
     def prefetch():
         with app.app_context():
             try:
-                cache_key = f"articles:page:{before_id}:{limit}"
-                if cache and cache.exists(cache_key):
-                    return
-
                 sql = """
                     SELECT id, title, unit, link, published_on, summary, attachments, created_at
                     FROM articles
@@ -87,9 +103,6 @@ def _prefetch_next_page_v1(before_id: int, limit: int):
                     "has_more": has_more
                 }
 
-                if cache:
-                    cache.set(cache_key, result, expire_seconds=259200)  # 3 days
-                    logger.info(f"预缓存成功: {cache_key}")
             except Exception as e:
                 logger.error(f"预缓存失败: {e}")
 
@@ -109,10 +122,6 @@ def _prefetch_next_page_v2(before_date: date, before_id: int, limit: int):
     def prefetch():
         with app.app_context():
             try:
-                cache_key = f"articles:page:{before_date.isoformat()}:{before_id}:{limit}"
-                if cache and cache.exists(cache_key):
-                    return
-
                 sql = """
                     SELECT id, title, unit, link, published_on, summary, attachments, created_at
                     FROM articles
@@ -153,9 +162,6 @@ def _prefetch_next_page_v2(before_date: date, before_id: int, limit: int):
                     "has_more": has_more
                 }
 
-                if cache:
-                    cache.set(cache_key, result, expire_seconds=259200)  # 3 days
-                    logger.info(f"预缓存成功: {cache_key}")
             except Exception as e:
                 logger.error(f"预缓存失败: {e}")
 
@@ -176,26 +182,6 @@ def get_today_articles():
         }
     """
     try:
-        cache_key = "articles:today"
-
-        # 尝试从缓存获取
-        if cache:
-            cached_data = cache.get(cache_key)
-            if cached_data:
-                has_required_fields = all(
-                    key in cached_data
-                    for key in ("next_before_date", "next_before_id", "has_more")
-                )
-                if has_required_fields:
-                    etag = cache.generate_etag(cached_data)
-                    if request.headers.get('If-None-Match') == etag:
-                        return make_response('', 304)
-
-                    response = jsonify(cached_data)
-                    response.headers['ETag'] = etag
-                    response.headers['Cache-Control'] = 'max-age=3600, public'
-                    return response, 200
-
         # 查询当天所有文章
         today = datetime.now(timezone.utc).date().isoformat()
         sql = """
@@ -257,18 +243,7 @@ def get_today_articles():
             "has_more": has_more
         }
 
-        # 缓存数据（24小时）
-        if cache:
-            cache.set(cache_key, response_data, expire_seconds=86400)
-
-        etag = cache.generate_etag(response_data) if cache else ''
-        response = jsonify(response_data)
-
-        if etag:
-            response.headers['ETag'] = etag
-            response.headers['Cache-Control'] = 'max-age=3600, public'
-
-        return response, 200
+        return _build_conditional_response(response_data)
 
     except Exception as e:
         logger.error(f"获取当天文章失败: {e}")
@@ -323,23 +298,8 @@ def get_articles():
                 before_date = date.fromisoformat(before_date_str)
             except ValueError:
                 return jsonify({"error": "before_date 参数格式应为 YYYY-MM-DD"}), 400
-            cache_key = f"articles:page:{before_date.isoformat()}:{before_id}:{limit}"
         else:
             before_date = None
-            cache_key = f"articles:page:{before_id}:{limit}"
-
-        # 尝试从缓存获取
-        if cache:
-            cached_data = cache.get(cache_key)
-            if cached_data:
-                etag = cache.generate_etag(cached_data)
-                if request.headers.get('If-None-Match') == etag:
-                    return make_response('', 304)
-
-                response = jsonify(cached_data)
-                response.headers['ETag'] = etag
-                response.headers['Cache-Control'] = 'max-age=3600, public'
-                return response, 200
 
         if version == 2:
             sql = """
@@ -410,25 +370,7 @@ def get_articles():
                 "has_more": has_more
             }
 
-            # 异步预缓存下一页
-            if has_more and cache:
-                if version == 2:
-                    _prefetch_next_page_v2(last_row['published_on'], next_before_id, limit)
-                else:
-                    _prefetch_next_page_v1(next_before_id, limit)
-
-        # 缓存数据（3天）
-        if cache:
-            cache.set(cache_key, response_data, expire_seconds=259200)
-
-        etag = cache.generate_etag(response_data) if cache else ''
-        response = jsonify(response_data)
-
-        if etag:
-            response.headers['ETag'] = etag
-            response.headers['Cache-Control'] = 'max-age=3600, public'
-
-        return response, 200
+        return _build_conditional_response(response_data)
 
     except Exception as e:
         logger.error(f"获取文章列表失败: {e}")
@@ -454,7 +396,7 @@ def get_article_detail(article_id: int):
     """获取文章详情。
 
     根据文章ID获取完整的文章信息，包括内容和附件。
-    实现了Redis缓存和304 Not Modified响应。
+    支持 ETag 条件请求（304 Not Modified）。
 
     参数：
         article_id: 文章ID
@@ -463,26 +405,6 @@ def get_article_detail(article_id: int):
         包含文章详情的JSON响应
     """
     try:
-        # 生成缓存键
-        cache_key = f"articles:detail:{article_id}"
-
-        # 尝试从缓存获取
-        if cache:
-            cached_article = cache.get(cache_key)
-            if cached_article:
-                # 生成ETag
-                etag = cache.generate_etag(cached_article)
-
-                # 检查If-None-Match头
-                if request.headers.get('If-None-Match') == etag:
-                    return make_response('', 304)
-
-                # 返回缓存数据
-                response = jsonify(cached_article)
-                response.headers['ETag'] = etag
-                response.headers['Cache-Control'] = 'max-age=3600, public'
-                return response, 200
-
         sql = """
         SELECT id, title, unit, link, published_on, content, summary, attachments, created_at, updated_at
         FROM articles
@@ -498,19 +420,7 @@ def get_article_detail(article_id: int):
 
         article_data = _serialize_row(article)
 
-        # 缓存数据（3天）
-        if cache:
-            cache.set(cache_key, article_data, expire_seconds=259200)
-
-        # 生成ETag并返回响应
-        etag = cache.generate_etag(article_data) if cache else ''
-        response = jsonify(article_data)
-
-        if etag:
-            response.headers['ETag'] = etag
-            response.headers['Cache-Control'] = 'max-age=3600, public'
-
-        return response, 200
+        return _build_conditional_response(article_data)
 
     except Exception as e:
         logger.error(f"获取文章详情失败: {e}")

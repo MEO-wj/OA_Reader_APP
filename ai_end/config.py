@@ -19,12 +19,6 @@ class Config:
         # 数据库配置
         self.database_url: Optional[str] = None
 
-        # Redis 配置
-        self.redis_host: str = "localhost"
-        self.redis_port: int = 6379
-        self.redis_db: int = 0
-        self.redis_password: Optional[str] = None
-
         # Embedding 配置
         self.embed_base_url: Optional[str] = None
         self.embed_model: Optional[str] = None
@@ -115,20 +109,6 @@ class Config:
         value = raw_value.strip()
         if key == "DATABASE_URL":
             self.database_url = value or None
-        elif key == "REDIS_HOST":
-            self.redis_host = value
-        elif key == "REDIS_PORT":
-            try:
-                self.redis_port = int(value)
-            except ValueError:
-                pass
-        elif key == "REDIS_DB":
-            try:
-                self.redis_db = int(value)
-            except ValueError:
-                pass
-        elif key == "REDIS_PASSWORD":
-            self.redis_password = value or None
         elif key == "EMBED_BASE_URL":
             self.embed_base_url = value or None
         elif key == "EMBED_MODEL":

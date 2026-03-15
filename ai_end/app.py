@@ -43,27 +43,6 @@ project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 from backend.db import db_session
 
-# Redis 缓存
-redis_client = None
-try:
-    import redis
-    redis_client = redis.Redis(
-        host=config.redis_host,
-        port=config.redis_port,
-        db=config.redis_db,
-        password=config.redis_password,
-        decode_responses=True
-    )
-    redis_client.ping()
-    logger.info("Redis 连接成功")
-except Exception as e:
-    logger.warning(f"Redis 连接失败: {e}")
-
-cache = None
-if redis_client:
-    from backend.utils.redis_cache import RedisCache
-    cache = RedisCache(redis_client)
-
 # 负载均衡器单例
 _load_balancer: Optional[AILoadBalancer] = None
 _load_balancer_lock = threading.Lock()
@@ -75,6 +54,9 @@ _queue_initialized = False
 # 缓存编译后的 Agent Graph（按模型配置分桶，避免每次请求重建）
 _cached_agents: dict[str, Any] = {}
 _cached_agent_lock = threading.Lock()
+
+# Redis 已移除；保留空占位，避免记忆接口引用时报 NameError。
+cache = None
 
 MEMORY_TTL_SECONDS = 24 * 60 * 60
 MEMORY_MAX_ITEMS = 5

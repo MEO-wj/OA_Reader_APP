@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 @pytest.fixture
-def client(mock_config, mock_cache):
+def client(mock_config):
     """创建 Flask 测试客户端。"""
     import sys
     from pathlib import Path
@@ -26,10 +26,6 @@ def client(mock_config, mock_cache):
 
     with patch("ai_end.config.Config") as MockConfig:
         mock_cfg = MockConfig.return_value
-        mock_cfg.redis_host = "localhost"
-        mock_cfg.redis_port = 6379
-        mock_cfg.redis_db = 0
-        mock_cfg.redis_password = None
         mock_cfg.embed_base_url = None
         mock_cfg.embed_api_key = None
         mock_cfg.ai_base_url = "https://api.example.com/v1"
@@ -48,11 +44,7 @@ def client(mock_config, mock_cache):
         mock_cfg.flask_port = 4421
 
         with patch("ai_end.app.config", mock_cfg):
-            with patch("ai_end.app.redis_client") as mock_redis:
-                mock_redis.ping.return_value = True
-
-                with patch("ai_end.app.cache", mock_cache):
-                    with patch("ai_end.app._load_balancer") as mock_lb:
+            with patch("ai_end.app._load_balancer") as mock_lb:
                         mock_lb.models = []
 
                         with patch("ai_end.app.db_session") as mock_db:
@@ -171,7 +163,7 @@ class TestClearMemoryEndpoint:
 
         assert response.status_code == 400
 
-    def test_clear_memory_with_user_id(self, client, mock_cache):
+    def test_clear_memory_with_user_id(self, client):
         """测试带 user_id。"""
         response = client.post(
             "/clear_memory",

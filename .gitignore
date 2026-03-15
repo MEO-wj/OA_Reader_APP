@@ -17,6 +17,7 @@ pgvector_local_install_guide.md
 test_crawler_components.py
 test_db_connection.py
 test_output.py
+.pytest_cache
 .env
 *.log
 example
