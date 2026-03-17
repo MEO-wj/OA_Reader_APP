@@ -411,7 +411,7 @@ eas build --platform android  # Android
 
 ## 📄 许可证
 
-**版权所有 © 2024 [24计科黄应辉](https://github.com/HandyWote)、[24大数据陈子俊]**
+**版权所有 © 2024 [24计科黄应辉](https://github.com/HandyWote)、[24大数据陈子俊](https://github.com/MEO-wj)
 
 本项目采用非商业许可证。仅作者本人拥有商业使用权利，其他用户仅可用于学习、研究和个人非商业用途。
 
