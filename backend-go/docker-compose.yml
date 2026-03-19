@@ -20,5 +20,28 @@ services:
       retries: 5
       start_period: 30s
 
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oap-backend
+    environment:
+      DATABASE_URL: postgres://oa:oa@postgres:5432/oa?sslmode=disable
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-your-secret-key-change-in-production}
+      AI_END_URL: ${AI_END_URL:-http://ai_end:8080}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+    ports:
+      - 4420:4420
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4420/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 volumes:
   data:
