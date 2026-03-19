@@ -14,7 +14,9 @@ type ArticleService struct {
 type articleRepository interface {
 	FindToday() ([]model.Article, error)
 	FindPage(beforeDate string, beforeID, limit int) ([]model.Article, error)
+	FindPageByID(beforeID, limit int) ([]model.Article, error)
 	HasOlderThan(publishedOn time.Time, id int64) (bool, error)
+	HasOlderIDThan(id int64) (bool, error)
 	Count() (int64, error)
 	FindByID(id uint64) (*model.Article, error)
 }
@@ -68,6 +70,18 @@ func (s *ArticleService) GetPage(beforeDate string, beforeID, limit int) (*Pagin
 	return s.buildResponse(articles, hasMore), nil
 }
 
+func (s *ArticleService) GetPageByID(beforeID, limit int) (*PaginatedResponse, error) {
+	articles, err := s.repo.FindPageByID(beforeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	hasMore, err := s.detectHasMoreByID(articles)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildResponse(articles, hasMore), nil
+}
+
 func (s *ArticleService) GetCount() (int64, error) {
 	return s.repo.Count()
 }
@@ -114,4 +128,12 @@ func (s *ArticleService) detectHasMore(articles []model.Article) (bool, error) {
 	}
 	last := articles[len(articles)-1]
 	return s.repo.HasOlderThan(last.PublishedOn, int64(last.ID))
+}
+
+func (s *ArticleService) detectHasMoreByID(articles []model.Article) (bool, error) {
+	if len(articles) == 0 {
+		return false, nil
+	}
+	last := articles[len(articles)-1]
+	return s.repo.HasOlderIDThan(int64(last.ID))
 }

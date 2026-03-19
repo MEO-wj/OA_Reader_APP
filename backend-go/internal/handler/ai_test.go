@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -59,5 +60,41 @@ func TestClearMemory_RequiresUserIDInContext(t *testing.T) {
 	}
 	if called {
 		t.Fatalf("expected forwarder not to be called when user_id is missing")
+	}
+}
+
+func TestAsk_InjectsUserIDIntoForwardedBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var (
+		gotPath string
+		gotBody map[string]any
+	)
+	h := NewAIHandlerWithForward(func(c *gin.Context, path string) {
+		gotPath = path
+		body, _ := io.ReadAll(c.Request.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	r := gin.New()
+	r.POST("/api/ai/ask", func(c *gin.Context) {
+		c.Set("user_id", "user-999")
+		h.Ask(c)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/ask", io.NopCloser(bytes.NewBufferString(`{"question":"hi"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if gotPath != "/ask" {
+		t.Fatalf("expected forwarded path /ask, got %s", gotPath)
+	}
+	if gotBody["user_id"] != "user-999" {
+		t.Fatalf("expected injected user_id=user-999, got %v", gotBody["user_id"])
 	}
 }

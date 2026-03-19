@@ -17,11 +17,15 @@ func (f *fakeArticleRepo) FindToday() ([]model.Article, error) { return f.today,
 func (f *fakeArticleRepo) FindPage(beforeDate string, beforeID, limit int) ([]model.Article, error) {
 	return f.page, nil
 }
+func (f *fakeArticleRepo) FindPageByID(beforeID, limit int) ([]model.Article, error) {
+	return f.page, nil
+}
 func (f *fakeArticleRepo) Count() (int64, error)                      { return 0, nil }
 func (f *fakeArticleRepo) FindByID(id uint64) (*model.Article, error) { return nil, nil }
 func (f *fakeArticleRepo) HasOlderThan(publishedOn time.Time, id int64) (bool, error) {
 	return f.hasOlder, nil
 }
+func (f *fakeArticleRepo) HasOlderIDThan(id int64) (bool, error) { return f.hasOlder, nil }
 
 func TestGetPage_HasMoreDependsOnWhetherOlderRecordsExist(t *testing.T) {
 	repo := &fakeArticleRepo{

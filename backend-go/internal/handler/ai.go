@@ -43,14 +43,24 @@ func (h *AIHandler) proxy(c *gin.Context, path string) {
 }
 
 func (h *AIHandler) Ask(c *gin.Context) {
+	if !injectUserID(c) {
+		return
+	}
 	h.proxy(c, "/ask")
 }
 
 func (h *AIHandler) ClearMemory(c *gin.Context) {
+	if !injectUserID(c) {
+		return
+	}
+	h.proxy(c, "/clear_memory")
+}
+
+func injectUserID(c *gin.Context) bool {
 	userID, ok := c.Get("user_id")
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing user_id"})
-		return
+		return false
 	}
 
 	payload := map[string]interface{}{}
@@ -58,12 +68,12 @@ func (h *AIHandler) ClearMemory(c *gin.Context) {
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-			return
+			return false
 		}
 		if len(bytes.TrimSpace(body)) > 0 {
 			if err := json.Unmarshal(body, &payload); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
-				return
+				return false
 			}
 		}
 	}
@@ -72,8 +82,7 @@ func (h *AIHandler) ClearMemory(c *gin.Context) {
 	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	c.Request.ContentLength = int64(len(bodyBytes))
 	c.Request.Header.Set("Content-Type", "application/json")
-
-	h.proxy(c, "/clear_memory")
+	return true
 }
 
 func (h *AIHandler) Embed(c *gin.Context) {

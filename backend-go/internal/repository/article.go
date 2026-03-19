@@ -75,9 +75,30 @@ func (r *ArticleRepository) FindPage(beforeDate string, beforeID, limit int) ([]
 	return articles, nil
 }
 
+func (r *ArticleRepository) FindPageByID(beforeID, limit int) ([]model.Article, error) {
+	var articles []model.Article
+	if err := r.db.Where("id < ?", beforeID).
+		Order("id DESC").
+		Limit(limit).
+		Find(&articles).Error; err != nil {
+		return nil, err
+	}
+	return articles, nil
+}
+
 func (r *ArticleRepository) HasOlderThan(publishedOn time.Time, id int64) (bool, error) {
 	err := r.db.Model(&model.Article{}).
 		Where("(published_on, id) < (?, ?)", publishedOn, id).
+		Take(&model.Article{}).Error
+	if err == gorm.ErrRecordNotFound {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (r *ArticleRepository) HasOlderIDThan(id int64) (bool, error) {
+	err := r.db.Model(&model.Article{}).
+		Where("id < ?", id).
 		Take(&model.Article{}).Error
 	if err == gorm.ErrRecordNotFound {
 		return false, nil

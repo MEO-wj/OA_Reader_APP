@@ -30,13 +30,14 @@ func (h *ArticleHandler) GetToday(c *gin.Context) {
 }
 
 func (h *ArticleHandler) GetPage(c *gin.Context) {
-	beforeDate := c.Query("before_date")
-	if beforeDate == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "before_date is required"})
+	vStr := c.DefaultQuery("v", "2")
+	v, err := strconv.Atoi(vStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid v"})
 		return
 	}
-	if _, err := time.Parse("2006-01-02", beforeDate); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid before_date"})
+	if v != 1 && v != 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported v"})
 		return
 	}
 
@@ -52,6 +53,26 @@ func (h *ArticleHandler) GetPage(c *gin.Context) {
 	}
 
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+	if v == 1 {
+		result, err := h.articleService.GetPageByID(int(beforeID), limit)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch articles"})
+			return
+		}
+		h.sendWithETag(c, result)
+		return
+	}
+
+	beforeDate := c.Query("before_date")
+	if beforeDate == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "before_date is required"})
+		return
+	}
+	if _, err := time.Parse("2006-01-02", beforeDate); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid before_date"})
+		return
+	}
 
 	result, err := h.articleService.GetPage(beforeDate, int(beforeID), limit)
 	if err != nil {
