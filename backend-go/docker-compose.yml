@@ -1,0 +1,24 @@
+
+services:
+  postgres:
+    image: docker.1ms.run/ankane/pgvector:latest
+    container_name: postgres
+    environment:
+      POSTGRES_DB: oa
+      POSTGRES_USER: oa
+      POSTGRES_PASSWORD: oa
+      TZ: Asia/Shanghai
+    ports:
+      - 5432:5432
+    volumes:
+      - data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oa -d oa"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  data:
