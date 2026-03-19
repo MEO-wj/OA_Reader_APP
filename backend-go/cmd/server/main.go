@@ -9,6 +9,7 @@ import (
 	"github.com/oap/backend-go/internal/config"
 	"github.com/oap/backend-go/internal/handler"
 	"github.com/oap/backend-go/internal/middleware"
+	"github.com/oap/backend-go/internal/pkg/alog"
 	"github.com/oap/backend-go/internal/repository"
 	"github.com/oap/backend-go/internal/service"
 )
@@ -24,6 +25,7 @@ func main() {
 	if err := repository.InitDB(cfg.DatabaseURL); err != nil {
 		log.Fatal("Failed to init db:", err)
 	}
+	alog.SetAuthDebug(cfg.AuthDebug)
 
 	// 初始化服务
 	authService := service.NewAuthService(cfg)

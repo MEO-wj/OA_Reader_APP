@@ -1,12 +1,15 @@
 package repository
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/oap/backend-go/internal/model"
 	"gorm.io/gorm"
 )
+
+var ErrNotFound = errors.New("not found")
 
 type UserRepository struct {
 	db *gorm.DB
@@ -26,6 +29,9 @@ func NewUserRepository() *UserRepository {
 func (r *UserRepository) FindByUsername(username string) (*model.User, error) {
 	var user model.User
 	if err := r.db.Where("username = ?", username).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	return &user, nil
@@ -34,6 +40,9 @@ func (r *UserRepository) FindByUsername(username string) (*model.User, error) {
 func (r *UserRepository) FindByID(id uuid.UUID) (*model.User, error) {
 	var user model.User
 	if err := r.db.First(&user, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	return &user, nil
@@ -51,6 +60,9 @@ func (r *UserRepository) Update(user *model.User) error {
 func (r *UserRepository) GetCredential(username string) (*UserCredential, error) {
 	var user model.User
 	if err := r.db.Where("username = ?", username).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	return &UserCredential{
@@ -106,6 +118,9 @@ func (r *UserRepository) CreateSession(session *model.Session) error {
 func (r *UserRepository) FindSessionByRefreshTokenSHA(sha string) (*model.Session, error) {
 	var session model.Session
 	if err := r.db.Where("refresh_token_sha = ?", sha).First(&session).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	return &session, nil

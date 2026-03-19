@@ -20,6 +20,7 @@ type fakeAuthRepo struct {
 	refreshSession           *model.Session
 	findSessionErr           error
 	revokeSessionCalled      bool
+	lastCreatePasswordCost   int
 }
 
 func (f *fakeAuthRepo) GetCredential(username string) (*repository.UserCredential, error) {
@@ -31,6 +32,8 @@ func (f *fakeAuthRepo) GetCredential(username string) (*repository.UserCredentia
 
 func (f *fakeAuthRepo) CreateWithPassword(username, passwordHash, passwordAlgo string, passwordCost int, displayName string) (*model.User, error) {
 	f.createWithPasswordCalled = true
+	f.lastCreatePasswordCost = passwordCost
+	f.credentialErr = nil
 	return &model.User{ID: uuid.New(), Username: username, DisplayName: displayName}, nil
 }
 
@@ -71,7 +74,7 @@ func (f *fakeAuthRepo) RevokeSession(id uuid.UUID) error {
 }
 
 func TestLogin_DoesNotAutoCreateUserWhenCampusVerifyFails(t *testing.T) {
-	repo := &fakeAuthRepo{credentialErr: errors.New("not found")}
+	repo := &fakeAuthRepo{credentialErr: repository.ErrNotFound}
 	svc := NewAuthServiceWithDeps(&config.Config{
 		AuthAllowAutoUser:  true,
 		CampusAuthEnabled:  true,
@@ -82,7 +85,7 @@ func TestLogin_DoesNotAutoCreateUserWhenCampusVerifyFails(t *testing.T) {
 		return ""
 	})
 
-	_, err := svc.Login("new-user", "pwd")
+	_, err := svc.Login("new-user", "pwd", AuthMetadata{})
 	if !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
 	}
@@ -91,6 +94,78 @@ func TestLogin_DoesNotAutoCreateUserWhenCampusVerifyFails(t *testing.T) {
 	}
 	if repo.createSessionCalled {
 		t.Fatalf("expected no session creation when campus verify fails")
+	}
+}
+
+func TestLogin_ReturnsInvalidCredentialsWhenCredentialLookupInternalError(t *testing.T) {
+	repo := &fakeAuthRepo{credentialErr: errors.New("db unavailable")}
+	svc := NewAuthServiceWithDeps(&config.Config{
+		AuthAllowAutoUser:  true,
+		CampusAuthEnabled:  true,
+		AuthJWTSecret:      "secret",
+		AuthRefreshHashKey: "hash-key",
+		AuthAccessTokenTTL: time.Hour,
+	}, repo, func(username, password string) string {
+		t.Fatalf("campus verifier should not be called on internal errors")
+		return ""
+	})
+
+	_, err := svc.Login("new-user", "pwd", AuthMetadata{})
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+	if repo.createWithPasswordCalled {
+		t.Fatalf("expected no user creation on internal repo errors")
+	}
+}
+
+func TestLogin_UsesDefaultPasswordCostWhenConfigOutOfRange(t *testing.T) {
+	repo := &fakeAuthRepo{credentialErr: repository.ErrNotFound}
+	svc := NewAuthServiceWithDeps(&config.Config{
+		AuthAllowAutoUser:  true,
+		CampusAuthEnabled:  true,
+		AuthPasswordCost:   2,
+		AuthJWTSecret:      "secret",
+		AuthRefreshHashKey: "hash-key",
+		AuthAccessTokenTTL: time.Hour,
+	}, repo, func(username, password string) string {
+		return "Alice"
+	})
+
+	_, err := svc.Login("new-user", "pwd", AuthMetadata{})
+	if err != nil {
+		t.Fatalf("expected login success, got %v", err)
+	}
+	if repo.lastCreatePasswordCost != 12 {
+		t.Fatalf("expected fallback cost 12, got %d", repo.lastCreatePasswordCost)
+	}
+}
+
+func TestRefresh_ReturnsValidationErrorWhenRefreshTokenMissing(t *testing.T) {
+	repo := &fakeAuthRepo{}
+	svc := NewAuthServiceWithDeps(&config.Config{
+		AuthJWTSecret:      "secret",
+		AuthRefreshHashKey: "hash-key",
+		AuthAccessTokenTTL: time.Hour,
+	}, repo, nil)
+
+	_, err := svc.Refresh("", AuthMetadata{})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestLogout_ReturnsValidationErrorWhenRefreshTokenMissing(t *testing.T) {
+	repo := &fakeAuthRepo{}
+	svc := NewAuthServiceWithDeps(&config.Config{
+		AuthJWTSecret:      "secret",
+		AuthRefreshHashKey: "hash-key",
+		AuthAccessTokenTTL: time.Hour,
+	}, repo, nil)
+
+	err := svc.Logout("")
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation, got %v", err)
 	}
 }
 
@@ -110,7 +185,7 @@ func TestRefresh_ReturnsInvalidTokenWhenSessionUserNotFound(t *testing.T) {
 		AuthAccessTokenTTL: time.Hour,
 	}, repo, nil)
 
-	_, err := svc.Refresh("refresh-token")
+	_, err := svc.Refresh("refresh-token", AuthMetadata{})
 	if !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("expected ErrInvalidToken, got %v", err)
 	}

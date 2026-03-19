@@ -1,14 +1,22 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM docker.1ms.run/golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
-RUN apk add --no-cache git
+# Install dependencies - 使用国内镜像源
+RUN apk add --no-cache git && \
+    echo 'https://mirrors.ustc.edu.cn' > /etc/apk/repositories
 
 # Copy go mod files
 COPY go.mod go.sum ./
-RUN go mod download
+
+# 使用国内 Go 代理
+RUN go env -w GOPROXY=https://goproxy.cn,direct && \
+    go env -w GOSUMDB=off && \
+    go mod download
+
+# Copy .env file
+COPY .env .
 
 # Copy source code
 COPY . .
@@ -17,12 +25,13 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /server ./cmd/server
 
 # Runtime stage
-FROM alpine:3.19
+FROM docker.1ms.run/alpine:3.19
 
 WORKDIR /app
 
-# Install CA certificates for HTTPS calls
-RUN apk add --no-cache ca-certificates tzdata
+# Install CA certificates for HTTPS calls - 使用国内镜像源
+RUN apk add --no-cache ca-certificates tzdata && \
+    echo 'https://mirrors.ustc.edu.cn' > /etc/apk/repositories
 
 # Create non-root user
 RUN adduser -D -g '' appuser
@@ -30,8 +39,8 @@ RUN adduser -D -g '' appuser
 # Copy binary from builder
 COPY --from=builder /server .
 
-# Copy .env.example as default env file
-COPY --from=builder /app/.env.example .
+# Copy .env file
+COPY --from=builder /app/.env .
 
 # Switch to non-root user
 USER appuser
