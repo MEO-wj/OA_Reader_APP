@@ -212,34 +212,53 @@ class Crawler:
             # 转换为数据库记录并存储（如果数据库可用）
             if use_database and conn:
                 print("正在存储文章数据...")
-                records = [
-                    ArticleRecord(
-                        title=item["标题"],
-                        unit=item["发布单位"],
-                        link=item["链接"],
-                        published_on=item["发布日期"],
-                        content=item["正文"],
-                        summary=item["摘要"],
-                        attachments=item.get("附件", []),
-                    )
-                    for item in detailed
-                ]
                 try:
-                    inserted = self.repo.insert_articles(conn, records)
-                    self._article_count = inserted  # 记录实际入库文章数
-                    print(f"✅ 入库完成，新增 {inserted} 条")
+                    # psycopg3 事务是隐式管理的，不需要 conn.begin()
+                    # 当执行第一条 SQL 时事务自动开始
 
-                    # 为新增文章生成向量
-                    print("正在生成文章向量...")
-                    links = [item["链接"] for item in detailed]
-                    articles = self.repo.fetch_for_embedding(conn, links)
-                    if not articles:
-                        print("⚠️ 未获取到需要生成向量的文章")
-                        return
-                    print(f"✅ 获取到 {len(articles)} 篇需要生成向量的文章")
-                    self._generate_embeddings(conn, articles)
-                    print("✅ 向量生成和存储完成")
+                    for item in detailed:
+                        # 跳过没有摘要的文章（摘要生成失败）
+                        if not item.get("摘要") or item["摘要"] == "[AI摘要失败]":
+                            print(f"  跳过（无有效摘要）: {item['标题']}")
+                            continue
+
+                        record = ArticleRecord(
+                            title=item["标题"],
+                            unit=item["发布单位"],
+                            link=item["链接"],
+                            published_on=item["发布日期"],
+                            content=item["正文"],
+                            summary=item["摘要"],
+                            attachments=item.get("附件", []),
+                        )
+
+                        # 插入文章（不自动提交）
+                        inserted = self.repo.insert_articles(conn, [record], commit=False)
+                        if inserted == 0:
+                            print(f"  跳过（已存在或插入失败）: {item['标题']}")
+                            continue
+
+                        # 获取刚插入的文章 ID
+                        articles = self.repo.fetch_for_embedding(conn, [item["链接"]])
+                        if not articles:
+                            conn.rollback()  # 回滚当前文章事务，避免后续误提交
+                            print(f"  跳过（无法获取文章ID）: {item['标题']}")
+                            continue
+
+                        # 生成向量
+                        ok = self._generate_embeddings(conn, articles)
+                        if not ok:
+                            conn.rollback()  # 回滚事务
+                            print(f"  向量生成失败，回滚: {item['标题']}")
+                            continue
+
+                        # 单篇提交
+                        conn.commit()
+                        self._article_count += 1
+                        print(f"  入库成功: {item['标题']}")
+
                 except Exception as e:
+                    conn.rollback()
                     print(f"⚠️ 数据库操作失败: {type(e).__name__}: {e}")
             else:
                 print("⚠️ 数据库不可用，跳过存储操作")
@@ -326,20 +345,23 @@ class Crawler:
         cfg = self.config
         return self.embedder.embed_batch(texts)
 
-    def _generate_embeddings(self, conn, articles: List[dict]) -> None:
+    def _generate_embeddings(self, conn, articles: List[dict]) -> bool:
         """为文章生成向量并存储到数据库。
-        
+
         参数：
             conn: 数据库连接对象
             articles: 文章列表，包含文章ID、标题、摘要和正文
+
+        返回：
+            bool: 是否成功生成向量
         """
         # 组合文本用于生成向量
         texts = [self._compose_embed_text(a) for a in articles]
         # 调用向量生成API
         embeddings = self._call_embedding(texts)
         if not embeddings:
-            return
-            
+            return False
+
         # 准备存储数据
         payloads = []
         for article, emb in zip(articles, embeddings):
@@ -352,7 +374,8 @@ class Crawler:
                     "published_on": article["published_on"],
                 }
             )
-            
-        # 存储向量到数据库
-        inserted = self.repo.insert_embeddings(conn, payloads)
+
+        # 存储向量到数据库（不自动提交）
+        inserted = self.repo.insert_embeddings(conn, payloads, commit=False)
         print(f"向量入库完成，新增 {inserted} 条")
+        return True

@@ -53,17 +53,18 @@ class ArticleRepository:
         """
         return fetch_existing_links(conn, target_date)
 
-    def insert_articles(self, conn: psycopg.Connection, records: Iterable[ArticleRecord]) -> int:
+    def insert_articles(self, conn: psycopg.Connection, records: Iterable[ArticleRecord], commit: bool = True) -> int:
         """批量插入文章数据。
-        
+
         参数：
             conn: 数据库连接对象
             records: 文章记录迭代器
-            
+            commit: 是否立即提交，False 时由调用方控制事务
+
         返回：
             int: 成功插入的记录数
         """
-        return insert_articles(conn, records)
+        return insert_articles(conn, records, commit=commit)
 
     def fetch_for_embedding(self, conn: psycopg.Connection, links: List[str]) -> List[dict[str, Any]]:
         """根据链接获取文章ID等信息，用于后续向量生成。
@@ -77,17 +78,18 @@ class ArticleRepository:
         """
         return fetch_article_ids(conn, links)
 
-    def insert_embeddings(self, conn: psycopg.Connection, payloads: Iterable[dict[str, Any]]) -> int:
+    def insert_embeddings(self, conn: psycopg.Connection, payloads: Iterable[dict[str, Any]], commit: bool = True) -> int:
         """批量插入文章向量数据。
-        
+
         参数：
             conn: 数据库连接对象
             payloads: 向量数据迭代器
-            
+            commit: 是否立即提交，False 时由调用方控制事务
+
         返回：
             int: 成功插入的向量数
         """
-        return insert_embeddings(conn, payloads)
+        return insert_embeddings(conn, payloads, commit=commit)
 
     def fetch_for_cache(self, conn: psycopg.Connection, target_date: str) -> List[dict[str, Any]]:
         """获取指定日期的文章列表与详情，用于Redis缓存预热。"""

@@ -105,13 +105,14 @@ def fetch_existing_links(conn: psycopg.Connection, target_date: str) -> set[str]
     return {row["link"] for row in rows}  # 转换为集合返回
 
 
-def insert_articles(conn: psycopg.Connection, records: Iterable[ArticleRecord]) -> int:
+def insert_articles(conn: psycopg.Connection, records: Iterable[ArticleRecord], commit: bool = True) -> int:
     """批量插入文章记录，已存在的链接会被忽略（基于UNIQUE约束）。
-    
+
     参数：
         conn: 数据库连接对象
         records: ArticleRecord 对象的可迭代集合
-        
+        commit: 是否立即提交，False 时由调用方控制事务
+
     返回：
         int: 成功插入的记录数
     """
@@ -120,7 +121,7 @@ def insert_articles(conn: psycopg.Connection, records: Iterable[ArticleRecord]) 
     VALUES (%s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (link) DO NOTHING  -- 链接冲突时忽略
     """
-    
+
     count = 0
     with conn.cursor() as cur:
         for rec in records:
@@ -137,8 +138,9 @@ def insert_articles(conn: psycopg.Connection, records: Iterable[ArticleRecord]) 
                 ),
             )
             count += cur.rowcount  # 累加受影响的行数
-    
-    conn.commit()
+
+    if commit:
+        conn.commit()
     return count
 
 
@@ -177,16 +179,17 @@ def fetch_articles_by_date(conn: psycopg.Connection, target_date: str) -> list[d
     return list(rows)
 
 
-def insert_embeddings(conn: psycopg.Connection, payloads: Iterable[dict[str, Any]]) -> int:
+def insert_embeddings(conn: psycopg.Connection, payloads: Iterable[dict[str, Any]], commit: bool = True) -> int:
     """批量插入文章向量记录，已存在的article_id会被忽略。
-    
+
     参数：
         conn: 数据库连接对象
         payloads: 向量数据字典的可迭代集合，每个字典包含：
                   - article_id: 文章ID
                   - embedding: 向量数据
                   - published_on: 发布日期
-        
+        commit: 是否立即提交，False 时由调用方控制事务
+
     返回：
         int: 成功插入的记录数
     """
@@ -195,14 +198,15 @@ def insert_embeddings(conn: psycopg.Connection, payloads: Iterable[dict[str, Any
     VALUES (%(article_id)s, %(embedding)s::vector, %(published_on)s)
     ON CONFLICT (article_id) DO NOTHING  -- article_id冲突时忽略
     """
-    
+
     count = 0
     with conn.cursor() as cur:
         for item in payloads:
             cur.execute(sql, item)
             count += cur.rowcount  # 累加受影响的行数
-    
-    conn.commit()
+
+    if commit:
+        conn.commit()
     return count
 
 
