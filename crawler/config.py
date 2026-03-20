@@ -7,10 +7,10 @@
 from __future__ import annotations
 
 import os
-import json
 from pathlib import Path
 from typing import Optional
 
+from crawler.utils import safe_json_parse
 
 class Config:
     """从环境文件和环境变量加载运行时设置。
@@ -263,9 +263,10 @@ class Config:
             if value:
                 self.ai_model = value
         elif key == "AI_MODELS":
-            try:
-                self.ai_models = json.loads(value)
-            except json.JSONDecodeError:
+            parsed = safe_json_parse(value, default=None)
+            if isinstance(parsed, list):
+                self.ai_models = parsed
+            else:
                 print(f"⚠️ AI_MODELS JSON解析失败: {value}")
         elif key == "AI_ENABLE_LOAD_BALANCING":
             self.ai_enable_load_balancing = value.lower() in ("1", "true", "yes", "on")

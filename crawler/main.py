@@ -28,6 +28,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from crawler import Crawler
+from crawler.utils import format_date, parse_date
 
 
 def _normalize_target_date(raw: str | None) -> str:
@@ -45,12 +46,12 @@ def _normalize_target_date(raw: str | None) -> str:
         ValueError: 当输入的日期格式无效时抛出
     """
     if raw is None:
-        return datetime.now().strftime("%Y-%m-%d")  # 未提供日期时返回当前日期
+        return format_date(datetime.now())  # 未提供日期时返回当前日期
     try:
-        parsed = datetime.strptime(raw, "%Y-%m-%d")  # 解析输入的日期字符串
+        parsed = parse_date(raw)  # 解析输入的日期字符串
     except ValueError as exc:  # pragma: no cover - defensive
         raise ValueError("日期格式必须为 YYYY-MM-DD") from exc  # 日期格式无效时抛出异常
-    return parsed.strftime("%Y-%m-%d")  # 返回标准化后的日期字符串
+    return format_date(parsed)  # 返回标准化后的日期字符串
 
 
 def main(target_date: str | None = None) -> None:

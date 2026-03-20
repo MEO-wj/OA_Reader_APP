@@ -19,13 +19,15 @@ import datetime
 import time
 from typing import List
 
+import psycopg
+
 from crawler.config import Config
 from crawler.embeddings import Embedder
 from crawler.fetcher import fetch_detail, fetch_list, fetch_list_paged
 from crawler.models import ArticleRecord, ArticleMeta
 from crawler.storage import ArticleRepository
 from crawler.summarizer import Summarizer
-from crawler.db import db_session
+from crawler.utils import format_date, parse_date, random_delay
 
 
 
@@ -41,8 +43,8 @@ def _normalize_date(raw: str | None) -> str:
         str: 标准化的日期字符串，格式为 YYYY-MM-DD
     """
     if raw is None:
-        return time.strftime("%Y-%m-%d", time.localtime())
-    return datetime.datetime.strptime(raw, "%Y-%m-%d").strftime("%Y-%m-%d")
+        return format_date(datetime.datetime.now())
+    return format_date(parse_date(raw))
 
 
 class Crawler:
@@ -86,14 +88,12 @@ class Crawler:
 
         根据配置中的延迟参数进行随机延迟，用于回填场景避免触发反爬。
         """
-        if not self.config.backfill_enable_random_delay:
-            return
-
-        import random
-        delay_min = self.config.backfill_delay_min
-        delay_max = self.config.backfill_delay_max
-        delay = random.uniform(delay_min, delay_max)
-        time.sleep(delay)
+        random_delay(
+            self.config.backfill_delay_min,
+            self.config.backfill_delay_max,
+            enabled=self.config.backfill_enable_random_delay,
+            msg="文章间延迟",
+        )
 
     def get_article_count(self) -> int:
         """获取本次运行爬取的文章数。
@@ -216,6 +216,7 @@ class Crawler:
                     # psycopg3 事务是隐式管理的，不需要 conn.begin()
                     # 当执行第一条 SQL 时事务自动开始
 
+                    articles_to_embed: list[dict] = []
                     for item in detailed:
                         # 跳过没有摘要的文章（摘要生成失败）
                         if not item.get("摘要") or item["摘要"] == "[AI摘要失败]":
@@ -233,29 +234,32 @@ class Crawler:
                         )
 
                         # 插入文章（不自动提交）
-                        inserted = self.repo.insert_articles(conn, [record], commit=False)
-                        if inserted == 0:
-                            print(f"  跳过（已存在或插入失败）: {item['标题']}")
+                        count, article_ids = self.repo.insert_articles(conn, [record], commit=False)
+                        if count == 0:
+                            print(f"  跳过（已存在）: {item['标题']}")
                             continue
+                        articles_to_embed.append(
+                            {
+                                "id": article_ids[0],
+                                "title": item["标题"],
+                                "summary": item["摘要"],
+                                "content": item["正文"],
+                                "published_on": item["发布日期"],
+                            }
+                        )
 
-                        # 获取刚插入的文章 ID
-                        articles = self.repo.fetch_for_embedding(conn, [item["链接"]])
-                        if not articles:
-                            conn.rollback()  # 回滚当前文章事务，避免后续误提交
-                            print(f"  跳过（无法获取文章ID）: {item['标题']}")
-                            continue
-
-                        # 生成向量
-                        ok = self._generate_embeddings(conn, articles)
+                    if articles_to_embed:
+                        ok = self._generate_embeddings_batch(conn, articles_to_embed)
                         if not ok:
-                            conn.rollback()  # 回滚事务
-                            print(f"  向量生成失败，回滚: {item['标题']}")
-                            continue
-
-                        # 单篇提交
-                        conn.commit()
-                        self._article_count += 1
-                        print(f"  入库成功: {item['标题']}")
+                            conn.rollback()
+                            print("  批量向量生成失败，回滚本批文章")
+                        else:
+                            conn.commit()
+                            self._article_count += len(articles_to_embed)
+                            print(f"  入库成功: {len(articles_to_embed)} 篇")
+                    else:
+                        conn.rollback()
+                        print("  无需入库的新文章")
 
                 except Exception as e:
                     conn.rollback()
@@ -345,7 +349,7 @@ class Crawler:
         cfg = self.config
         return self.embedder.embed_batch(texts)
 
-    def _generate_embeddings(self, conn, articles: List[dict]) -> bool:
+    def _generate_embeddings_batch(self, conn: psycopg.Connection, articles: List[dict]) -> bool:
         """为文章生成向量并存储到数据库。
 
         参数：

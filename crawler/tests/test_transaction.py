@@ -110,7 +110,9 @@ class TestTransactionRollback:
             )
 
             # psycopg3: 事务隐式开始，不需要 conn.begin()
-            inserted = self.repo.insert_articles(conn, [record], commit=False)
+            count, article_ids = self.repo.insert_articles(conn, [record], commit=False)
+            assert count == 1
+            assert len(article_ids) == 1
 
             # 模拟向量生成失败
             ok = False  # 模拟 _generate_embeddings 返回 False
@@ -172,7 +174,7 @@ class TestTransactionRollback:
                 )
 
                 # psycopg3: 事务隐式开始
-                inserted = self.repo.insert_articles(conn, [record], commit=False)
+                inserted, _ = self.repo.insert_articles(conn, [record], commit=False)
                 conn.commit()
                 if inserted > 0:
                     success_count += 1
@@ -217,12 +219,9 @@ class TestTransactionRollback:
 
             # 模拟：文章入库成功，但向量入库失败
             # psycopg3: 事务隐式开始
-            inserted_article = self.repo.insert_articles(conn, [record], commit=False)
+            inserted_article, article_ids = self.repo.insert_articles(conn, [record], commit=False)
             assert inserted_article > 0, "文章应该插入成功"
-
-            # 获取刚插入的文章 ID
-            articles = self.repo.fetch_for_embedding(conn, [link])
-            assert len(articles) > 0, "应该能获取到文章ID"
+            assert len(article_ids) == 1, "应该能获取到文章ID"
 
             # 模拟向量入库失败
             def mock_insert_embeddings(*args, **kwargs):
@@ -233,7 +232,7 @@ class TestTransactionRollback:
                     # 模拟 _generate_embeddings 的逻辑
                     payloads = [
                         {
-                            "article_id": articles[0]["id"],
+                            "article_id": article_ids[0],
                             "embedding": "[0.1,0.2,0.3]",
                             "published_on": item["发布日期"],
                         }
@@ -279,15 +278,16 @@ class TestTransactionRollback:
 
             # 第1次插入：成功
             # psycopg3: 事务隐式开始
-            inserted1 = self.repo.insert_articles(conn, [record], commit=False)
+            inserted1, _ = self.repo.insert_articles(conn, [record], commit=False)
             conn.commit()
             assert inserted1 == 1, "第1次插入应该成功"
 
             # 第2次插入（重复）：应该被跳过
             # psycopg3: 事务隐式开始
-            inserted2 = self.repo.insert_articles(conn, [record], commit=False)
+            inserted2, ids2 = self.repo.insert_articles(conn, [record], commit=False)
             conn.commit()
             assert inserted2 == 0, "重复插入应该被跳过（返回0）"
+            assert ids2 == [], "重复插入不应返回ID"
 
             # 验证：数据库中只有1条记录
             existing = self.repo.existing_links(conn, item["发布日期"])
@@ -359,7 +359,7 @@ class TestPipelineTransactionFlow:
                 )
 
                 # psycopg3: 事务隐式开始
-                inserted = repo.insert_articles(conn, [record], commit=False)
+                inserted, _ = repo.insert_articles(conn, [record], commit=False)
 
                 if inserted == 0:
                     print(f"跳过（已存在或插入失败）: {article_data['title']}")
@@ -433,19 +433,16 @@ class TestPipelineRunRegression:
             lambda _: SimpleNamespace(content="正文", attachments=[]),
         )
 
-        repo.insert_articles.side_effect = [1, 1]
-        repo.fetch_for_embedding.side_effect = [
-            [],
-            [{"id": 2, "title": "B", "summary": "测试摘要", "content": "正文"}],
-        ]
-        crawler._generate_embeddings = MagicMock(return_value=True)
+        repo.insert_articles.side_effect = [(1, [1]), (1, [2])]
+        crawler._generate_embeddings_batch = MagicMock(return_value=False)
 
         crawler.run()
 
         assert conn.rollback.call_count == 1
-        assert conn.commit.call_count == 1
+        assert conn.commit.call_count == 0
         assert repo.insert_articles.call_count == 2
-        assert crawler.get_article_count() == 1
+        assert crawler._generate_embeddings_batch.call_count == 1
+        assert crawler.get_article_count() == 0
 
     def test_run_embedding_failure_does_not_abort_batch(self, monkeypatch):
         """单篇向量生成失败应只回滚该篇，不中断后续文章处理"""
@@ -464,20 +461,16 @@ class TestPipelineRunRegression:
             lambda _: SimpleNamespace(content="正文", attachments=[]),
         )
 
-        repo.insert_articles.side_effect = [1, 1]
-        repo.fetch_for_embedding.side_effect = [
-            [{"id": 1, "title": "A", "summary": "测试摘要", "content": "正文"}],
-            [{"id": 2, "title": "B", "summary": "测试摘要", "content": "正文"}],
-        ]
-        crawler._generate_embeddings = MagicMock(side_effect=[False, True])
+        repo.insert_articles.side_effect = [(1, [1]), (1, [2])]
+        crawler._generate_embeddings_batch = MagicMock(return_value=True)
 
         crawler.run()
 
         assert repo.insert_articles.call_count == 2
-        assert crawler._generate_embeddings.call_count == 2
+        assert crawler._generate_embeddings_batch.call_count == 1
         assert conn.commit.call_count == 1
-        assert conn.rollback.call_count == 1
-        assert crawler.get_article_count() == 1
+        assert conn.rollback.call_count == 0
+        assert crawler.get_article_count() == 2
 
 
 if __name__ == "__main__":

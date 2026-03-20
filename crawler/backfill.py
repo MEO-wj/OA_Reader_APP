@@ -22,9 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import sys
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -35,6 +33,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from crawler.config import Config
 from crawler.pipeline import Crawler
+from crawler.utils import format_date, parse_date, random_delay, safe_json_parse
 
 
 # 状态文件名称
@@ -52,14 +51,14 @@ def date_range(start_date: str, end_date: str, reverse: bool = True) -> list[str
     返回：
         list[str]: 日期字符串列表，格式 YYYY-MM-DD
     """
-    start = datetime.strptime(start_date, "%Y-%m-%d")
-    end = datetime.strptime(end_date, "%Y-%m-%d")
+    start = parse_date(start_date)
+    end = parse_date(end_date)
 
     if start > end:
         raise ValueError(f"起始日期 {start_date} 不能晚于结束日期 {end_date}")
 
     delta = (end - start).days + 1
-    dates = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(delta)]
+    dates = [format_date(start + timedelta(days=i)) for i in range(delta)]
 
     return dates[::-1] if reverse else dates
 
@@ -84,8 +83,9 @@ class BackfillState:
         """从文件加载状态数据。"""
         if self.state_file.exists():
             try:
-                self._data = json.loads(self.state_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
+                data = safe_json_parse(self.state_file.read_text(encoding="utf-8"), default={})
+                self._data = data if isinstance(data, dict) else {}
+            except OSError:
                 self._data = {}
         else:
             self._data = {}
@@ -208,9 +208,12 @@ class BackfillRunner:
         if not self.config.backfill_enable_random_delay:
             return
 
-        delay = random.uniform(min_seconds, max_seconds)
-        print(f"⏳ 天间延迟 {delay:.1f} 秒...")
-        time.sleep(delay)
+        random_delay(
+            min_seconds,
+            max_seconds,
+            enabled=self.config.backfill_enable_random_delay,
+            msg="天间延迟",
+        )
 
     def run(self) -> None:
         """执行回填任务。"""

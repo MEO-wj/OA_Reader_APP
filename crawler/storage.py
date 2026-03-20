@@ -53,7 +53,12 @@ class ArticleRepository:
         """
         return fetch_existing_links(conn, target_date)
 
-    def insert_articles(self, conn: psycopg.Connection, records: Iterable[ArticleRecord], commit: bool = True) -> int:
+    def insert_articles(
+        self,
+        conn: psycopg.Connection,
+        records: Iterable[ArticleRecord],
+        commit: bool = True,
+    ) -> tuple[int, list[int]]:
         """批量插入文章数据。
 
         参数：
@@ -62,7 +67,7 @@ class ArticleRepository:
             commit: 是否立即提交，False 时由调用方控制事务
 
         返回：
-            int: 成功插入的记录数
+            tuple[int, list[int]]: (成功插入数, 新插入文章ID列表)
         """
         return insert_articles(conn, records, commit=commit)
 

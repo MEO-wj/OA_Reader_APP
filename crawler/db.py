@@ -105,7 +105,11 @@ def fetch_existing_links(conn: psycopg.Connection, target_date: str) -> set[str]
     return {row["link"] for row in rows}  # 转换为集合返回
 
 
-def insert_articles(conn: psycopg.Connection, records: Iterable[ArticleRecord], commit: bool = True) -> int:
+def insert_articles(
+    conn: psycopg.Connection,
+    records: Iterable[ArticleRecord],
+    commit: bool = True,
+) -> tuple[int, list[int]]:
     """批量插入文章记录，已存在的链接会被忽略（基于UNIQUE约束）。
 
     参数：
@@ -114,15 +118,16 @@ def insert_articles(conn: psycopg.Connection, records: Iterable[ArticleRecord], 
         commit: 是否立即提交，False 时由调用方控制事务
 
     返回：
-        int: 成功插入的记录数
+        tuple[int, list[int]]: (成功插入数, 新插入文章ID列表)
     """
     sql = """
     INSERT INTO articles (title, unit, link, published_on, content, summary, attachments)
     VALUES (%s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (link) DO NOTHING  -- 链接冲突时忽略
+    RETURNING id
     """
 
-    count = 0
+    ids: list[int] = []
     with conn.cursor() as cur:
         for rec in records:
             cur.execute(
@@ -137,11 +142,13 @@ def insert_articles(conn: psycopg.Connection, records: Iterable[ArticleRecord], 
                     Json(rec.attachments),  # 附件信息（转换为JSONB）
                 ),
             )
-            count += cur.rowcount  # 累加受影响的行数
+            row = cur.fetchone()
+            if row:
+                ids.append(row["id"])
 
     if commit:
         conn.commit()
-    return count
+    return len(ids), ids
 
 
 def fetch_article_ids(conn: psycopg.Connection, links: list[str]) -> list[dict[str, Any]]:

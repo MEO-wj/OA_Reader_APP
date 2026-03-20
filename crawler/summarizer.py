@@ -14,6 +14,7 @@ import requests
 
 from crawler.config import Config
 from crawler.services.ai_load_balancer import AILoadBalancer, ModelConfig
+from crawler.utils import http_post
 
 logger = logging.getLogger(__name__)
 
@@ -150,36 +151,34 @@ class Summarizer:
                 "max_tokens": 2000,  # 最大生成令牌数
             }
 
-            try:
-                # 调用 AI API
-                resp = requests.post(model_config.base_url, json=payload, headers=headers, timeout=60)
-                # 检查响应状态
-                if resp.status_code != 200:
-                    if load_balancer and _is_429_response(resp) and attempt < max_tries - 1:
-                        load_balancer.mark_model_429(model_config)
-                        logger.warning("检测到429，切换模型重试 (尝试 %s/%s)", attempt + 1, max_tries)
-                        continue
-                    print(f"AI API返回错误状态码: {resp.status_code}")
-                    return None
-
-                # 解析响应结果
-                data = resp.json()
-                choices = data.get("choices") or []
-                if not choices:
-                    return None
-
-                # 提取摘要文本
-                text = choices[-1]["message"].get("content", "").strip()
-                # 清理特殊格式（如思考过程标记）
-                text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-                # 移除可能的标题标记
-                text = text.lstrip("# ").lstrip()
-                return text
-            except requests.RequestException as exc:
+            resp = http_post(model_config.base_url, payload=payload, headers=headers, timeout=60)
+            if resp is None:
                 if load_balancer and attempt < max_tries - 1:
-                    logger.warning("请求异常: %s，尝试下一个模型", exc)
+                    logger.warning("请求异常，尝试下一个模型")
                     continue
-                print(f"调用AI失败: {exc}")
                 return None
+
+            # 检查响应状态
+            if resp.status_code != 200:
+                if load_balancer and _is_429_response(resp) and attempt < max_tries - 1:
+                    load_balancer.mark_model_429(model_config)
+                    logger.warning("检测到429，切换模型重试 (尝试 %s/%s)", attempt + 1, max_tries)
+                    continue
+                print(f"AI API返回错误状态码: {resp.status_code}")
+                return None
+
+            # 解析响应结果
+            data = resp.json()
+            choices = data.get("choices") or []
+            if not choices:
+                return None
+
+            # 提取摘要文本
+            text = choices[-1]["message"].get("content", "").strip()
+            # 清理特殊格式（如思考过程标记）
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            # 移除可能的标题标记
+            text = text.lstrip("# ").lstrip()
+            return text
 
         return None
