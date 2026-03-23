@@ -2,15 +2,8 @@ import type { Article, ArticleDetail, RelatedArticle, PaginatedArticlesResponse 
 import { buildAuthHeaders, getApiBaseUrl } from '@/services/api';
 
 export async function fetchArticles(token?: string | null) {
-  const resp = await fetch(`${getApiBaseUrl()}/articles/`, {
-    headers: buildAuthHeaders(token),
-  });
-  if (!resp.ok) {
-    throw new Error('articles fetch failed');
-  }
-  const data = await resp.json();
-  const list = Array.isArray(data?.articles) ? data.articles : [];
-  return list as Article[];
+  const data = await fetchTodayArticles(token);
+  return data.articles;
 }
 
 /** 获取当天最新文章（首页专用） */

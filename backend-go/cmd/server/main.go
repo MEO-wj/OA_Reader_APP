@@ -1,0 +1,85 @@
+package main
+
+import (
+	"log"
+
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+
+	"github.com/oap/backend-go/internal/config"
+	"github.com/oap/backend-go/internal/handler"
+	"github.com/oap/backend-go/internal/middleware"
+	"github.com/oap/backend-go/internal/pkg/alog"
+	"github.com/oap/backend-go/internal/repository"
+	"github.com/oap/backend-go/internal/service"
+)
+
+func main() {
+	// 加载配置
+	cfg, err := config.Load(".env")
+	if err != nil {
+		log.Fatal("Failed to load config:", err)
+	}
+
+	// 初始化数据库
+	if err := repository.InitDB(cfg.DatabaseURL); err != nil {
+		log.Fatal("Failed to init db:", err)
+	}
+	alog.SetAuthDebug(cfg.AuthDebug)
+
+	// 初始化服务
+	authService := service.NewAuthService(cfg)
+	articleService := service.NewArticleService()
+
+	// 初始化处理器
+	authHandler := handler.NewAuthHandler(authService)
+	articleHandler := handler.NewArticleHandler(articleService)
+	aiHandler := handler.NewAIHandler(cfg.AIEndURL)
+
+	// Gin 路由
+	r := gin.Default()
+
+	// CORS
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     cfg.CORSAllowOrigins,
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length", "ETag"},
+		AllowCredentials: true,
+	}))
+
+	// 健康检查
+	r.GET("/api/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
+	// 认证路由
+	auth := r.Group("/api/auth")
+	{
+		auth.POST("/token", authHandler.Login)
+		auth.POST("/token/refresh", authHandler.Refresh)
+		auth.POST("/logout", authHandler.Logout)
+		auth.GET("/me", middleware.AuthRequired(cfg.AuthJWTSecret), authHandler.Me)
+	}
+
+	// 文章路由
+	articles := r.Group("/api/articles")
+	{
+		articles.GET("/today", articleHandler.GetToday)
+		articles.GET("/", articleHandler.GetPage)
+		articles.GET("/count", articleHandler.GetCount)
+		articles.GET("/:id", articleHandler.GetByID)
+	}
+
+	// AI 路由 (需要认证)
+	ai := r.Group("/api/ai")
+	ai.Use(middleware.AuthRequired(cfg.AuthJWTSecret))
+	{
+		ai.POST("/ask", aiHandler.Ask)
+		ai.POST("/clear_memory", aiHandler.ClearMemory)
+		ai.POST("/embed", aiHandler.Embed)
+	}
+
+	log.Println("Server starting on :4420")
+	r.Run(":4420")
+}
