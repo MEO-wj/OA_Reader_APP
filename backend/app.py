@@ -121,10 +121,11 @@ def health_check() -> tuple[Any, int]:
     }), 200
 
 # 导入并注册路由
-from backend.routes import articles, auth, ai
+from backend.routes import articles, auth, ai, profile
 
 app.register_blueprint(auth.bp, url_prefix='/api/auth')
 app.register_blueprint(articles.bp, url_prefix='/api/articles')
+app.register_blueprint(profile.bp, url_prefix='/api/user')
 app.register_blueprint(ai.bp, url_prefix='/api/ai')
 
 # 初始化AI请求队列（在路由注册之后，传入Flask app实例）

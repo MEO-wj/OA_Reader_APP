@@ -1,18 +1,22 @@
 // 认证存储工具：双端适配（App 用 SecureStore，Web 用 localStorage）
 
-type SecureStoreModule = typeof import('expo-secure-store');
+import * as ExpoSecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
-const { Platform } = require('react-native') as typeof import('react-native');
+import type { UserProfile, UserProfilePatch } from '@/types/profile';
+
+type SecureStoreModule = typeof ExpoSecureStore;
 
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_PROFILE_KEY = 'user_profile';
 
 const isWebEnv = Platform.OS === 'web';
+const userProfileListeners = new Set<() => void>();
 let SecureStore: SecureStoreModule | null = null;
 
 if (!isWebEnv) {
-  SecureStore = require('expo-secure-store');
+  SecureStore = ExpoSecureStore;
 }
 
 async function getItem(key: string) {
@@ -57,6 +61,16 @@ async function removeItem(key: string) {
   }
 }
 
+function emitUserProfileChanged() {
+  userProfileListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (error) {
+      console.error('Failed to notify user profile listener:', error);
+    }
+  });
+}
+
 export async function getAccessToken() {
   return await getItem(ACCESS_TOKEN_KEY);
 }
@@ -85,12 +99,46 @@ export async function getUserProfileRaw() {
   return await getItem(USER_PROFILE_KEY);
 }
 
+export async function getUserProfile() {
+  const value = await getUserProfileRaw();
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as UserProfile;
+  } catch (error) {
+    console.error('Failed to parse user profile:', error);
+    return null;
+  }
+}
+
 export async function setUserProfileRaw(value: string | null) {
   if (value) {
     await setItem(USER_PROFILE_KEY, value);
+    emitUserProfileChanged();
     return;
   }
   await removeItem(USER_PROFILE_KEY);
+  emitUserProfileChanged();
+}
+
+export async function updateUserProfile(patch: UserProfilePatch) {
+  const current = (await getUserProfile()) ?? {};
+  const nextProfile = {
+    ...current,
+    ...patch,
+  } satisfies UserProfile;
+
+  await setUserProfileRaw(JSON.stringify(nextProfile));
+  return nextProfile;
+}
+
+export function subscribeUserProfile(listener: () => void) {
+  userProfileListeners.add(listener);
+  return () => {
+    userProfileListeners.delete(listener);
+  };
 }
 
 export async function clearAuthStorage() {
@@ -99,4 +147,5 @@ export async function clearAuthStorage() {
     removeItem(REFRESH_TOKEN_KEY),
     removeItem(USER_PROFILE_KEY),
   ]);
+  emitUserProfileChanged();
 }
