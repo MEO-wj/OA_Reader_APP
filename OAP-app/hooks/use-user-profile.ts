@@ -1,34 +1,28 @@
+import { useCallback, useEffect, useState } from 'react';
 
-import { useEffect, useState } from 'react';
-import { getUserProfileRaw } from '@/storage/auth-storage';
-
-type UserProfile = {
-  display_name?: string;
-  username?: string;
-  is_vip?: boolean;
-  vip_expired_at?: string;
-};
+import type { UserProfile } from '@/types/profile';
+import { getUserProfile, subscribeUserProfile } from '@/storage/auth-storage';
 
 export function useUserProfile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isProfileLoaded, setIsProfileLoaded] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    getUserProfileRaw().then((value) => {
-      if (!mounted) {
-        return;
-      }
-      try {
-        const parsed = value ? (JSON.parse(value) as UserProfile) : null;
-        setProfile(parsed);
-      } catch {
-        setProfile(null);
-      }
-    });
-    return () => {
-      mounted = false;
-    };
+  const reloadProfile = useCallback(async () => {
+    const nextProfile = await getUserProfile();
+    setProfile(nextProfile);
+    setIsProfileLoaded(true);
   }, []);
 
-  return profile;
+  useEffect(() => {
+    void reloadProfile();
+    return subscribeUserProfile(() => {
+      void reloadProfile();
+    });
+  }, [reloadProfile]);
+
+  return {
+    profile,
+    isProfileLoaded,
+    reloadProfile,
+  };
 }

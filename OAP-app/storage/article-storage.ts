@@ -88,7 +88,7 @@ export async function pruneArticleCache() {
   if (detailKeys.length > 0) {
     const pairs = await multiGet(detailKeys);
     pairs.forEach(([key, raw]) => {
-      if (!raw) {
+      if (!key || !raw) {
         return;
       }
       try {
