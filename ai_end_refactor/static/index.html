@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareerPath 调试面板</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 13px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+        .workspace {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+        }
+        .sidebar {
+            width: 220px;
+            border-right: 1px solid #3c3c3c;
+            background: #202124;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            padding: 10px;
+            border-bottom: 1px solid #3c3c3c;
+            display: flex;
+            gap: 8px;
+        }
+        .sidebar-header button {
+            flex: 1;
+            padding: 6px 8px;
+            font-size: 12px;
+        }
+        .conversation-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .conversation-item {
+            border: 1px solid #3c3c3c;
+            border-radius: 6px;
+            padding: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            color: #d4d4d4;
+            background: #2a2a2a;
+            font-size: 12px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+        .conversation-item:hover { border-color: #007acc; }
+        .conversation-item.active {
+            border-color: #007acc;
+            background: #1f3447;
+        }
+        .chat-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .chat-header {
+            padding: 10px 15px;
+            background: #252526;
+            border-bottom: 1px solid #3c3c3c;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header-left { display: flex; align-items: center; gap: 15px; }
+        .header-right { display: flex; align-items: center; gap: 10px; }
+        .user-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .user-selector label { color: #808080; font-weight: normal; font-size: 12px; }
+        .user-selector input {
+            border: 1px solid #3c3c3c;
+            border-radius: 4px;
+            background: #3c3c3c;
+            color: #d4d4d4;
+            padding: 5px 10px;
+            font-size: 12px;
+            width: 150px;
+        }
+        .user-selector input:focus { border-color: #007acc; outline: none; }
+        .user-selector select {
+            border: 1px solid #3c3c3c;
+            border-radius: 4px;
+            background: #3c3c3c;
+            color: #d4d4d4;
+            padding: 5px 8px;
+            font-size: 12px;
+            min-width: 130px;
+        }
+        .user-badge {
+            background: #007acc;
+            color: #fff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        .switch-btn {
+            background: #3c3c3c;
+            padding: 5px 12px;
+            font-size: 12px;
+        }
+        .switch-btn:hover { background: #4c4c4c; }
+        .clear-btn {
+            background: #d32f2f;
+            padding: 5px 12px;
+            font-size: 12px;
+        }
+        .clear-btn:hover { background: #b71c1c; }
+        #chat {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+        .message {
+            margin-bottom: 12px;
+            line-height: 1.6;
+        }
+        .user { color: #4ec9b0; font-weight: 600; }
+        .assistant { color: #dcdcaa; }
+        .system { color: #808080; font-style: italic; font-size: 12px; }
+        .debug {
+            margin-left: 20px;
+            font-size: 12px;
+            padding-left: 15px;
+            border-left: 2px solid #3c3c3c;
+        }
+        .thinking {
+            margin: 8px 0 14px 20px;
+            font-size: 12px;
+            border-left: 2px solid #3c3c3c;
+            padding-left: 12px;
+        }
+        .thinking details {
+            background: #252526;
+            border: 1px solid #3c3c3c;
+            border-radius: 6px;
+            padding: 6px 10px;
+        }
+        .thinking summary {
+            cursor: pointer;
+            color: #9cdcfe;
+            font-weight: 600;
+            user-select: none;
+        }
+        .thinking-section-title {
+            color: #808080;
+            margin: 8px 0 4px 0;
+        }
+        .thinking-model {
+            white-space: pre-wrap;
+            color: #dcdcaa;
+            line-height: 1.5;
+            margin-bottom: 6px;
+        }
+        .thinking-trace {
+            border-top: 1px dashed #3c3c3c;
+            padding-top: 6px;
+        }
+        .debug-skill { color: #4ec9b0; }
+        .debug-tool { color: #dcdcaa; }
+        .debug-arg { color: #ce9178; white-space: pre-wrap; }
+        .debug-result { color: #808080; white-space: pre-wrap; }
+        .debug-token { color: #569cd6; }
+        .debug-time { color: #569cd6; opacity: 0.55; margin-right: 6px; }
+        .debug-error { color: #f14c4c; }
+        .debug-info { color: #b5cea8; }
+        .debug-db { color: #4fc1ff; }
+        .input-area {
+            display: flex;
+            gap: 10px;
+            padding: 15px;
+            background: #252526;
+            border-top: 1px solid #3c3c3c;
+        }
+        #message {
+            flex: 1;
+            border: 1px solid #3c3c3c;
+            border-radius: 4px;
+            background: #3c3c3c;
+            color: #d4d4d4;
+            padding: 10px;
+            outline: none;
+        }
+        #message:focus { border-color: #007acc; }
+        button {
+            border: 0;
+            border-radius: 4px;
+            padding: 10px 25px;
+            color: #fff;
+            background: #007acc;
+            cursor: pointer;
+        }
+        button:hover { background: #005a9e; }
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            padding: 8px 15px;
+            background: #252526;
+            border-top: 1px solid #3c3c3c;
+            font-size: 12px;
+        }
+        .stat-item { color: #808080; }
+        .stat-value { color: #569cd6; font-weight: 700; }
+        .conversation-empty {
+            color: #808080;
+            font-size: 12px;
+            padding: 6px;
+        }
+        /* Toast 提示样式 */
+        .toast-container {
+            position: fixed;
+            top: 60px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast {
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            max-width: 300px;
+            animation: toastIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .toast.toast-out {
+            animation: toastOut 0.3s ease forwards;
+        }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(20px); }
+        }
+        .toast-warning {
+            background: #7a6a25;
+            border: 1px solid #b89a3d;
+            color: #f1d77e;
+        }
+        .toast-info {
+            background: #2a4a6a;
+            border: 1px solid #4a8ab8;
+            color: #8ac4f1;
+        }
+        .toast-error {
+            background: #6a2a2a;
+            border: 1px solid #b84a4a;
+            color: #f18a8a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="toast-container" id="toast-container"></div>
+        <div class="chat-header">
+            <div class="header-left">
+                <span>CareerPath 调试面板</span>
+            </div>
+            <div class="header-right">
+                <div class="user-selector">
+                    <label>用户ID:</label>
+                    <input type="text" id="user-id" placeholder="输入用户ID..." value="debug_user">
+                    <button class="switch-btn" onclick="switchUser()">切换</button>
+                    <button class="clear-btn" onclick="clearChat()">清空</button>
+                    <label>历史用户:</label>
+                    <select id="history-user-select" onchange="switchUserFromHistory()">
+                        <option value="">选择历史用户</option>
+                    </select>
+                </div>
+                <span class="user-badge" id="current-user">当前: debug_user</span>
+            </div>
+        </div>
+        <div class="workspace">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <button onclick="createNewConversation()">+ 新建</button>
+                    <button onclick="deleteCurrentConversation()">删除</button>
+                </div>
+                <div class="conversation-list" id="conversation-list"></div>
+            </aside>
+            <div class="chat-main">
+                <div id="chat"></div>
+                <div class="input-area">
+                    <input id="message" type="text" placeholder="输入消息..." onkeypress="if(event.key==='Enter') send()">
+                    <button id="send-btn" onclick="send()">发送</button>
+                </div>
+                <div class="stats-bar">
+                    <span class="stat-item">用户: <span class="stat-value" id="stat-user">debug_user</span></span>
+                    <span class="stat-item">会话: <span class="stat-value" id="stat-conversation">default</span></span>
+                    <span class="stat-item">数据源: <span class="stat-value" id="stat-datasource">加载中...</span></span>
+                    <span class="stat-item">技能数: <span class="stat-value" id="stat-skillcount">-</span></span>
+                    <span class="stat-item" style="margin-left: auto;">Prompt: <span class="stat-value" id="stat-prompt">0</span></span>
+                    <span class="stat-item">Completion: <span class="stat-value" id="stat-completion">0</span></span>
+                    <span class="stat-item">Total: <span class="stat-value" id="stat-total">0</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+    <script>
+        let buffer = "";
+        const totalTokens = { prompt: 0, completion: 0, total: 0 };
+        const userChatHistory = {};
+        let currentThinkingBlock = null;
+        let currentThinkingModel = null;
+        let currentThinkingTrace = null;
+        let currentAssistantMessage = null;
+        let isStreaming = false;
+        let currentUserId = "debug_user";
+        let conversations = [];
+        let currentConversationId = null;
+        let compactToastId = null;
+
+        function validateUserId(userId) {
+            if (!userId || !userId.trim()) return "user_id 不能为空";
+            if (userId.trim().length > 64) return "user_id 不能超过 64 字符";
+            return null;
+        }
+
+        function getConversationStorageKey(userId) {
+            return "conversation_id_" + userId;
+        }
+
+        function getHistoryKey(userId, conversationId) {
+            return userId + "::" + (conversationId || "default");
+        }
+
+        function saveCurrentUserHistory() {
+            const chat = document.getElementById("chat");
+            userChatHistory[getHistoryKey(currentUserId, currentConversationId)] = chat.innerHTML;
+        }
+
+        function restoreCurrentUserLocalHistory() {
+            const chat = document.getElementById("chat");
+            chat.innerHTML = userChatHistory[getHistoryKey(currentUserId, currentConversationId)] || "";
+            if (!chat.innerHTML.trim()) {
+                addMessage("system", "当前用户: " + currentUserId + "（暂无本地记录）");
+            }
+        }
+
+        function setCurrentUser(userId) {
+            currentUserId = userId;
+            currentConversationId = localStorage.getItem(getConversationStorageKey(userId));
+            document.getElementById("user-id").value = userId;
+            document.getElementById("current-user").textContent = "当前: " + userId;
+            document.getElementById("stat-user").textContent = userId;
+            document.getElementById("stat-conversation").textContent = currentConversationId || "default";
+            const select = document.getElementById("history-user-select");
+            if (select) select.value = userId;
+        }
+
+        function resetTokenStats() {
+            totalTokens.prompt = 0;
+            totalTokens.completion = 0;
+            totalTokens.total = 0;
+            updateStatsDisplay();
+        }
+
+        async function loadRecentUsers() {
+            const select = document.getElementById("history-user-select");
+            if (!select) return;
+            try {
+                const resp = await fetch("/chat/users?limit=30");
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const users = Array.isArray(data.users) ? data.users : [];
+
+                const old = select.value;
+                select.innerHTML = '<option value="">选择历史用户</option>';
+                for (const item of users) {
+                    const option = document.createElement("option");
+                    option.value = item.user_id;
+                    option.textContent = item.user_id;
+                    select.appendChild(option);
+                }
+                if (old) select.value = old;
+            } catch (_) {
+                // 调试面板忽略历史用户列表加载失败
+            }
+        }
+
+        function renderServerHistory(messages) {
+            const chat = document.getElementById("chat");
+            chat.innerHTML = "";
+
+            if (!messages || messages.length === 0) {
+                addMessage("system", "当前用户: " + currentUserId + "（服务器暂无历史）");
+                return;
+            }
+
+            addMessage("system", "已加载服务器历史，共 " + messages.length + " 条");
+            for (const msg of messages) {
+                const role = msg.role || "system";
+                if (role === "assistant") {
+                    addMessage("assistant", msg.content || "");
+                } else if (role === "user") {
+                    addMessage("user", msg.content || "");
+                } else {
+                    addMessage("system", (msg.content || "").toString());
+                }
+            }
+        }
+
+        async function loadHistoryFromServer(userId, conversationId) {
+            try {
+                let url = "/chat/history?user_id=" + encodeURIComponent(userId);
+                if (conversationId) {
+                    url += "&conversation_id=" + encodeURIComponent(conversationId);
+                }
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    const text = await resp.text();
+                    addMessage("system", "加载历史失败: HTTP " + resp.status + " - " + text);
+                    restoreCurrentUserLocalHistory();
+                    return;
+                }
+                const data = await resp.json();
+                renderServerHistory(data.messages || []);
+                saveCurrentUserHistory();
+            } catch (err) {
+                addMessage("system", "加载历史失败: " + err.message);
+                restoreCurrentUserLocalHistory();
+            }
+        }
+
+        function renderConversationList() {
+            const list = document.getElementById("conversation-list");
+            if (!list) return;
+
+            list.innerHTML = "";
+            if (!conversations.length) {
+                const empty = document.createElement("div");
+                empty.className = "conversation-empty";
+                empty.textContent = "暂无会话";
+                list.appendChild(empty);
+                return;
+            }
+
+            for (const conv of conversations) {
+                const item = document.createElement("div");
+                const convId = conv.conversation_id || "";
+                item.className = "conversation-item" + (convId === currentConversationId ? " active" : "");
+                item.textContent = conv.title || convId || "新会话";
+                item.onclick = () => switchConversation(convId);
+                list.appendChild(item);
+            }
+        }
+
+        async function loadConversations() {
+            try {
+                const resp = await fetch("/chat/sessions?user_id=" + encodeURIComponent(currentUserId));
+                if (!resp.ok) {
+                    conversations = [];
+                    renderConversationList();
+                    return;
+                }
+                const data = await resp.json();
+                conversations = Array.isArray(data.sessions) ? data.sessions : [];
+
+                if (currentConversationId && !conversations.some(c => c.conversation_id === currentConversationId)) {
+                    currentConversationId = null;
+                    localStorage.removeItem(getConversationStorageKey(currentUserId));
+                }
+                if (!currentConversationId && conversations.length > 0) {
+                    currentConversationId = conversations[0].conversation_id;
+                    localStorage.setItem(getConversationStorageKey(currentUserId), currentConversationId);
+                }
+                document.getElementById("stat-conversation").textContent = currentConversationId || "default";
+                renderConversationList();
+            } catch (_) {
+                conversations = [];
+                renderConversationList();
+            }
+        }
+
+        async function switchConversation(conversationId) {
+            if (isStreaming || !conversationId || conversationId === currentConversationId) return;
+            saveCurrentUserHistory();
+            currentConversationId = conversationId;
+            localStorage.setItem(getConversationStorageKey(currentUserId), conversationId);
+            document.getElementById("stat-conversation").textContent = currentConversationId;
+            renderConversationList();
+            await loadHistoryFromServer(currentUserId, currentConversationId);
+        }
+
+        async function createNewConversation() {
+            if (isStreaming) return;
+            try {
+                const resp = await fetch("/chat/sessions", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: currentUserId, title: "新会话" })
+                });
+                if (!resp.ok) {
+                    addMessage("system", "创建会话失败: HTTP " + resp.status);
+                    return;
+                }
+                const data = await resp.json();
+                currentConversationId = data.conversation_id;
+                localStorage.setItem(getConversationStorageKey(currentUserId), currentConversationId);
+                document.getElementById("stat-conversation").textContent = currentConversationId;
+                await loadConversations();
+                await loadHistoryFromServer(currentUserId, currentConversationId);
+            } catch (err) {
+                addMessage("system", "创建会话失败: " + err.message);
+            }
+        }
+
+        async function deleteCurrentConversation() {
+            if (isStreaming) return;
+            if (!currentConversationId) {
+                addMessage("system", "当前没有可删除的会话");
+                return;
+            }
+            try {
+                const resp = await fetch(
+                    "/chat/sessions/" + encodeURIComponent(currentConversationId) + "?user_id=" + encodeURIComponent(currentUserId),
+                    { method: "DELETE" }
+                );
+                if (!resp.ok) {
+                    const text = await resp.text();
+                    addMessage("system", "删除会话失败: HTTP " + resp.status + " - " + text);
+                    return;
+                }
+                currentConversationId = null;
+                localStorage.removeItem(getConversationStorageKey(currentUserId));
+                await loadConversations();
+                await loadHistoryFromServer(currentUserId, currentConversationId);
+            } catch (err) {
+                addMessage("system", "删除会话失败: " + err.message);
+            }
+        }
+
+        async function switchUser() {
+            if (isStreaming) return;
+            const input = document.getElementById("user-id");
+            const newUserId = input.value.trim() || "debug_user";
+            const error = validateUserId(newUserId);
+            if (error) {
+                addMessage("system", "切换失败: " + error);
+                return;
+            }
+            saveCurrentUserHistory();
+            setCurrentUser(newUserId);
+            resetTokenStats();
+            await loadConversations();
+            await loadHistoryFromServer(newUserId, currentConversationId);
+            await loadRecentUsers();
+        }
+
+        async function switchUserFromHistory() {
+            if (isStreaming) return;
+            const select = document.getElementById("history-user-select");
+            const selected = select.value;
+            if (!selected) return;
+            document.getElementById("user-id").value = selected;
+            await switchUser();
+        }
+
+        async function clearChat() {
+            if (isStreaming) return;
+            try {
+                const resp = await fetch("/chat/history?user_id=" + encodeURIComponent(currentUserId), {
+                    method: "DELETE"
+                });
+                if (!resp.ok) {
+                    const text = await resp.text();
+                    addMessage("system", "清空失败: HTTP " + resp.status + " - " + text);
+                    return;
+                }
+                document.getElementById("chat").innerHTML = "";
+                userChatHistory[getHistoryKey(currentUserId, currentConversationId)] = "";
+                addMessage("system", "已清空当前用户(" + currentUserId + ")的服务器与本地记录");
+                resetTokenStats();
+                await loadRecentUsers();
+                await loadConversations();
+            } catch (err) {
+                addMessage("system", "清空失败: " + err.message);
+            }
+        }
+
+        function updateStatsDisplay() {
+            document.getElementById("stat-prompt").textContent = totalTokens.prompt;
+            document.getElementById("stat-completion").textContent = totalTokens.completion;
+            document.getElementById("stat-total").textContent = totalTokens.total;
+        }
+
+        function send() {
+            if (isStreaming) return;
+            const input = document.getElementById("message");
+            const sendBtn = document.getElementById("send-btn");
+            const message = input.value.trim();
+            if (!message) return;
+            const userIdError = validateUserId(currentUserId);
+            if (userIdError) {
+                addMessage("system", "发送失败: " + userIdError);
+                return;
+            }
+
+            isStreaming = true;
+            input.disabled = true;
+            sendBtn.disabled = true;
+            addMessage("user", message);
+            input.value = "";
+            buffer = "";
+            currentThinkingBlock = addThinkingBlock();
+            currentAssistantMessage = addMessage("assistant", "");
+
+            fetch("/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    message,
+                    user_id: currentUserId,
+                    conversation_id: currentConversationId
+                })
+            }).then((response) => {
+                if (!response.ok) {
+                    return response.text().then((text) => {
+                        throw new Error("HTTP " + response.status + " - " + (text || "请求失败"));
+                    });
+                }
+                const responseConversationId = response.headers.get("x-conversation-id");
+                if (responseConversationId && responseConversationId !== currentConversationId) {
+                    currentConversationId = responseConversationId;
+                    localStorage.setItem(getConversationStorageKey(currentUserId), currentConversationId);
+                    document.getElementById("stat-conversation").textContent = currentConversationId;
+                }
+                if (!response.body) {
+                    throw new Error("响应体为空，无法建立 SSE 流");
+                }
+                addTrace("info", "开始处理");
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let partial = "";
+
+                function read() {
+                    reader.read().then(({ done, value }) => {
+                        if (done) return;
+                        partial += decoder.decode(value, { stream: true });
+                        partial = parseSSE(partial);
+                        read();
+                    });
+                }
+                read();
+            }).catch((err) => {
+                addTrace("error", "请求失败: " + err.message);
+                finishStreaming();
+            });
+        }
+
+        function parseSSE(text) {
+            const blocks = text.split("\n\n");
+            const remains = blocks.pop() || "";
+            for (const block of blocks) {
+                const lines = block.split("\n");
+                let event = "";
+                let data = "";
+                for (const line of lines) {
+                    if (line.startsWith("event: ")) event = line.slice(7);
+                    if (line.startsWith("data: ")) data += line.slice(6);
+                }
+                if (data) {
+                    try {
+                        handleEvent(event, JSON.parse(data));
+                    } catch (_) {
+                        addTrace("error", "SSE 数据解析失败");
+                    }
+                }
+            }
+            return remains;
+        }
+
+        function splitThinkingAndAnswer(text) {
+            if (!text) return { thinking: "", answer: "" };
+            let answer = text;
+            let thinking = "";
+
+            const tagModes = [
+                { start: "<think>", end: "</think>" },
+                { start: "<thinking>", end: "</thinking>" }
+            ];
+
+            for (const mode of tagModes) {
+                const s = answer.indexOf(mode.start);
+                if (s !== -1) {
+                    const e = answer.indexOf(mode.end, s + mode.start.length);
+                    if (e !== -1) {
+                        thinking += answer.slice(s + mode.start.length, e).trim();
+                        answer = (answer.slice(0, s) + answer.slice(e + mode.end.length)).trim();
+                    } else {
+                        thinking += answer.slice(s + mode.start.length).trim();
+                        answer = answer.slice(0, s).trim();
+                    }
+                }
+            }
+
+            if (!thinking && answer.includes("【思考】")) {
+                const start = answer.indexOf("【思考】");
+                const endMarks = ["【最终回答】", "【回答】"];
+                let end = -1;
+                for (const m of endMarks) {
+                    const idx = answer.indexOf(m, start + 4);
+                    if (idx !== -1 && (end === -1 || idx < end)) end = idx;
+                }
+                if (end !== -1) {
+                    thinking = answer.slice(start + 4, end).trim();
+                    answer = answer.slice(end).replace("【最终回答】", "").replace("【回答】", "").trim();
+                } else {
+                    thinking = answer.slice(start + 4).trim();
+                    answer = answer.slice(0, start).trim();
+                }
+            }
+
+            return { thinking, answer };
+        }
+
+        function showCompactToast(message, type = "info") {
+            const container = document.getElementById("toast-container");
+            if (compactToastId !== null) {
+                hideToast(compactToastId);
+            }
+            const toast = document.createElement("div");
+            toast.className = "toast toast-" + type;
+            toast.id = "compact-toast";
+            toast.textContent = message;
+            container.appendChild(toast);
+            compactToastId = "compact-toast";
+        }
+
+        function hideToast(toastId) {
+            const toast = document.getElementById(toastId);
+            if (toast) {
+                toast.classList.add("toast-out");
+                setTimeout(() => toast.remove(), 300);
+            }
+            if (compactToastId === toastId) {
+                compactToastId = null;
+            }
+        }
+
+        function handleEvent(event, data) {
+            switch (data.type || event) {
+                case "start":
+                    addTrace("info", "SSE 流已建立");
+                    if (data.conversation_id) {
+                        currentConversationId = data.conversation_id;
+                        localStorage.setItem(getConversationStorageKey(currentUserId), currentConversationId);
+                        document.getElementById("stat-conversation").textContent = currentConversationId;
+                        renderConversationList();
+                    }
+                    break;
+                case "skill_call":
+                    addTrace("skill", "[技能] " + data.skill);
+                    if (data.description) addTrace("info", "  " + data.description);
+                    break;
+                case "tool_call":
+                    addTrace("tool", "[工具] " + data.tool);
+                    addTrace("arg", "参数: " + (data.arguments || ""));
+                    break;
+                case "tool_result":
+                    addTrace("result", "[结果] " + preview(data.result || ""));
+                    break;
+                case "db_operation":
+                    addTrace("db", "[数据库] " + (data.message || data.operation || "unknown"));
+                    break;
+                case "reasoning":
+                case "reasoning_delta":
+                    updateThinkingReasoning((currentThinkingModel?.textContent || "") + (data.content || ""));
+                    break;
+                case "delta":
+                    buffer += data.content || "";
+                    const split = splitThinkingAndAnswer(buffer);
+                    updateThinkingReasoning(split.thinking);
+                    updateLastAssistantMessage(split.answer);
+                    break;
+                case "done":
+                    if (data.usage) {
+                        const info = "P:" + (data.usage.prompt_tokens || 0) +
+                                     " C:" + (data.usage.completion_tokens || 0) +
+                                     " T:" + (data.usage.total_tokens || 0);
+                        addTrace("token", "[Token] " + info);
+                        updateStats(data.usage);
+                    }
+                    finishStreaming();
+                    break;
+                case "error":
+                    addTrace("error", "[错误] " + (data.message || "未知错误"));
+                    showCompactToast("错误: " + (data.message || "未知错误"), "error");
+                    finishStreaming();
+                    break;
+                case "compact_warning":
+                    showCompactToast("上下文即将优化...", "warning");
+                    break;
+                case "compact_start":
+                    showCompactToast("正在优化上下文...", "info");
+                    break;
+                case "compact_done":
+                    hideToast("compact-toast");
+                    break;
+                case "compact_error":
+                    showCompactToast("上下文优化失败: " + (data.message || "未知错误"), "error");
+                    break;
+                default:
+                    addTrace("info", "[事件] " + (data.type || event || "unknown"));
+            }
+        }
+
+        function addMessage(type, text) {
+            const chat = document.getElementById("chat");
+            const div = document.createElement("div");
+            div.className = "message " + type;
+            div.innerHTML = type === "assistant" ? renderMarkdown(text) : escapeHtml(text);
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+            return div;
+        }
+
+        function addThinkingBlock() {
+            const chat = document.getElementById("chat");
+            const root = document.createElement("div");
+            root.className = "thinking";
+
+            const details = document.createElement("details");
+            details.open = true;
+
+            const summary = document.createElement("summary");
+            summary.textContent = "thinking（可折叠）";
+            details.appendChild(summary);
+
+            const modelTitle = document.createElement("div");
+            modelTitle.className = "thinking-section-title";
+            modelTitle.textContent = "模型思路（若模型返回可解析内容）";
+            details.appendChild(modelTitle);
+
+            const model = document.createElement("div");
+            model.className = "thinking-model";
+            model.textContent = "";
+            details.appendChild(model);
+
+            const traceTitle = document.createElement("div");
+            traceTitle.className = "thinking-section-title";
+            traceTitle.textContent = "工具/技能/数据库轨迹";
+            details.appendChild(traceTitle);
+
+            const trace = document.createElement("div");
+            trace.className = "thinking-trace";
+            details.appendChild(trace);
+
+            root.appendChild(details);
+            chat.appendChild(root);
+            chat.scrollTop = chat.scrollHeight;
+
+            currentThinkingModel = model;
+            currentThinkingTrace = trace;
+            return root;
+        }
+
+        function addTrace(type, text) {
+            if (!currentThinkingTrace) return;
+            const line = document.createElement("div");
+            line.className = "debug-" + type;
+            const now = new Date().toLocaleTimeString();
+            line.innerHTML = '<span class="debug-time">[' + now + "]</span>" + escapeHtml(text);
+            currentThinkingTrace.appendChild(line);
+            const chat = document.getElementById("chat");
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function updateThinkingReasoning(content) {
+            if (!currentThinkingModel) return;
+            currentThinkingModel.innerHTML = content ? renderMarkdown(content) : "<span class=\"debug-info\">（暂无可解析模型思路）</span>";
+        }
+
+        function updateLastAssistantMessage(content) {
+            if (!currentAssistantMessage) {
+                currentAssistantMessage = addMessage("assistant", "");
+            }
+            currentAssistantMessage.innerHTML = renderMarkdown(content);
+            const chat = document.getElementById("chat");
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function updateStats(usage) {
+            totalTokens.prompt += usage.prompt_tokens || 0;
+            totalTokens.completion += usage.completion_tokens || 0;
+            totalTokens.total += usage.total_tokens || 0;
+            document.getElementById("stat-prompt").textContent = totalTokens.prompt;
+            document.getElementById("stat-completion").textContent = totalTokens.completion;
+            document.getElementById("stat-total").textContent = totalTokens.total;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement("div");
+            div.textContent = text;
+            return div.innerHTML.replace(/\n/g, "<br>");
+        }
+
+        function escapeHtmlRaw(text) {
+            const div = document.createElement("div");
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function renderMarkdown(text) {
+            if (window.marked && window.DOMPurify) {
+                const parsed = window.marked.parse(text || "", {
+                    breaks: true,
+                    gfm: true,
+                });
+                return window.DOMPurify.sanitize(parsed);
+            }
+            return escapeHtml(text);
+        }
+
+        function finishStreaming() {
+            const input = document.getElementById("message");
+            const sendBtn = document.getElementById("send-btn");
+            isStreaming = false;
+            input.disabled = false;
+            sendBtn.disabled = false;
+            currentAssistantMessage = null;
+            saveCurrentUserHistory();
+            loadConversations();
+            input.focus();
+        }
+
+        function preview(text) {
+            return text.length > 200 ? text.slice(0, 200) + "..." : text;
+        }
+
+        window.onload = function () {
+            addMessage("system", "CareerPath 调试面板已就绪\n当前用户: " + currentUserId);
+            // 更新用户显示
+            document.getElementById("stat-user").textContent = currentUserId;
+            setCurrentUser(currentUserId);
+            // 加载数据源信息
+            fetch("/skills")
+                .then(r => r.json())
+                .then(data => {
+                    const dataSource = data.data_source === "database" ? "数据库" : "文件系统";
+                    document.getElementById("stat-datasource").textContent = dataSource;
+                    document.getElementById("stat-skillcount").textContent = data.skill_count;
+                })
+                .catch(err => {
+                    document.getElementById("stat-datasource").textContent = "未知";
+                    console.error("加载数据源失败:", err);
+                });
+            loadRecentUsers();
+            loadConversations().then(() => {
+                loadHistoryFromServer(currentUserId, currentConversationId);
+            });
+        };
+    </script>
+</body>
+</html>

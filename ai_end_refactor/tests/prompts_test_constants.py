@@ -1,0 +1,8 @@
+SYSTEM_PROMPT_EXPECTED_PHRASES = [
+    "不要暴露内部工具调用过程",
+    "禁用承诺性表述",
+]
+COMPACT_PROMPT_EXPECTED_PHRASES = ["对话压缩", "【原始对话】"]
+
+TEST_FUNCTION_CALL_USER_PROMPT = "北京天气怎么样？"
+TEST_FUNCTION_CALL_TOOL_DESCRIPTION = "获取指定城市的天气"
