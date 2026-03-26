@@ -1,0 +1,57 @@
+# OAP Docker Compose
+# 统一编排 postgres + backend 服务
+
+services:
+  postgres:
+    image: docker.1ms.run/ankane/pgvector:latest
+    container_name: oap-postgres
+    environment:
+      POSTGRES_DB: oa-reader
+      POSTGRES_USER: Unself
+      POSTGRES_PASSWORD: Unself-oa-reader-5
+      TZ: Asia/Shanghai
+    ports:
+      - "5430:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U Unself -d oa-reader"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: oap-backend
+    environment:
+      DATABASE_URL: postgres://Unself:Unself-oa-reader-5@postgres:5432/oa-reader?sslmode=disable
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-your-jwt-secret-key-change-in-production}
+      AUTH_REFRESH_HASH_KEY: ${AUTH_REFRESH_HASH_KEY:-your-refresh-hash-key}
+      AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-168h}
+      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-168h}
+      AUTH_PASSWORD_COST: ${AUTH_PASSWORD_COST:-12}
+      AUTH_ALLOW_AUTO_USER_CREATION: ${AUTH_ALLOW_AUTO_USER_CREATION:-true}
+      CAMPUS_AUTH_ENABLED: ${CAMPUS_AUTH_ENABLED:-true}
+      CAMPUS_AUTH_URL: ${CAMPUS_AUTH_URL:-http://a.stu.edu.cn/ac_portal/login.php}
+      CAMPUS_AUTH_TIMEOUT: ${CAMPUS_AUTH_TIMEOUT:-10}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+      RATE_LIMIT_PER_DAY: ${RATE_LIMIT_PER_DAY:-1000}
+      RATE_LIMIT_PER_HOUR: ${RATE_LIMIT_PER_HOUR:-100}
+      AI_END_URL: ${AI_END_URL:-http://ai_end:4421}
+      AUTH_DEBUG: ${AUTH_DEBUG:-false}
+    ports:
+      - "4420:4420"
+    volumes:
+      - backend_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  backend_uploads:

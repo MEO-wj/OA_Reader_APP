@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Image,
   Modal,
   Platform,
@@ -46,7 +47,7 @@ import { getDisplayName, getProfileAvatarUri, getProfileInitial } from '@/utils/
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { profile } = useUserProfile();
+  const { profile, syncError, syncProfileFromRemote } = useUserProfile();
   const { width: windowWidth } = useWindowDimensions();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = usePalette();
@@ -98,6 +99,17 @@ export default function SettingsScreen() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    void syncProfileFromRemote().catch(() => {});
+  }, [syncProfileFromRemote]);
+
+  useEffect(() => {
+    if (!syncError) {
+      return;
+    }
+    Alert.alert('资料同步失败', syncError);
+  }, [syncError]);
 
   useEffect(() => {
     if (!isWeb) {

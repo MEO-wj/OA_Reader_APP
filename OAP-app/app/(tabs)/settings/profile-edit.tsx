@@ -26,11 +26,9 @@ import { shadows } from '@/constants/shadows';
 import { usePalette } from '@/hooks/use-palette';
 import { useUserProfile } from '@/hooks/use-user-profile';
 import {
-  isProfileRemoteSyncEnabled,
-  updateReservedProfile,
-  uploadReservedProfileAvatar,
+  updateProfile,
+  uploadProfileAvatar,
 } from '@/services/profile';
-import { updateUserProfile } from '@/storage/auth-storage';
 import {
   getDisplayName,
   getProfileAvatarUri,
@@ -85,6 +83,11 @@ export default function ProfileEditScreen() {
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [avatarLocalUri, setAvatarLocalUri] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [avatarUploadMeta, setAvatarUploadMeta] = useState<{
+    fileName?: string | null;
+    mimeType?: string | null;
+    webFile?: File | null;
+  } | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [customTagInput, setCustomTagInput] = useState('');
   const [bioInput, setBioInput] = useState('');
@@ -110,6 +113,7 @@ export default function ProfileEditScreen() {
     setDisplayNameInput(nextDisplayName);
     setAvatarLocalUri(nextAvatarLocalUri);
     setAvatarUrl(nextAvatarUrl);
+    setAvatarUploadMeta(null);
     setSelectedTags(nextTags);
     setBioInput(nextBio);
 
@@ -246,6 +250,11 @@ export default function ProfileEditScreen() {
       }
 
       setAvatarLocalUri(asset.uri);
+      setAvatarUploadMeta({
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+        webFile: asset.file ?? null,
+      });
     } catch (error) {
       console.error('[Profile] Failed to pick avatar:', error);
       Alert.alert('头像选择失败', '本次未能完成头像选择，请稍后重试。');
@@ -281,44 +290,26 @@ export default function ProfileEditScreen() {
     try {
       let nextAvatarUrl = avatarUrl.trim() || undefined;
 
-      await updateUserProfile({
+      if (
+        avatarLocalUri.trim() &&
+        avatarLocalUri.trim() !== initialAvatarLocalUriRef.current
+      ) {
+        const uploadResult = await uploadProfileAvatar({
+          uri: avatarLocalUri.trim(),
+          fileName: avatarUploadMeta?.fileName,
+          mimeType: avatarUploadMeta?.mimeType,
+          webFile: avatarUploadMeta?.webFile,
+        });
+        nextAvatarUrl = uploadResult.avatar_url;
+      }
+
+      await updateProfile({
         display_name: nextDisplayName,
-        avatar_local_uri: avatarLocalUri.trim() || undefined,
-        avatar_url: nextAvatarUrl,
         profile_tags: finalTags,
         bio: nextBio,
+        avatar_url: nextAvatarUrl,
         profile_updated_at: nextUpdatedAt,
       });
-
-      let syncFailed = false;
-      if (isProfileRemoteSyncEnabled()) {
-        try {
-          if (
-            avatarLocalUri.trim() &&
-            avatarLocalUri.trim() !== initialAvatarLocalUriRef.current
-          ) {
-            const uploadResult = await uploadReservedProfileAvatar({
-              uri: avatarLocalUri.trim(),
-            });
-            nextAvatarUrl = uploadResult.avatar_url;
-            await updateUserProfile({
-              avatar_url: nextAvatarUrl,
-              profile_updated_at: nextUpdatedAt,
-            });
-          }
-
-          await updateReservedProfile({
-            display_name: nextDisplayName,
-            profile_tags: finalTags,
-            bio: nextBio,
-            avatar_url: nextAvatarUrl,
-            profile_updated_at: nextUpdatedAt,
-          });
-        } catch (error) {
-          syncFailed = true;
-          console.error('[Profile] Reserved remote sync failed:', error);
-        }
-      }
 
       initialAvatarLocalUriRef.current = avatarLocalUri.trim();
       initialSnapshotRef.current = buildDraftSnapshot({
@@ -330,18 +321,14 @@ export default function ProfileEditScreen() {
         pendingTag: '',
       });
 
-      if (syncFailed) {
-        Alert.alert('已保存到本地', '资料已更新，本次未同步到服务器。', [
-          { text: '知道了', onPress: () => router.back() },
-        ]);
-        return;
-      }
-
       router.back();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '资料保存失败，请稍后重试。';
+      Alert.alert('保存失败', message);
     } finally {
       setIsSaving(false);
     }
-  }, [addCustomTag, avatarLocalUri, avatarUrl, bioInput, customTagInput, displayNameInput, router, selectedTags]);
+  }, [addCustomTag, avatarLocalUri, avatarUploadMeta, avatarUrl, bioInput, customTagInput, displayNameInput, router, selectedTags]);
 
   if (!isProfileLoaded || !initializedRef.current) {
     return (
@@ -371,7 +358,7 @@ export default function ProfileEditScreen() {
               <CaretLeft size={16} color={palette.stone500} weight="bold" />
               <Text style={styles.backButtonText}>返回</Text>
             </Pressable>
-            <Text style={styles.headerHint}>本地优先保存，服务端同步接口已预留</Text>
+            <Text style={styles.headerHint}>保存后将直接更新服务器资料</Text>
           </View>
 
           <View style={styles.heroCard}>

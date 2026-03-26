@@ -1,6 +1,9 @@
+import { Platform } from 'react-native';
+
 import { buildAuthHeaders, getApiBaseUrl } from '@/services/api';
-import { getAccessToken } from '@/storage/auth-storage';
+import { getAccessToken, setUserProfileRaw } from '@/storage/auth-storage';
 import type { UserProfile } from '@/types/profile';
+import { buildAvatarFormValue } from '@/services/profile-avatar-upload';
 
 export type ProfileUpdatePayload = Pick<
   UserProfile,
@@ -11,21 +14,18 @@ export type ProfileAvatarUploadPayload = {
   uri: string;
   fileName?: string | null;
   mimeType?: string | null;
+  webFile?: File | null;
 };
 
 export type ProfileAvatarUploadResponse = {
   avatar_url: string;
 };
 
-export const RESERVED_PROFILE_API = {
+export const PROFILE_API = {
   getProfile: '/user/profile',
   updateProfile: '/user/profile',
   uploadAvatar: '/user/profile/avatar',
 } as const;
-
-export function isProfileRemoteSyncEnabled() {
-  return process.env.EXPO_PUBLIC_PROFILE_REMOTE_SYNC === '1';
-}
 
 async function buildAuthorizedHeaders(includeJsonContentType = false) {
   const token = await getAccessToken();
@@ -48,8 +48,8 @@ async function parseErrorMessage(response: Response) {
   return `Profile API request failed with status ${response.status}`;
 }
 
-export async function fetchReservedProfile() {
-  const response = await fetch(`${getApiBaseUrl()}${RESERVED_PROFILE_API.getProfile}`, {
+export async function fetchProfile() {
+  const response = await fetch(`${getApiBaseUrl()}${PROFILE_API.getProfile}`, {
     headers: await buildAuthorizedHeaders(),
   });
 
@@ -60,8 +60,8 @@ export async function fetchReservedProfile() {
   return (await response.json()) as UserProfile;
 }
 
-export async function updateReservedProfile(payload: ProfileUpdatePayload) {
-  const response = await fetch(`${getApiBaseUrl()}${RESERVED_PROFILE_API.updateProfile}`, {
+async function patchProfile(payload: ProfileUpdatePayload) {
+  const response = await fetch(`${getApiBaseUrl()}${PROFILE_API.updateProfile}`, {
     method: 'PATCH',
     headers: await buildAuthorizedHeaders(true),
     body: JSON.stringify(payload),
@@ -74,18 +74,11 @@ export async function updateReservedProfile(payload: ProfileUpdatePayload) {
   return (await response.json()) as UserProfile;
 }
 
-export async function uploadReservedProfileAvatar(payload: ProfileAvatarUploadPayload) {
+async function postProfileAvatar(payload: ProfileAvatarUploadPayload) {
   const formData = new FormData();
-  formData.append(
-    'avatar',
-    {
-      uri: payload.uri,
-      name: payload.fileName || 'avatar.jpg',
-      type: payload.mimeType || 'image/jpeg',
-    } as any
-  );
+  formData.append('avatar', buildAvatarFormValue(payload, Platform.OS === 'web') as any);
 
-  const response = await fetch(`${getApiBaseUrl()}${RESERVED_PROFILE_API.uploadAvatar}`, {
+  const response = await fetch(`${getApiBaseUrl()}${PROFILE_API.uploadAvatar}`, {
     method: 'POST',
     headers: await buildAuthorizedHeaders(),
     body: formData,
@@ -96,4 +89,20 @@ export async function uploadReservedProfileAvatar(payload: ProfileAvatarUploadPa
   }
 
   return (await response.json()) as ProfileAvatarUploadResponse;
+}
+
+export async function refreshProfileCache() {
+  const profile = await fetchProfile();
+  await setUserProfileRaw(JSON.stringify(profile));
+  return profile;
+}
+
+export async function updateProfile(payload: ProfileUpdatePayload) {
+  const profile = await patchProfile(payload);
+  await setUserProfileRaw(JSON.stringify(profile));
+  return profile;
+}
+
+export async function uploadProfileAvatar(payload: ProfileAvatarUploadPayload) {
+  return await postProfileAvatar(payload);
 }

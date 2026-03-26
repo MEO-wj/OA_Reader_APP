@@ -240,7 +240,7 @@ func (s *AuthService) issueTokens(user *model.User, meta AuthMetadata) (*LoginRe
 		user.ID.String(),
 		user.Username,
 		user.DisplayName,
-		user.Roles,
+			[]string(user.Roles),
 		int64(accessTTL.Seconds()),
 	)
 
@@ -253,10 +253,10 @@ func (s *AuthService) issueTokens(user *model.User, meta AuthMetadata) (*LoginRe
 			ID:          user.ID.String(),
 			Username:    user.Username,
 			DisplayName: user.DisplayName,
-			Roles:       user.Roles,
-		},
-	}, nil
-}
+				Roles:       append([]string{}, []string(user.Roles)...),
+			},
+		}, nil
+	}
 
 func (s *AuthService) hashRefreshToken(token string) string {
 	key := s.cfg.AuthRefreshHashKey

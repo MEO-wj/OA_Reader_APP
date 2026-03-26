@@ -1,0 +1,62 @@
+# Git
+.git
+.gitignore
+.worktrees
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+.venv
+venv
+*.egg-info
+.eggs
+*.egg
+
+# Node
+node_modules
+.npm
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build artifacts
+dist
+build
+*.log
+
+# Environment files (use .env for local dev)
+.env.local
+.env.*.local
+
+# Test artifacts
+.pytest_cache
+.coverage
+htmlcov
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# CI/CD
+.github/
+
+# Other services (built separately)
+ai_end/
+crawler/
+OAP-app/

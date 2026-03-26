@@ -22,6 +22,14 @@ type UserCredential struct {
 	PasswordCost int
 }
 
+type ProfileUpdateInput struct {
+	DisplayName      string
+	ProfileTags      []string
+	Bio              string
+	AvatarURL        string
+	ProfileUpdatedAt time.Time
+}
+
 func NewUserRepository() *UserRepository {
 	return &UserRepository{db: GetDB()}
 }
@@ -56,6 +64,24 @@ func (r *UserRepository) Update(user *model.User) error {
 	return r.db.Save(user).Error
 }
 
+func (r *UserRepository) UpdateProfileByID(userID uuid.UUID, input ProfileUpdateInput) (*model.User, error) {
+	updates := buildProfileUpdates(input)
+	if err := r.db.Model(&model.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	return r.FindByID(userID)
+}
+
+func buildProfileUpdates(input ProfileUpdateInput) map[string]interface{} {
+	return map[string]interface{}{
+		"display_name":       input.DisplayName,
+		"profile_tags":       model.StringArray(input.ProfileTags),
+		"bio":                input.Bio,
+		"avatar_url":         input.AvatarURL,
+		"profile_updated_at": input.ProfileUpdatedAt,
+	}
+}
+
 // GetCredential 获取用户凭证
 func (r *UserRepository) GetCredential(username string) (*UserCredential, error) {
 	var user model.User
@@ -82,7 +108,7 @@ func (r *UserRepository) CreateWithPassword(username, passwordHash, passwordAlgo
 		PasswordHash: passwordHash,
 		PasswordAlgo: passwordAlgo,
 		PasswordCost: passwordCost,
-		Roles:        []string{},
+		Roles:        model.StringArray{},
 	}
 	if err := r.db.Create(user).Error; err != nil {
 		return nil, err
