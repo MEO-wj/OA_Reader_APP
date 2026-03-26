@@ -18,8 +18,8 @@ type User struct {
 	ProfileTags      StringArray `gorm:"type:text[];not null;default:'{}'"`
 	Bio              string     `gorm:"not null;default:''"`
 	ProfileUpdatedAt *time.Time
-	IsVIP            bool       `gorm:"not null;default:false"`
-	VIPExpiredAt     *time.Time
+	IsVIP            bool       `gorm:"column:is_vip;not null;default:false"`
+	VIPExpiredAt     *time.Time `gorm:"column:vip_expired_at"`
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	LastLoginAt      *time.Time
