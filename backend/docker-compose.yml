@@ -1,11 +1,41 @@
 
 services:
+  postgres:
+    image: docker.1ms.run/ankane/pgvector:latest
+    container_name: postgres
+    environment:
+      POSTGRES_DB: oa
+      POSTGRES_USER: oa
+      POSTGRES_PASSWORD: oa
+      TZ: Asia/Shanghai
+    ports:
+      - 5432:5432
+    volumes:
+      - data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oa -d oa"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
-    env_file:
-      - .env
+    container_name: oap-backend
+    environment:
+      DATABASE_URL: postgres://oa:oa@postgres:5432/oa?sslmode=disable
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-your-secret-key-change-in-production}
+      AI_END_URL: ${AI_END_URL:-http://ai_end:8080}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
     ports:
-      - "4420:4420"
+      - 4420:4420
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  data:
