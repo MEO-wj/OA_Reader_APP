@@ -29,6 +29,10 @@ type Config struct {
 }
 
 func Load(path string) (*Config, error) {
+	if strings.TrimSpace(path) == "" {
+		path = discoverDefaultEnvPath()
+	}
+
 	v := viper.New()
 	v.SetConfigFile(path)
 	v.AutomaticEnv()
@@ -75,6 +79,15 @@ func Load(path string) (*Config, error) {
 		cfg.UploadRootDir = "uploads"
 	}
 	return &cfg, nil
+}
+
+func discoverDefaultEnvPath() string {
+	for _, candidate := range []string{"../.env", ".env"} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ".env"
 }
 
 func splitAndTrim(raw string) []string {

@@ -391,22 +391,17 @@ npm run lint
 
 ### 快速部署
 
-**后端（Docker，推荐分层 env）：**
+**后端（Docker，单 .env）：**
 ```bash
-# 1) 准备配置文件
-cp env/common.env.example env/common.env
-cp env/dev.env.example env/dev.env
-cp env/prod.env.example env/prod.env
+# 1) 准备根目录 .env
+cp .env.example .env
 
-# 2) 启动 dev
-./scripts/compose-up.sh dev
+# 2) 按当前目录这套环境修改端口（避免同机冲突）
+# HOST_POSTGRES_PORT=5430
+# HOST_BACKEND_PORT=4420
 
-# 3) 启动 prod（可并行）
-./scripts/compose-up.sh prod
-
-# 4) 停止指定环境
-./scripts/compose-down.sh dev
-./scripts/compose-down.sh prod
+# 3) 启动
+docker compose up -d --build
 ```
 
 **客户端（EAS Build）：**
