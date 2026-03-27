@@ -391,10 +391,22 @@ npm run lint
 
 ### 快速部署
 
-**后端（Docker）：**
+**后端（Docker，推荐分层 env）：**
 ```bash
-cd backend
-docker-compose up -d
+# 1) 准备配置文件
+cp env/common.env.example env/common.env
+cp env/dev.env.example env/dev.env
+cp env/prod.env.example env/prod.env
+
+# 2) 启动 dev
+./scripts/compose-up.sh dev
+
+# 3) 启动 prod（可并行）
+./scripts/compose-up.sh prod
+
+# 4) 停止指定环境
+./scripts/compose-down.sh dev
+./scripts/compose-down.sh prod
 ```
 
 **客户端（EAS Build）：**
