@@ -1,21 +1,23 @@
 services:
   postgres:
-    image: ankane/pgvector:latest
+    image: docker.1ms.run/ankane/pgvector:latest
+    container_name: postgres
     environment:
-      POSTGRES_USER: ai_workflow
-      POSTGRES_PASSWORD: ai_workflow
-      POSTGRES_DB: ai_workflow
+      POSTGRES_DB: oa
+      POSTGRES_USER: oa
+      POSTGRES_PASSWORD: oa
+      TZ: Asia/Shanghai
     ports:
-      - "5431:5432"
+      - "5432:5432"
     volumes:
-      - ./data/postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ai_workflow -d ai_workflow"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 5s
+      - data:/var/lib/postgresql/data
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oa -d oa"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   api:
     build:
@@ -26,9 +28,9 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: ai_workflow
-      DB_PASSWORD: ai_workflow
-      DB_NAME: ai_workflow
+      DB_USER: oa
+      DB_PASSWORD: oa
+      DB_NAME: oa
       SKILLS_DIR: ./skills
       AUTO_MIGRATE: "true"
       AUTO_IMPORT: "false"
@@ -50,5 +52,5 @@ services:
     restart: always
 
 volumes:
-  postgres_data:
+  data:
   

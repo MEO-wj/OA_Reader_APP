@@ -30,14 +30,38 @@ src/
 │   └── settings.py       # 从环境变量加载配置，使用 dataclass
 ├── core/            # 核心业务逻辑
 │   ├── skill_parser.py   # 解析 SKILL.md (YAML front matter + 内容)
-│   └── skill_system.py   # 扫描技能目录，构建 OpenAI tools 定义
+│   ├── skill_system.py   # 文件系统版技能系统
+│   ├── db_skill_system.py # 数据库版技能系统
+│   ├── base_retrieval.py # 检索基类（embedding、向量搜索）
+│   ├── article_retrieval.py # OA 文章检索（search_articles、grep_article）
+│   ├── response_composer.py # 检索结果编排（上下文块、来源引用）
+│   ├── document_content.py  # 文章内容获取与匹配器
+│   ├── api_clients.py      # API 客户端（LLM、Embedding、Rerank）
+│   ├── api_queue.py        # 分层并发队列
+│   └── db.py               # 数据库连接池
 ├── ui/              # 用户界面
 │   └── console.py        # 终端彩色输出和打印函数
-└── chat/            # 聊天功能
-    ├── client.py          # ChatClient 类，主聊天逻辑
-    └── handlers.py        # 工具调用处理函数
+├── chat/            # 聊天功能
+│   ├── client.py          # ChatClient 类，主聊天逻辑
+│   ├── handlers.py        # 工具调用处理函数
+│   ├── context_truncator.py # 工具输出智能截断
+│   └── prompts_runtime.py # 运行时提示词模板
+├── api/             # API 层
+│   ├── main.py            # FastAPI 入口（lifespan、路由）
+│   ├── admin.py           # 管理路由
+│   └── import_decider.py  # 自动导入决策
+├── di/              # 依赖注入
+│   └── providers.py       # 服务提供者
+└── db/              # 数据访问层
+    └── memory.py          # 内存数据库（会话、画像）
 
-main.py                 # 入口，使用上述模块
+skills/
+└── article-retrieval/     # OA 文章检索技能
+    ├── SKILL.md           # 技能定义
+    └── TOOLS.md           # 工具定义（search_articles、grep_article）
+
+migrations/               # 数据库迁移
+scripts/                   # 数据导入脚本
 ```
 
 ### 技能系统工作流
@@ -136,17 +160,27 @@ verification_token: TOKEN-XYZ    # 验证暗号（可选）
 
 ## 检索系统架构（三层策略）
 
-1. **Layer 1: EBD 向量搜索** - 语义召回 top-20
-2. **Layer 2: 关键词模糊搜索** - 精确匹配召回 top-20
+数据模型采用 **articles + vectors 双表结构**：
+- `articles`: 存储 OA 文章元数据（标题、单位、链接、发布日期、内容、摘要、附件）
+- `vectors`: 存储向量嵌入，通过 `article_id` 外键关联 articles（ON DELETE CASCADE）
+
+检索策略：
+1. **Layer 1: EBD 向量搜索** - vectors JOIN articles 语义召回 top-20
+2. **Layer 2: 关键词模糊搜索** - pg_trgm 精确匹配 articles 表，召回 top-20
 3. **Layer 3: Rerank 重排序** - 使用 bge-reranker-v2-m3 模型重排序，返回 top-k
 
-## grep_document 增强功能
+核心模块：
+- `src/core/article_retrieval.py` — ArticleRetriever 继承 BaseRetriever，实现 search_articles、grep_article
+- `src/core/response_composer.py` — ResponseComposer 编排上下文块和来源引用
+- `src/core/base_retrieval.py` — BaseRetriever 提供 embedding 生成、向量搜索基类
+
+## grep_article 增强功能
 
 新增搜索模式：
 - `mode="regex"`: 正则表达式匹配
 - `mode="line_range"`: 精确行范围
 - `context_lines`: 上下文控制
-- `grep_documents()`: 跨文档搜索
+- `grep_articles()`: 跨文章搜索
 
 返回格式统一：
 ```python
@@ -168,7 +202,7 @@ verification_token: TOKEN-XYZ    # 验证暗号（可选）
 - 关闭顺序：`close_clients` → `close_resources` → `close_pool` → `shutdown_tool_loop`
 - 常见排查命令：
   - `uv run pytest tests/integration/test_concurrency_regression.py -v`
-  - `uv run pytest tests/unit/test_document_retrieval.py tests/unit/test_chat_client.py tests/unit/test_db.py -v`
+  - `uv run pytest tests/unit/test_article_retrieval.py tests/unit/test_chat_client.py tests/unit/test_db.py -v`
 
 ---
 

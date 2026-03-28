@@ -1,10 +1,10 @@
 # AI Agent Backend
 
-通用 AI Agent 后端 - 文档检索助手
+AI Agent 后端 - 文档检索助手
 
 ## 项目概述
 
-基于 AI Agent 架构的通用文档检索助手，通过技能系统和多层检索架构，提供智能对话、技能调用和信息检索服务。
+基于 AI Agent 架构的文档检索助手，通过技能系统和多层检索架构，提供智能对话、技能调用和信息检索服务。
 
 ## 核心能力
 
@@ -55,7 +55,7 @@ flowchart TB
     subgraph DB["数据库"]
         Skills["skills"]
         Refs["skill_references"]
-        Docs["documents"]
+        Docs["articles"]
         Users["users"]
         Profiles["user_profiles"]
         Conv["conversations"]
@@ -140,8 +140,8 @@ sequenceDiagram
 
     Worker->>AI: 发送请求<br/>System: Skill列表<br/>Tools: 基础工具（无二级工具）
 
-    AI->>AI: 判断需要调用 document-retrieval 技能
-    AI-->>Worker: 返回: call document-retrieval
+    AI->>AI: 判断需要调用 article-retrieval 技能
+    AI-->>Worker: 返回: call article-retrieval
 
     Note over Worker: Skill 激活
     Worker->>DB: 加载 SKILL.md
@@ -149,8 +149,8 @@ sequenceDiagram
 
     Worker->>AI: 继续对话<br/>新增: Skill内容 + 二级工具
 
-    AI->>AI: 使用 search_documents 工具
-    AI-->>Worker: 返回: call search_documents
+    AI->>AI: 使用 search_articles 工具
+    AI-->>Worker: 返回: call search_articles
 
     Worker->>DB: 执行检索
 
@@ -178,13 +178,13 @@ sequenceDiagram
 
 | 工具 | 描述 | 状态 |
 |------|------|------|
-| `search_documents` | 向量搜索相关文档 | ✅ 已实现 |
-| `grep_document` | 获取指定文档内容，支持多种搜索模式 | ✅ 已实现 |
-| `grep_documents` | 跨多个文档搜索 | ✅ 已实现 |
+| `search_articles` | 向量搜索相关文章 | ✅ 已实现 |
+| `grep_article` | 获取指定文章内容，支持多种搜索模式 | ✅ 已实现 |
+| `grep_articles` | 跨多个文章搜索 | ✅ 已实现 |
 
-#### grep_document 多模式搜索
+#### grep_article 多模式搜索
 
-`grep_document` 工具内部采用三层混合检索策略：
+`grep_article` 工具内部采用三层混合检索策略：
 
 ```
 Layer 1: EBD 向量搜索 (top-20)
@@ -245,7 +245,7 @@ erDiagram
     conversations ||--o{ messages : "包含"
 
     skills ||--o{ skill_references : "包含"
-    skills ||--o{ documents : "关联（可选）"
+    skills ||--o{ articles : "关联（可选）"
 
     users {
         int id PK
@@ -297,7 +297,7 @@ erDiagram
         timestamp created_at
     }
 
-    documents {
+    articles {
         int id PK
         string title
         text content
@@ -318,7 +318,7 @@ erDiagram
 | `messages` | 对话消息（短期记忆） | 自动创建，带评分 |
 | `skills` | 技能定义 | 指导型: migration 初始化<br/>可更新型: CRUD 接口 |
 | `skill_references` | 技能参考资料 | 与 skills 同步 |
-| `documents` | 通用文档 | 上传接口 |
+| `articles` | 通用文章 | 上传接口 |
 
 ---
 
@@ -467,13 +467,13 @@ sequenceDiagram
 
 ---
 
-### 3. grep_document 多模式搜索流程
+### 3. grep_article 多模式搜索流程
 
-`grep_document` 内部采用**策略模式**匹配不同搜索模式：
+`grep_article` 内部采用**策略模式**匹配不同搜索模式：
 
 ```mermaid
 flowchart TB
-    Input["grep_document() 调用"] --> DetectMode{mode 参数}
+    Input["grep_article() 调用"] --> DetectMode{mode 参数}
 
     DetectMode -->|auto| AutoMode["_detect_mode()"]
     DetectMode -->|指定模式| UseMode["使用指定模式"]
@@ -523,9 +523,9 @@ flowchart TB
 
 ---
 
-### 4. 文档检索器继承体系
+### 4. 文章检索器继承体系
 
-所有文档检索能力由 `DocumentRetriever` 实现，继承自 `BaseRetriever` 基类：
+所有文章检索能力由 `ArticleRetriever` 实现，继承自 `BaseRetriever` 基类：
 
 ```mermaid
 classDiagram
@@ -538,23 +538,23 @@ classDiagram
         #_build_metadata_filter()*
     }
 
-    class DocumentRetriever {
-        +search_documents(query, keywords, top_k)
-        +grep_document(document_id, mode, ...)
-        +grep_documents(document_ids, mode, ...)
+    class ArticleRetriever {
+        +search_articles(query, keywords, top_k)
+        +grep_article(article_id, mode, ...)
+        +grep_articles(article_ids, mode, ...)
         +_build_metadata_filter()
     }
 
-    BaseRetriever <|-- DocumentRetriever
+    BaseRetriever <|-- ArticleRetriever
 ```
 
 | 检索器 | 表名 | 特点 |
 |--------|------|------|
-| `DocumentRetriever` | `documents` | 三层混合检索（向量+关键词+Rerank）+ 多模式内容定位 |
+| `ArticleRetriever` | `articles` | 三层混合检索（向量+关键词+Rerank）+ 多模式内容定位 |
 
 ---
 
-### 5. 通用内容处理工具 (document_content)
+### 5. 通用内容处理工具 (article_content)
 
 ```mermaid
 classDiagram
@@ -609,8 +609,8 @@ classDiagram
 
 | 功能 | 使用工具 |
 |------|----------|
-| `grep_document` | ✅ 复用 Matcher 策略 |
-| `search_documents` | ✅ 统一文档检索入口 |
+| `grep_article` | ✅ 复用 Matcher 策略 |
+| `search_articles` | ✅ 统一文章检索入口 |
 
 ---
 
@@ -627,7 +627,7 @@ stateDiagram-v2
 
     state 一级工具 {
         [*] --> 技能列表
-        技能列表: document-retrieval<br/>read_reference
+        技能列表: article-retrieval<br/>read_reference
     }
 
     一级工具 --> 技能已激活: AI 调用技能
@@ -637,7 +637,7 @@ stateDiagram-v2
 
     state 二级工具可用 {
         [*] --> 全部工具
-        全部工具: 一级工具 +<br/>search_documents<br/>grep_document<br/>grep_documents<br/>read_reference<br/>form_memory
+        全部工具: 一级工具 +<br/>search_articles<br/>grep_article<br/>grep_articles<br/>read_reference<br/>form_memory
     }
 
     二级工具可用 --> 执行二级工具: AI 调用
@@ -709,7 +709,6 @@ flowchart TB
 ```
 
 **支持的导入脚本**：
-- `import_documents.py` - 通用文档
 
 ---
 

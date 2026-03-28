@@ -1,15 +1,17 @@
-"""文档检索模块
+"""文章检索模块
 
-提供文档的向量搜索功能。
+提供 OA 文章的向量搜索、关键词搜索和内容定位功能。
 """
-import asyncio
+
+from __future__ import annotations
+
 import re
 from typing import Any
 
 from src.config.settings import Config
-from src.core.api_clients import get_embedding_client, get_rerank_client, close_clients
+from src.core.api_clients import get_embedding_client, get_rerank_client
 from src.core.api_queue import get_api_queue
-from src.core.base_retrieval import BaseRetriever
+from src.core.base_retrieval import BaseRetriever, generate_embedding
 from src.core.db import get_pool
 from src.core.document_content import (
     ContentFetcher,
@@ -33,95 +35,33 @@ def _is_transient_db_error(error: Exception) -> bool:
 
 
 def _get_embedding_client():
-    """兼容旧测试与调用路径。"""
     return get_embedding_client()
 
 
 def _get_rerank_client():
-    """获取 Rerank 客户端。"""
     return get_rerank_client()
 
 
 def _parse_id_list_from_content(content: str) -> list[int]:
-    """从字符串内容中解析数字 ID 列表。
-
-    当 API 返回非标准格式时，从 LLM 响应文本中提取 ID。
-
-    Args:
-        content: 包含数字 ID 的字符串内容
-
-    Returns:
-        解析出的 ID 列表
-    """
-    import re
+    """从字符串内容中解析数字 ID 列表。"""
     numbers = re.findall(r"\d+", content)
     return [int(n) for n in numbers]
-
-
-def _generate_embedding_sync(text: str) -> list[float]:
-    """同步生成文本的向量表示
-
-    Args:
-        text: 要向量化的文本
-
-    Returns:
-        向量表示（维度由配置决定）
-    """
-    if not text or not text.strip():
-        raise ValueError("文本不能为空")
-
-    config = Config.load()
-    client = _get_embedding_client()
-
-    response = client.embeddings.create(
-        model=config.embedding_model,
-        input=text,
-        dimensions=config.embedding_dimensions
-    )
-
-    return response.data[0].embedding
-
-
-async def generate_embedding(text: str) -> list[float]:
-    """异步生成文本的向量表示（在线程池中执行同步版本）
-
-    Args:
-        text: 要向量化的文本
-
-    Returns:
-        向量表示（维度由配置决定）
-    """
-    return await get_api_queue().submit("embedding", _generate_embedding_sync, text)
 
 
 def _rerank_documents_sync(
     query: str,
     candidates: list[dict[str, Any]],
-    top_k: int | None = None
+    top_k: int | None = None,
 ) -> list[dict[str, Any]]:
-    """同步调用 Rerank API 对候选文档重新排序
-
-    Args:
-        query: 用户查询文本
-        candidates: 候选文档列表，每个文档包含 id/title/summary 等字段
-        top_k: 返回的文档数量上限，默认为 len(candidates)
-
-    Returns:
-        按 rerank 分数排序后的文档列表
-
-    Raises:
-        RuntimeError: 当 rerank API 调用失败时
-    """
+    """同步调用 Rerank API 对候选文章重新排序。"""
     if not candidates:
         return []
-
     if top_k is None:
         top_k = len(candidates)
 
     config = Config.load()
     client = _get_rerank_client()
 
-    # 构建文档文本列表（使用 title + summary 作为 rerank 输入）
     documents = []
     for doc in candidates:
         text_parts = []
@@ -131,21 +71,17 @@ def _rerank_documents_sync(
             text_parts.append(doc["summary"])
         documents.append("\n".join(text_parts) if text_parts else str(doc.get("id", "")))
 
-    # 调用 rerank API
-    # 使用标准 OpenAI API 格式：responses.create
     try:
         response = client.responses.create(
             model=config.rerank_model,
             query=query,
             documents=documents,
-            top_k=top_k
+            top_k=top_k,
         )
 
-        # 构建索引映射
         id_map = {i: doc for i, doc in enumerate(candidates)}
         results = []
 
-        # 标准格式解析：根据 one-api 的响应格式调整解析逻辑
         if hasattr(response, "results") and response.results:
             for item in sorted(response.results, key=lambda x: x.relevance_score, reverse=True):
                 idx = item.index
@@ -154,15 +90,10 @@ def _rerank_documents_sync(
                     doc["rerank_score"] = item.relevance_score
                     results.append(doc)
         else:
-            # Fallback 分支：当 API 返回非标准格式时，尝试从 LLM 响应中解析 ID 列表
-            # 将响应转换为字符串并解析数字 ID
             response_text = str(response)
             parsed_ids = _parse_id_list_from_content(response_text)
-
             if parsed_ids:
-                # 按 ID 在候选列表中的顺序排序
                 for doc_id in parsed_ids:
-                    # 在 candidates 中查找匹配的文档
                     for doc in candidates:
                         if doc.get("id") == doc_id:
                             doc_copy = doc.copy()
@@ -170,12 +101,9 @@ def _rerank_documents_sync(
                                 results.append(doc_copy)
                             break
 
-        # 如果解析结果为空，返回原始候选列表
         if not results:
             return candidates
-
         return results
-
     except Exception as e:
         raise RuntimeError(f"Rerank API 调用失败: {str(e)}") from e
 
@@ -183,58 +111,14 @@ def _rerank_documents_sync(
 async def _rerank_documents(
     query: str,
     candidates: list[dict[str, Any]],
-    top_k: int | None = None
+    top_k: int | None = None,
 ) -> list[dict[str, Any]]:
-    """异步调用 Rerank API 对候选文档重新排序
-
-    Args:
-        query: 用户查询文本
-        candidates: 候选文档列表
-        top_k: 返回的文档数量上限，默认为 len(candidates)
-
-    Returns:
-        按 rerank 分数排序后的文档列表
-        失败时降级返回原始候选列表
-    """
     if not candidates:
         return []
-
     try:
         return await get_api_queue().submit("rerank", _rerank_documents_sync, query, candidates, top_k)
     except Exception:
-        # Rerank 失败时降级返回原始列表
         return candidates
-
-
-def _merge_results(
-    ebd_results: dict[int, dict[str, Any]],
-    keyword_results: dict[int, dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """合并 EBD 和关键词搜索结果
-
-    Args:
-        ebd_results: EBD 搜索结果 {doc_id: result}
-        keyword_results: 关键词搜索结果 {doc_id: result}
-
-    Returns:
-        合并后的候选文档列表（去重）
-    """
-    all_docs: dict[int, dict[str, Any]] = {}
-
-    # 添加 EBD 结果
-    for doc_id, result in ebd_results.items():
-        all_docs[doc_id] = result.copy()
-
-    # 添加/合并关键词结果
-    for doc_id, kw_result in keyword_results.items():
-        if doc_id in all_docs:
-            # 同一文档在两层都出现：整合评分
-            all_docs[doc_id]["keyword_similarity"] = kw_result["keyword_similarity"]
-        else:
-            # 只在关键词层出现
-            all_docs[doc_id] = kw_result
-
-    return list(all_docs.values())
 
 
 def _row_value(row: Any, key: str, default: Any = None) -> Any:
@@ -245,65 +129,13 @@ def _row_value(row: Any, key: str, default: Any = None) -> Any:
         return getattr(row, key, default)
 
 
-async def _search_by_keywords(
-    keywords: str,
-    pool,
-    limit: int = 20
-) -> list[dict[str, Any]]:
-    """使用 pg_trgm 进行关键词模糊搜索
-
-    Args:
-        keywords: 逗号分隔的关键词字符串
-        pool: 数据库连接池
-        limit: 返回结果数量上限
-
-    Returns:
-        匹配文档列表
-    """
-    # 解析关键词
-    keyword_list = [k.strip() for k in keywords.split(",") if k.strip()]
-    if not keyword_list:
-        return []
-
-    results = []
-    async with pool.acquire() as conn:
-        # 对每个关键词进行搜索
-        for keyword in keyword_list:
-            # 使用 pg_trgm 的相似度函数
-            # 搜索 content 和 title
-            rows = await conn.fetch("""
-                SELECT id, title, summary, created_at,
-                       GREATEST(
-                           similarity(title, $2),
-                           similarity(content, $2)
-                       ) as similarity
-                FROM documents
-                WHERE title % $2 OR content % $2
-                ORDER BY similarity DESC
-                LIMIT $1
-            """, limit, keyword)
-
-            for row in rows:
-                # 记录关键词来源（用于调试）
-                results.append({
-                    "id": row["id"],
-                    "title": row["title"],
-                    "summary": row["summary"],
-                    "created_at": row["created_at"],
-                    "keyword_similarity": float(row["similarity"]),
-                    "matched_keyword": keyword
-                })
-
-    return results
-
-
-class DocumentRetriever(BaseRetriever):
-    """文档检索器。"""
+class ArticleRetriever(BaseRetriever):
+    """OA 文章检索器，使用 vectors + articles JOIN 查询。"""
 
     def __init__(self):
         super().__init__(
-            table_name="documents",
-            select_columns=["id", "title", "summary", "created_at"],
+            table_name="vectors",
+            select_columns=["v.id", "a.title", "a.unit", "a.published_on", "a.summary"],
             embedding_column="embedding",
             get_pool_fn=get_pool,
             rerank_fn=_rerank_documents,
@@ -315,17 +147,74 @@ class DocumentRetriever(BaseRetriever):
         start_index: int = 1,
         **filters: Any,
     ) -> tuple[str, list[Any]]:
-        # 当前 documents 表无元数据过滤条件
         return "", []
 
-    async def search_documents(
+    async def _vector_search(
+        self,
+        query_embedding_str: str,
+        limit: int = 20,
+        threshold: float = 0.5,
+        metadata_filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """覆写基类：使用 JOIN 查询 vectors + articles。"""
+        import asyncio
+
+        params: list[Any] = [query_embedding_str, threshold]
+        where_clauses = [
+            "v.embedding IS NOT NULL",
+            f"1 - (v.embedding <=> $1::vector) >= $2",
+        ]
+
+        if metadata_filters:
+            filter_clause, filter_params = await self._build_metadata_filter(
+                start_index=3, **metadata_filters,
+            )
+            if filter_clause:
+                where_clauses.append(f"({filter_clause})")
+                params.extend(filter_params)
+
+        params.append(limit)
+        limit_idx = len(params)
+
+        sql = f"""
+            SELECT v.id, a.title, a.unit, a.published_on, a.summary,
+                   1 - (v.embedding <=> $1::vector) as similarity
+            FROM vectors v
+            JOIN articles a ON v.article_id = a.id
+            WHERE {' AND '.join(where_clauses)}
+            ORDER BY v.embedding <=> $1::vector
+            LIMIT ${limit_idx}
+        """
+
+        last_error: Exception | None = None
+        for attempt in range(self._retry_attempts):
+            try:
+                pool = await self._get_pool_fn()
+                async with pool.acquire() as conn:
+                    rows = await conn.fetch(sql, *params)
+                return list(rows)
+            except Exception as exc:
+                last_error = exc
+                transient = self._is_transient_error(exc) if self._is_transient_error else False
+                if transient and attempt < self._retry_attempts - 1:
+                    await asyncio.sleep(self._retry_backoff)
+                    continue
+                break
+
+        if last_error is not None and self._is_transient_error and self._is_transient_error(last_error):
+            raise RuntimeError("TRANSIENT_DB_ERROR") from last_error
+        if last_error is not None:
+            raise last_error
+        return []
+
+    async def search_articles(
         self,
         query: str,
         keywords: str | None = None,
         top_k: int = 10,
         threshold: float = 0.5,
     ) -> dict[str, Any]:
-        """三层检索策略搜索相关文档。"""
+        """三层检索策略搜索相关文章。"""
         if not query or not query.strip():
             raise ValueError("查询文本不能为空")
 
@@ -354,8 +243,9 @@ class DocumentRetriever(BaseRetriever):
             ebd_results[row_id] = {
                 "id": row_id,
                 "title": _row_value(row, "title"),
+                "unit": _row_value(row, "unit"),
+                "published_on": str(_row_value(row, "published_on", "")),
                 "summary": _row_value(row, "summary"),
-                "created_at": _row_value(row, "created_at"),
                 "ebd_similarity": float(_row_value(row, "similarity", 0.0)),
                 "keyword_similarity": None,
             }
@@ -374,8 +264,9 @@ class DocumentRetriever(BaseRetriever):
                         keyword_results[doc_id] = {
                             "id": row["id"],
                             "title": row["title"],
+                            "unit": row.get("unit"),
+                            "published_on": str(row.get("published_on", "")),
                             "summary": row["summary"],
-                            "created_at": row["created_at"],
                             "ebd_similarity": None,
                             "keyword_similarity": row["keyword_similarity"],
                         }
@@ -390,6 +281,8 @@ class DocumentRetriever(BaseRetriever):
             formatted_results.append({
                 "id": doc["id"],
                 "title": doc["title"],
+                "unit": doc.get("unit"),
+                "published_on": doc.get("published_on"),
                 "summary": doc["summary"],
                 "ebd_similarity": doc.get("ebd_similarity"),
                 "keyword_similarity": doc.get("keyword_similarity"),
@@ -398,20 +291,58 @@ class DocumentRetriever(BaseRetriever):
         return {"results": formatted_results}
 
 
-async def search_documents(
-    query: str,
-    keywords: str | None = None,
-    top_k: int = 10,
-    threshold: float = 0.5,
-) -> dict[str, Any]:
-    """兼容旧接口：转发到 DocumentRetriever。"""
-    retriever = DocumentRetriever()
-    return await retriever.search_documents(
-        query=query,
-        keywords=keywords,
-        top_k=top_k,
-        threshold=threshold,
-    )
+async def _search_by_keywords(
+    keywords: str,
+    pool,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """使用 pg_trgm 进行关键词模糊搜索（查 articles 表）。"""
+    keyword_list = [k.strip() for k in keywords.split(",") if k.strip()]
+    if not keyword_list:
+        return []
+
+    results = []
+    async with pool.acquire() as conn:
+        for keyword in keyword_list:
+            rows = await conn.fetch("""
+                SELECT id, title, unit, published_on, summary,
+                       GREATEST(
+                           similarity(title, $2),
+                           similarity(content, $2)
+                       ) as similarity
+                FROM articles
+                WHERE title % $2 OR content % $2
+                ORDER BY similarity DESC
+                LIMIT $1
+            """, limit, keyword)
+
+            for row in rows:
+                results.append({
+                    "id": row["id"],
+                    "title": row["title"],
+                    "unit": row.get("unit"),
+                    "published_on": str(row.get("published_on", "")),
+                    "summary": row["summary"],
+                    "keyword_similarity": float(row["similarity"]),
+                    "matched_keyword": keyword,
+                })
+
+    return results
+
+
+def _merge_results(
+    ebd_results: dict[int, dict[str, Any]],
+    keyword_results: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    all_docs: dict[int, dict[str, Any]] = {}
+    for doc_id, result in ebd_results.items():
+        all_docs[doc_id] = result.copy()
+    for doc_id, kw_result in keyword_results.items():
+        if doc_id in all_docs:
+            all_docs[doc_id]["keyword_similarity"] = kw_result["keyword_similarity"]
+        else:
+            all_docs[doc_id] = kw_result
+    return list(all_docs.values())
 
 
 def _detect_mode(
@@ -444,14 +375,12 @@ def _get_matcher(mode: str) -> Matcher:
 
 
 def _split_keyword_terms(keyword: str | None) -> list[str]:
-    """将 keyword 按常见分隔符拆分为多个词项。"""
     if not keyword:
         return []
     parts = re.split(r"[,\uFF0C|]", keyword)
     terms = [part.strip() for part in parts if part and part.strip()]
     if not terms:
         return []
-    # 去重并保持顺序
     return list(dict.fromkeys(terms))
 
 
@@ -461,17 +390,12 @@ async def _match_keyword_or(
     context_lines: int,
     max_results: int,
 ) -> list[Any]:
-    """多关键词 OR 匹配。"""
     matcher = KeywordMatcher()
     merged = []
     seen: set[tuple[int, str]] = set()
-
     for term in terms:
         partial = await matcher.match(
-            content,
-            keyword=term,
-            context_lines=context_lines,
-            max_results=max_results,
+            content, keyword=term, context_lines=context_lines, max_results=max_results,
         )
         for item in partial:
             key = (item.line_number, item.content)
@@ -484,8 +408,8 @@ async def _match_keyword_or(
     return merged
 
 
-async def grep_document(
-    document_id: int,
+async def grep_article(
+    article_id: int,
     keyword: str | None = None,
     section: str | None = None,
     mode: str = "auto",
@@ -495,12 +419,12 @@ async def grep_document(
     start_line: int | None = None,
     end_line: int | None = None,
 ) -> dict[str, Any]:
-    """获取指定文档的具体内容（增强版）。"""
+    """获取指定文章的具体内容。"""
     try:
         fetcher = ContentFetcher()
-        fetched = await fetcher.get(document_id)
+        fetched = await fetcher.get(article_id)
         if fetched is None:
-            return ResultFormatter.not_found(f"文档 {document_id} 不存在")
+            return ResultFormatter.not_found(f"文章 {article_id} 不存在")
         title, content = fetched
 
         current_mode = _detect_mode(keyword, section, pattern, start_line) if mode == "auto" else mode
@@ -538,9 +462,7 @@ async def grep_document(
                     pattern_for_fallback = "|".join(re.escape(term) for term in terms)
                     regex_matcher = RegexMatcher()
                     matches = await regex_matcher.match(
-                        content,
-                        pattern=pattern_for_fallback,
-                        context_lines=context_lines,
+                        content, pattern=pattern_for_fallback, context_lines=context_lines,
                     )
                     matches = matches[:max_results]
                     if matches:
@@ -552,20 +474,17 @@ async def grep_document(
                 matches = await matcher.match(content, **kwargs)
         elif current_mode == "regex":
             kwargs["pattern"] = pattern
-            matcher = _get_matcher(current_mode)
             matches = await matcher.match(content, **kwargs)
         elif current_mode == "section":
             kwargs["section"] = section
-            matcher = _get_matcher(current_mode)
             matches = await matcher.match(content, **kwargs)
         elif current_mode == "line_range":
             kwargs["start_line"] = start_line
             kwargs["end_line"] = end_line
-            matcher = _get_matcher(current_mode)
             matches = await matcher.match(content, **kwargs)
         else:
-            matcher = _get_matcher(current_mode)
             matches = await matcher.match(content, **kwargs)
+
         if not matches:
             if current_mode == "keyword":
                 return ResultFormatter.not_found(
@@ -577,10 +496,7 @@ async def grep_document(
                     f"未找到章节 '{section}'",
                     metadata={"search_mode": current_mode},
                 )
-            return ResultFormatter.not_found(
-                "未找到匹配内容",
-                metadata={"search_mode": current_mode},
-            )
+            return ResultFormatter.not_found("未找到匹配内容", metadata={"search_mode": current_mode})
 
         formatted_matches = [
             {
@@ -597,11 +513,11 @@ async def grep_document(
             metadata={"total_matches": len(formatted_matches), "search_mode": effective_mode},
         )
     except Exception as exc:
-        return ResultFormatter.error(f"获取文档失败: {str(exc)}")
+        return ResultFormatter.error(f"获取文章失败: {str(exc)}")
 
 
-async def grep_documents(
-    document_ids: list[int],
+async def grep_articles(
+    article_ids: list[int],
     keyword: str | None = None,
     section: str | None = None,
     mode: str = "auto",
@@ -609,13 +525,13 @@ async def grep_documents(
     max_results: int = 3,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """跨多个文档搜索。"""
+    """跨多个文章搜索。"""
     results: list[dict[str, Any]] = []
-    documents_with_matches = 0
+    articles_with_matches = 0
 
-    for document_id in document_ids:
-        single = await grep_document(
-            document_id=document_id,
+    for article_id in article_ids:
+        single = await grep_article(
+            article_id=article_id,
             keyword=keyword,
             section=section,
             mode=mode,
@@ -624,11 +540,11 @@ async def grep_documents(
             **kwargs,
         )
         if single.get("status") == "success":
-            documents_with_matches += 1
+            articles_with_matches += 1
             data = single.get("data", {})
             results.append(
                 {
-                    "document_id": document_id,
+                    "article_id": article_id,
                     "title": data.get("title"),
                     "matches": data.get("matches", []),
                 }
@@ -637,13 +553,31 @@ async def grep_documents(
     return ResultFormatter.success(
         data={"results": results},
         metadata={
-            "total_documents": len(document_ids),
-            "documents_with_matches": documents_with_matches,
+            "total_articles": len(article_ids),
+            "articles_with_matches": articles_with_matches,
             "search_mode": mode,
         },
     )
 
 
+async def search_articles(
+    query: str,
+    keywords: str | None = None,
+    top_k: int = 10,
+    threshold: float = 0.5,
+) -> dict[str, Any]:
+    """兼容旧接口：转发到 ArticleRetriever。"""
+    retriever = ArticleRetriever()
+    return await retriever.search_articles(
+        query=query,
+        keywords=keywords,
+        top_k=top_k,
+        threshold=threshold,
+    )
+
+
 async def close_resources():
-    """关闭检索模块的资源（embedding 客户端）"""
+    """关闭检索模块的资源。"""
+    import asyncio
+    from src.core.api_clients import close_clients
     await asyncio.get_event_loop().run_in_executor(None, close_clients)

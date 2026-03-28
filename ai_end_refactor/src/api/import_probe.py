@@ -5,28 +5,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from pathlib import Path
 
 from src.core.db import get_pool
-from src.core.hash_utils import compute_document_hash, hash_text
+from src.core.hash_utils import hash_text
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SKILLS_DIR = Path("skills")
-DEFAULT_DOCUMENTS_DIR = Path("docs")
-
-
-def _compute_document_hash(file_path: Path) -> str:
-    """计算文档哈希（与导入链路保持一致）。"""
-    content = file_path.read_text(encoding="utf-8")
-    source_type = "json" if file_path.suffix.lower() == ".json" else "markdown"
-    return compute_document_hash(
-        content,
-        source_type,
-        tolerate_invalid_json=True,
-    )
 
 
 def _compute_local_skill_fingerprint(skill_dir: Path) -> str:
@@ -46,68 +33,6 @@ def _compute_local_skill_fingerprint(skill_dir: Path) -> str:
             parts.append(ref.read_text(encoding="utf-8"))
 
     return hash_text("\n<split>\n".join(parts))
-
-
-async def _check_hashes_exist(table: str, hash_column: str, hashes: list[str]) -> set[str]:
-    """
-    检查哪些哈希值已存在于数据库中。
-
-    Args:
-        table: 表名
-        hash_column: 哈希列名
-        hashes: 要检查的哈希值列表
-
-    Returns:
-        存在的哈希值集合
-    """
-    if not hashes:
-        return set()
-
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            f"SELECT {hash_column} FROM {table} WHERE {hash_column} = ANY($1::text[])",
-            hashes,
-        )
-    return {row[hash_column] for row in rows if row[hash_column]}
-
-
-async def needs_document_import(documents_dir: Path = DEFAULT_DOCUMENTS_DIR) -> bool:
-    """检查 documents 是否需要导入。
-
-    扫描 documents 目录下所有 .md 和 .json 文件，检查是否有新增或变更。
-
-    Args:
-        documents_dir: 文档目录路径
-
-    Returns:
-        是否需要导入
-    """
-    if not documents_dir.exists():
-        return False
-
-    # 收集所有文档文件
-    md_files = sorted(documents_dir.glob("**/*.md"))
-    json_files = sorted(documents_dir.glob("**/*.json"))
-
-    all_files = md_files + json_files
-    if not all_files:
-        return False
-
-    # 计算所有文件的哈希
-    hashes = []
-    for f in all_files:
-        h = _compute_document_hash(f)
-        hashes.append(h)
-
-    try:
-        existing = await _check_hashes_exist("documents", "content_hash", hashes)
-    except Exception:
-        logger.exception("检查文档导入状态时出错")
-        return True
-
-    # 如果有任何文件不在数据库中，需要导入
-    return any(h not in existing for h in hashes)
 
 
 async def needs_skill_import(skills_dir: Path = DEFAULT_SKILLS_DIR) -> bool:
@@ -160,5 +85,3 @@ async def needs_skill_import(skills_dir: Path = DEFAULT_SKILLS_DIR) -> bool:
             return True
 
     return False
-
-

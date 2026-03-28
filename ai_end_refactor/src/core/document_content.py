@@ -71,7 +71,7 @@ class ContentFetcher:
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT title, content FROM documents WHERE id = $1",
+                "SELECT title, content FROM articles WHERE id = $1",
                 document_id,
             )
             if not row:

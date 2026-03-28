@@ -286,7 +286,6 @@ def test_app_startup_skips_import_when_decider_returns_false(monkeypatch):
         "run_migration": 0,
         "decider": 0,
         "skills": 0,
-        "documents": 0,
     }
 
     async def _fake_run_migration(auto_repair: bool = False):
@@ -300,13 +299,9 @@ def test_app_startup_skips_import_when_decider_returns_false(monkeypatch):
     async def _fake_import_skills(_path):
         called["skills"] += 1
 
-    async def _fake_import_documents(_path):
-        called["documents"] += 1
-
     monkeypatch.setattr("src.api.main.run_migration", _fake_run_migration)
     monkeypatch.setattr("src.api.main.should_run_auto_import", _fake_decider)
     monkeypatch.setattr("src.api.main.import_skills_main", _fake_import_skills)
-    monkeypatch.setattr("src.api.main.import_documents_main", _fake_import_documents)
 
     with TestClient(app) as client:
         response = client.get("/health")
@@ -315,7 +310,6 @@ def test_app_startup_skips_import_when_decider_returns_false(monkeypatch):
     assert called["run_migration"] == 1
     assert called["decider"] == 1
     assert called["skills"] == 0
-    assert called["documents"] == 0
 
 
 def test_app_startup_runs_import_when_decider_returns_true(monkeypatch):
@@ -324,7 +318,7 @@ def test_app_startup_runs_import_when_decider_returns_true(monkeypatch):
     monkeypatch.setenv("AUTO_MIGRATE", "true")
     monkeypatch.setenv("AUTO_IMPORT", "true")
 
-    called = {"decider": 0, "skills": 0, "documents": 0}
+    called = {"decider": 0, "skills": 0}
 
     async def _fake_run_migration(auto_repair: bool = False):
         return True
@@ -336,13 +330,9 @@ def test_app_startup_runs_import_when_decider_returns_true(monkeypatch):
     async def _fake_import_skills(_path):
         called["skills"] += 1
 
-    async def _fake_import_documents(_path):
-        called["documents"] += 1
-
     monkeypatch.setattr("src.api.main.run_migration", _fake_run_migration)
     monkeypatch.setattr("src.api.main.should_run_auto_import", _fake_decider)
     monkeypatch.setattr("src.api.main.import_skills_main", _fake_import_skills)
-    monkeypatch.setattr("src.api.main.import_documents_main", _fake_import_documents)
 
     with TestClient(app) as client:
         response = client.get("/health")
@@ -350,7 +340,6 @@ def test_app_startup_runs_import_when_decider_returns_true(monkeypatch):
 
     assert called["decider"] == 1
     assert called["skills"] == 1
-    assert called["documents"] == 1
 
 
 def test_get_chat_history_returns_messages(monkeypatch):

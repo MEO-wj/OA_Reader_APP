@@ -263,7 +263,7 @@ class DbSkillSystem:
                         "properties": {
                             "skill_name": {
                                 "type": "string",
-                                "description": "技能名称，如 'document-retrieval' 或其他已激活技能"
+                                "description": "技能名称，如 'article-retrieval' 或其他已激活技能"
                             },
                             "file_path": {
                                 "type": "string",

@@ -7,11 +7,12 @@ import pytest
 from migrations import verify_table
 
 
-def test_verify_table_targets_documents_schema():
-    """verify_table 应校验 documents 表，不应再引用 policies。"""
+def test_verify_table_targets_articles_schema():
+    """verify_table 应校验 articles 表，不应再引用 documents 或 policies。"""
     source = inspect.getsource(verify_table.verify_table).lower()
 
-    assert "documents" in source
+    assert "articles" in source
+    assert "documents" not in source
     assert "policies" not in source
 
 

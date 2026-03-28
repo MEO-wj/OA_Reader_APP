@@ -7,35 +7,39 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- 文档表（通用文档存储，支持向量检索）
-CREATE TABLE IF NOT EXISTS documents (
-    id SERIAL PRIMARY KEY,
-    title VARCHAR(500) NOT NULL,
+-- OA 文章表
+CREATE TABLE IF NOT EXISTS articles (
+    id BIGSERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    unit TEXT,
+    link TEXT NOT NULL UNIQUE,
+    published_on DATE NOT NULL,
     content TEXT NOT NULL,
-    summary TEXT,
-    source_type VARCHAR(50) DEFAULT 'markdown',
-    embedding vector(1024),
-    content_hash VARCHAR(64) UNIQUE,
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    summary TEXT NOT NULL,
+    attachments JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 文档向量索引（HNSW）
-CREATE INDEX IF NOT EXISTS idx_documents_embedding
-ON documents USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_articles_published_on ON articles (published_on);
+CREATE INDEX IF NOT EXISTS idx_articles_title_trgm ON articles USING gin (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_articles_content_trgm ON articles USING gin (content gin_trgm_ops);
+COMMENT ON TABLE articles IS 'OA文章表';
 
--- 文档 content_hash 索引
-CREATE INDEX IF NOT EXISTS idx_documents_content_hash
-ON documents (content_hash);
+-- 文章向量表
+CREATE TABLE IF NOT EXISTS vectors (
+    id BIGSERIAL PRIMARY KEY,
+    article_id BIGINT REFERENCES articles(id) ON DELETE CASCADE,
+    embedding vector(1024),
+    published_on DATE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- 文档标题模糊搜索索引（pg_trgm）
-CREATE INDEX IF NOT EXISTS idx_documents_title_trgm
-ON documents USING gin (title gin_trgm_ops);
-
--- 文档正文模糊搜索索引（pg_trgm）
-CREATE INDEX IF NOT EXISTS idx_documents_content_trgm
-ON documents USING gin (content gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_vectors_published_on ON vectors (published_on);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vectors_article ON vectors(article_id);
+CREATE INDEX IF NOT EXISTS idx_vectors_embedding_hnsw ON vectors USING hnsw (embedding vector_cosine_ops);
+COMMENT ON TABLE vectors IS '文章向量表';
 
 -- 技能定义表
 CREATE TABLE IF NOT EXISTS skills (
@@ -108,7 +112,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 CREATE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id);
 
 -- 表注释
-COMMENT ON TABLE documents IS '通用文档表，存储可检索的文档内容及其向量表示';
+COMMENT ON TABLE articles IS 'OA文章表';
+COMMENT ON TABLE vectors IS '文章向量表';
 COMMENT ON TABLE skills IS '技能定义表，存储 SKILL.md 内容';
 COMMENT ON TABLE skill_references IS '技能参考资料表，存储技能目录下的参考文件';
 COMMENT ON TABLE conversations IS '对话记录表，存储用户与 AI 的对话历史';

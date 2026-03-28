@@ -12,7 +12,7 @@ load_dotenv()
 
 
 async def verify_table():
-    """验证 documents 表结构"""
+    """验证 articles 表结构"""
 
     db_config = {
         "host": os.getenv("DB_HOST", "localhost"),
@@ -22,7 +22,7 @@ async def verify_table():
         "database": os.getenv("DB_NAME", "ai_workflow"),
     }
 
-    print("🔍 验证 documents 表结构")
+    print("🔍 验证 articles 表结构")
     print("=" * 80)
 
     conn = None
@@ -38,7 +38,7 @@ async def verify_table():
                 COALESCE(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '') AS column_default
             FROM pg_catalog.pg_attribute a
             LEFT JOIN pg_catalog.pg_attrdef d ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
-            WHERE a.attrelid = 'documents'::regclass
+            WHERE a.attrelid = 'articles'::regclass
                 AND a.attnum > 0
                 AND NOT a.attisdropped
             ORDER BY a.attnum;
@@ -49,24 +49,14 @@ async def verify_table():
         for row in result:
             print(f"  {row['column_name']:20} {row['data_type']:25} {row['nullable']:10} {row['column_default'] or ''}")
 
-        # 验证向量列维度
-        print("\n📋 Vector Column Details:")
-        vector_type = await conn.fetchval("""
-            SELECT pg_catalog.format_type(a.atttypid, a.atttypmod)
-            FROM pg_catalog.pg_attribute a
-            WHERE a.attrelid = 'documents'::regclass
-            AND a.attname = 'embedding';
-        """)
-        print(f"  embedding type: {vector_type if vector_type else 'N/A'}")
-
         # 验证索引
-        print("\n📋 Indexes:")
+        print("\n📋 Indexes (articles):")
         indexes = await conn.fetch("""
             SELECT
                 indexname,
                 indexdef
             FROM pg_indexes
-            WHERE tablename = 'documents'
+            WHERE tablename IN ('articles', 'vectors')
             ORDER BY indexname;
         """)
         for idx in indexes:
@@ -75,25 +65,10 @@ async def verify_table():
 
         # 验证注释
         print("\n📋 Comments:")
-        table_comment = await conn.fetchval("SELECT obj_description('documents'::regclass, 'pg_class')")
-        print(f"  Table: {table_comment}")
-
-        comments = await conn.fetch("""
-            SELECT
-                a.attname AS column_name,
-                pgd.description
-            FROM pg_catalog.pg_attribute a
-            LEFT JOIN pg_catalog.pg_description pgd
-                ON pgd.objoid = a.attrelid AND pgd.objsubid = a.attnum
-            WHERE a.attrelid = 'documents'::regclass
-                AND a.attnum > 0
-                AND NOT a.attisdropped
-                AND pgd.description IS NOT NULL
-            ORDER BY a.attnum;
-        """)
-
-        for c in comments:
-            print(f"  - {c['column_name']}: {c['description']}")
+        table_comment = await conn.fetchval("SELECT obj_description('articles'::regclass, 'pg_class')")
+        print(f"  articles: {table_comment}")
+        vectors_comment = await conn.fetchval("SELECT obj_description('vectors'::regclass, 'pg_class')")
+        print(f"  vectors: {vectors_comment}")
 
         print("\n" + "=" * 80)
         print("✅ 验证完成！表结构正确。")

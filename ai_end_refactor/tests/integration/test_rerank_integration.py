@@ -12,7 +12,7 @@ import pytest
 
 from src.config import Config
 from src.core import api_clients
-from src.core import document_retrieval
+from src.core import article_retrieval
 
 
 @pytest.mark.integration
@@ -34,7 +34,7 @@ async def test_rerank_end_to_end():
         config = Config.load()
 
         # === When: 执行搜索（会触发 rerank）===
-        result = await document_retrieval.search_documents(
+        result = await article_retrieval.search_articles(
             query="医师执业注册流程",
             top_k=5,
             threshold=0.5
@@ -97,7 +97,7 @@ async def test_rerank_with_custom_base_url():
         # === When: 执行搜索 ===
         # 注意：由于 Config 是 frozen 的，不能在测试中修改
         # 这里只验证搜索不会抛出异常
-        result = await document_retrieval.search_documents(
+        result = await article_retrieval.search_articles(
             query="测试查询",
             top_k=3,
             threshold=0.5
@@ -127,13 +127,13 @@ async def test_rerank_empty_query():
     try:
         # === When & Then: 验证空查询抛出异常 ===
         with pytest.raises(ValueError, match="查询文本不能为空"):
-            await document_retrieval.search_documents(
+            await article_retrieval.search_articles(
                 query="",
                 top_k=5
             )
 
         with pytest.raises(ValueError, match="查询文本不能为空"):
-            await document_retrieval.search_documents(
+            await article_retrieval.search_articles(
                 query="   ",  # 仅空格
                 top_k=5
             )
@@ -159,7 +159,7 @@ async def test_rerank_with_keywords():
         config = Config.load()
 
         # === When: 执行带关键词的搜索 ===
-        result = await document_retrieval.search_documents(
+        result = await article_retrieval.search_articles(
             query="住院医师培训",
             keywords="住院医师,培训,待遇",
             top_k=5,
@@ -203,7 +203,7 @@ async def test_rerank_high_threshold():
         config = Config.load()
 
         # === When: 使用高阈值搜索 ===
-        result = await document_retrieval.search_documents(
+        result = await article_retrieval.search_articles(
             query="非常具体的查询词xyz123",
             top_k=10,
             threshold=0.9  # 高阈值
@@ -308,7 +308,7 @@ async def test_concurrent_rerank_requests():
 
         # 并发执行搜索
         results = await asyncio.gather(*[
-            document_retrieval.search_documents(query, top_k=3)
+            article_retrieval.search_articles(query, top_k=3)
             for query in queries
         ], return_exceptions=True)
 

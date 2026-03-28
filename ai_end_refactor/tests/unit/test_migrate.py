@@ -200,7 +200,8 @@ async def test_schema_drift_check_targets_generic_tables():
     """
     # 目标通用表集合（此处仅用于表名覆盖断言）
     expected_generic_tables = {
-        "documents": ["id", "title", "content", "summary", "embedding", "content_hash"],
+        "articles": ["id", "title", "content", "summary"],
+        "vectors": ["id", "article_id", "embedding"],
         "skills": ["id", "name", "description", "verification_token"],
         "skill_references": ["id", "skill_id", "file_path", "content"],
         "conversations": ["id", "user_id", "conversation_id", "title", "messages", "updated_at"],
@@ -240,49 +241,49 @@ async def test_apply_schema_repair_handles_legacy_skill_references_column():
 
 
 @pytest.mark.asyncio
-async def test_apply_schema_repair_adds_documents_content_trgm_index():
-    """auto_repair 应补齐 documents.content 的 pg_trgm 索引，避免关键词检索退化。"""
+async def test_apply_schema_repair_adds_articles_content_trgm_index():
+    """auto_repair 应补齐 articles.content 的 pg_trgm 索引，避免关键词检索退化。"""
     fake_conn = FakeConn()
 
     await migrate._apply_schema_repair(fake_conn)
 
     executed_sql = "\n".join(fake_conn.executed_sql).lower()
-    assert "idx_documents_content_trgm" in executed_sql
+    assert "idx_articles_content_trgm" in executed_sql
     assert "gin_trgm_ops" in executed_sql
-    assert "documents" in executed_sql
+    assert "articles" in executed_sql
     assert "content" in executed_sql
 
 
 @pytest.mark.asyncio
-async def test_apply_schema_repair_adds_documents_embedding_index():
-    """auto_repair 应补齐 documents.embedding 的 HNSW 向量索引。"""
+async def test_apply_schema_repair_adds_vectors_embedding_index():
+    """auto_repair 应补齐 vectors.embedding 的 HNSW 向量索引。"""
     fake_conn = FakeConn()
 
     await migrate._apply_schema_repair(fake_conn)
 
     executed_sql = "\n".join(fake_conn.executed_sql).lower()
-    assert "idx_documents_embedding" in executed_sql
+    assert "idx_vectors_embedding_hnsw" in executed_sql
     assert "using hnsw" in executed_sql
     assert "vector_cosine_ops" in executed_sql
 
 
 @pytest.mark.asyncio
-async def test_apply_schema_repair_adds_documents_content_hash_index():
-    """auto_repair 应补齐 documents.content_hash 索引，保持与基线一致。"""
+async def test_apply_schema_repair_adds_vectors_article_index():
+    """auto_repair 应补齐 vectors.article_id 的唯一索引，保持与基线一致。"""
     fake_conn = FakeConn()
 
     await migrate._apply_schema_repair(fake_conn)
 
     executed_sql = "\n".join(fake_conn.executed_sql).lower()
-    assert "idx_documents_content_hash" in executed_sql
-    assert "on documents (content_hash)" in executed_sql
+    assert "idx_vectors_article" in executed_sql
+    assert "on vectors(article_id)" in executed_sql
 
 
-def test_baseline_migration_contains_documents_content_trgm_index():
-    """基线迁移文件应包含 documents.content 的 pg_trgm 索引定义。"""
+def test_baseline_migration_contains_articles_content_trgm_index():
+    """基线迁移文件应包含 articles.content 的 pg_trgm 索引定义。"""
     migrations_dir = Path(migrate.__file__).parent
     baseline = migrations_dir / "001_init_generic_backend.sql"
     content = baseline.read_text(encoding="utf-8").lower()
 
-    assert "idx_documents_content_trgm" in content
-    assert "documents using gin (content gin_trgm_ops)" in content.replace("\n", " ")
+    assert "idx_articles_content_trgm" in content
+    assert "articles using gin (content gin_trgm_ops)" in content.replace("\n", " ")

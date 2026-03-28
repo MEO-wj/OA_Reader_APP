@@ -94,7 +94,7 @@ async def _dispatch_secondary_tool(tool_name: str, tool_def: dict, function_args
     try:
         module_path, func_name = handler_path.rsplit(".", 1)
         module_mappings = {
-            "document_retrieval": "src.core.document_retrieval",
+            "article_retrieval": "src.core.article_retrieval",
         }
         module_import_path = module_mappings.get(module_path, f"src.core.{module_path}")
         module = importlib.import_module(module_import_path)
@@ -193,14 +193,14 @@ async def handle_tool_calls(
                 if not isinstance(content, str):
                     content = str(content)
 
-                if function_name == "search_documents":
+                if function_name == "search_articles":
                     try:
                         parsed = json.loads(content)
                         if isinstance(parsed, dict) and "results" in parsed:
                             content = json.dumps(truncate_search_documents_result(parsed), ensure_ascii=False)
                     except (json.JSONDecodeError, TypeError):
                         content = truncate_tool_output("generic", function_name, content)["content"]
-                elif function_name == "grep_document":
+                elif function_name == "grep_article":
                     try:
                         parsed = json.loads(content)
                         if isinstance(parsed, dict) and "status" in parsed:

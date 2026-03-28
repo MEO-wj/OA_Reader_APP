@@ -51,7 +51,7 @@ curl -N -X POST http://localhost:8000/chat \
 ```json
 {
   "skills": [
-    {"name": "document-retrieval", "description": "通用文档检索工具"}
+    {"name": "article-retrieval", "description": "OA 文章检索工具"}
   ],
   "data_source": "database",
   "skill_count": 1
@@ -179,154 +179,37 @@ curl -N -X POST http://localhost:8000/chat \
 
 ---
 
-## 三、管理接口 (/api/admin)
+## 三、数据模型
 
-### 3.1 模板接口（兼容保留）
-
-#### 3.1.1 获取资料模板
-
-**GET** `/api/admin/templates/{document_type}`
-
-获取指定类型资料的模板定义。
-
-**路径参数:**
-- `document_type`: 仅支持 `documents`
-
-**响应示例:**
-```json
-{
-  "type": "documents",
-  "description": "通用文档模板",
-  "format": "markdown",
-  "content": "# 文档标题\n\n文档内容..."
-}
-```
-
-#### 3.1.2 下载示例文件
-
-**GET** `/api/admin/templates/{document_type}/example`
-
-下载指定类型资料的示例文件。
-
----
-
-## 四、资料上传接口
-
-### 4.1 上传文档
-
-**POST** `/api/admin/documents`
-
-上传文档。
-
-**请求:**
-- Content-Type: `multipart/form-data`
-- 参数: `file` (`.md` 或 `.json` 文件)
-
-**处理流程:**
-1. 解析文件内容
-2. 生成摘要
-3. 生成向量 embedding
-4. 存储到数据库
-
-**响应:**
-```json
-{
-  "status": "success",
-  "message": "导入成功",
-  "document": {
-    "id": 1,
-    "title": "document",
-    "type": "markdown"
-  },
-  "processing_steps": [
-    "读取文件内容",
-    "生成摘要 (xxx 字符)",
-    "生成向量 (1024维)",
-    "存入数据库"
-  ]
-}
-```
-
-**示例:**
-```bash
-curl -X POST http://localhost:8000/api/admin/documents \
-  -F "file=@document.md"
-```
-
----
-
-## 五、资料管理接口
-
-### 5.1 获取文档列表
-
-**GET** `/api/admin/documents`
-
-获取文档列表。
-
-**查询参数:**
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| limit | int | 100 | 返回数量 (1-1000) |
-| offset | int | 0 | 偏移量 |
-
-**响应:**
-```json
-{
-  "status": "success",
-  "documents": [
-    {
-      "id": 1,
-      "title": "文档标题",
-      "summary": "摘要...",
-      "source_type": "markdown",
-      "created_at": "2024-01-01T00:00:00Z"
-    }
-  ],
-  "total": 50,
-  "limit": 100,
-  "offset": 0
-}
-```
-
-### 5.2 删除文档
-
-**DELETE** `/api/admin/documents/{document_id}`
-
-删除指定文档。
-
-**路径参数:**
-- `document_id`: 文档ID
-
-**响应:**
-```json
-{
-  "status": "success",
-  "message": "删除成功"
-}
-```
-
----
-
-## 六、数据模型
-
-### 6.1 Document（通用文档）
+### 3.1 Article（OA 文章）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | INTEGER | 主键 |
-| title | VARCHAR(500) | 文档标题 |
-| content | TEXT | 文档完整内容 |
+| id | BIGSERIAL | 主键 |
+| title | TEXT | 文章标题 |
+| unit | TEXT | 发布单位 |
+| link | TEXT | 原文链接（UNIQUE） |
+| published_on | DATE | 发布日期 |
+| content | TEXT | 文章完整内容 |
 | summary | TEXT | 摘要 |
-| source_type | VARCHAR(50) | 来源类型（markdown/json） |
+| attachments | JSONB | 附件列表 |
+| created_at | TIMESTAMPTZ | 创建时间 |
+| updated_at | TIMESTAMPTZ | 更新时间 |
+
+### 3.2 Vector（向量嵌入）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGSERIAL | 主键 |
+| article_id | BIGINT | 外键 → articles.id (CASCADE) |
 | embedding | vector(1024) | 向量表示 |
-| content_hash | VARCHAR(64) | 内容哈希 |
-| metadata | JSONB | 扩展元数据 |
-| created_at | TIMESTAMP | 创建时间 |
-| updated_at | TIMESTAMP | 更新时间 |
+| published_on | DATE | 发布日期 |
+| created_at | TIMESTAMPTZ | 创建时间 |
+| updated_at | TIMESTAMPTZ | 更新时间 |
 
 ---
 
-## 七、完整测试示例
+## 四、完整测试示例
 
 ```bash
 # 1. 健康检查
@@ -342,24 +225,11 @@ curl -N -X POST http://localhost:8000/chat \
 
 # 4. 获取用户会话列表
 curl "http://localhost:8000/chat/sessions?user_id=test-user"
-
-# 5. 获取资料模板
-curl http://localhost:8000/api/admin/templates/documents
-
-# 6. 上传文档
-curl -X POST http://localhost:8000/api/admin/documents \
-  -F "file=@document.md"
-
-# 7. 获取文档列表
-curl "http://localhost:8000/api/admin/documents?limit=10&offset=0"
-
-# 8. 删除文档
-curl -X DELETE http://localhost:8000/api/admin/documents/1
 ```
 
 ---
 
-## 八、开发模式启动
+## 五、开发模式启动
 
 ```bash
 uv run uvicorn src.api.main:app --reload --port 8000

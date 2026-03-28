@@ -282,13 +282,13 @@ class TestHandleToolCalls:
         mock_skill_system.available_skills = {
             "policy-retrieval": Mock(
                 secondary_tools=[
-                    {"name": "search_documents", "handler": "document_retrieval.search_documents"}
+                    {"name": "search_articles", "handler": "article_retrieval.search_articles"}
                 ]
             )
         }
 
         mock_tool_call = Mock()
-        mock_tool_call.function.name = "search_documents"
+        mock_tool_call.function.name = "search_articles"
         mock_tool_call.function.arguments = '{"query": "规培"}'
         mock_tool_call.id = "call_001"
 
@@ -375,7 +375,7 @@ class TestHandleToolCalls:
         """仅激活非指导技能时，read_reference 仍应返回未激活错误。"""
         mock_skill_system = Mock()
         mock_skill_system.available_skills = {
-            "document-retrieval": Mock(),
+            "article-retrieval": Mock(),
         }
 
         mock_tool_call = Mock()
@@ -383,25 +383,25 @@ class TestHandleToolCalls:
         mock_tool_call.function.arguments = '{"skill_name":"s","file_path":"references/a.md"}'
         mock_tool_call.id = "call_rr_non_guidance"
 
-        result = handle_tool_calls_sync([mock_tool_call], mock_skill_system, {"document-retrieval"})
+        result = handle_tool_calls_sync([mock_tool_call], mock_skill_system, {"article-retrieval"})
         assert "未激活" in result[0]["content"]
         mock_skill_system.read_reference.assert_not_called()
 
-    def test_handle_tool_calls_applies_search_documents_truncation(self):
-        """search_documents 通过 handle_tool_calls 时应按配置限制结果数量。"""
+    def test_handle_tool_calls_applies_search_articles_truncation(self):
+        """search_articles 通过 handle_tool_calls 时应按配置限制结果数量。"""
         from src.chat.context_truncator import _SEARCH_DOCUMENTS_MAX_RESULTS
 
         mock_skill_system = Mock()
         mock_skill_system.available_skills = {
             "policy-retrieval": Mock(
                 secondary_tools=[
-                    {"name": "search_documents", "handler": "document_retrieval.search_documents"}
+                    {"name": "search_articles", "handler": "article_retrieval.search_articles"}
                 ]
             )
         }
 
         mock_tool_call = Mock()
-        mock_tool_call.function.name = "search_documents"
+        mock_tool_call.function.name = "search_articles"
         mock_tool_call.function.arguments = '{"query":"规培"}'
         mock_tool_call.id = "call_sp_1"
 
@@ -419,19 +419,19 @@ class TestHandleToolCalls:
         assert len(data["results"]) <= _SEARCH_DOCUMENTS_MAX_RESULTS
         assert "_meta" in data
 
-    def test_handle_tool_calls_applies_grep_document_truncation(self):
-        """grep_document 通过 handle_tool_calls 时应保留 title 且限制匹配数。"""
+    def test_handle_tool_calls_applies_grep_article_truncation(self):
+        """grep_article 通过 handle_tool_calls 时应保留 title 且限制匹配数。"""
         mock_skill_system = Mock()
         mock_skill_system.available_skills = {
             "policy-retrieval": Mock(
                 secondary_tools=[
-                    {"name": "grep_document", "handler": "document_retrieval.grep_document"}
+                    {"name": "grep_article", "handler": "article_retrieval.grep_article"}
                 ]
             )
         }
 
         mock_tool_call = Mock()
-        mock_tool_call.function.name = "grep_document"
+        mock_tool_call.function.name = "grep_article"
         mock_tool_call.function.arguments = '{"policy_id":1,"keyword":"服务期"}'
         mock_tool_call.id = "call_gp_1"
 

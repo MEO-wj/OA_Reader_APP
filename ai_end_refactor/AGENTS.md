@@ -142,7 +142,7 @@ verification_token: TOKEN-XYZ    # 验证暗号（可选）
 - 关闭顺序：`close_clients` → `close_resources` → `close_pool` → `shutdown_tool_loop`
 - 常见排查命令：
   - `uv run pytest tests/integration/test_concurrency_regression.py -v`
-  - `uv run pytest tests/unit/test_document_retrieval.py tests/unit/test_chat_client.py tests/unit/test_db.py -v`
+  - `uv run pytest tests/unit/test_article_retrieval.py tests/unit/test_chat_client.py tests/unit/test_db.py -v`
 
 ---
 

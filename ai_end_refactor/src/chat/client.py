@@ -25,7 +25,7 @@ from src.core.skill_adapter import SkillBackend
 from src.core.api_queue import get_api_queue
 from src.core.api_clients import get_llm_client, close_clients
 from src.core.db import close_pool
-from src.core.document_retrieval import close_resources
+from src.core.article_retrieval import close_resources
 from src.di.providers import get_history_manager, get_memory_manager, get_skill_system
 from src.chat.prompts_runtime import SYSTEM_PROMPT_TEMPLATE
 
@@ -582,7 +582,7 @@ class ChatClient:
                         print(f"{Colors.CYAN}   └─ {tool_name}:{Colors.END}")
 
                         # 根据不同工具类型显示不同摘要
-                        if tool_name == "search_documents" and "results" in result:
+                        if tool_name == "search_articles" and "results" in result:
                             results = result.get("results", [])
                             print(f"{Colors.CYAN}      找到 {len(results)} 条文档{Colors.END}")
                             for r in results[:3]:  # 只显示前3条
@@ -595,7 +595,7 @@ class ChatClient:
                             if len(results) > 3:
                                 print(f"{Colors.CYAN}        ... 还有 {len(results) - 3} 条{Colors.END}")
 
-                        elif tool_name == "grep_document":
+                        elif tool_name == "grep_article":
                             # 兼容新格式（status 字段）和旧格式（直接返回 error）
                             if result.get("status") == "success":
                                 matches = result.get("data", {}).get("matches", [])

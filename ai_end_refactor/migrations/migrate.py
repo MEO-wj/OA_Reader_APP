@@ -39,12 +39,13 @@ async def _has_schema_drift(conn: asyncpg.Connection) -> bool:
     目标：当库被手工修改导致缺表/缺字段时，触发修复迁移。
     """
     checks = [
-        ("documents", "id"),
-        ("documents", "title"),
-        ("documents", "content"),
-        ("documents", "summary"),
-        ("documents", "embedding"),
-        ("documents", "content_hash"),
+        ("articles", "id"),
+        ("articles", "title"),
+        ("articles", "content"),
+        ("articles", "summary"),
+        ("vectors", "id"),
+        ("vectors", "article_id"),
+        ("vectors", "embedding"),
         ("skills", "id"),
         ("skills", "name"),
         ("skills", "metadata"),
@@ -94,23 +95,37 @@ async def _apply_schema_repair(conn: asyncpg.Connection) -> None:
         "CREATE EXTENSION IF NOT EXISTS vector;",
         "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
         """
-        CREATE TABLE IF NOT EXISTS documents (
-            id SERIAL PRIMARY KEY,
-            title VARCHAR(500) NOT NULL,
+        CREATE TABLE IF NOT EXISTS articles (
+            id BIGSERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            unit TEXT,
+            link TEXT NOT NULL UNIQUE,
+            published_on DATE NOT NULL,
             content TEXT NOT NULL,
-            summary TEXT,
-            source_type VARCHAR(50) DEFAULT 'markdown',
-            embedding vector(1024),
-            content_hash VARCHAR(64) UNIQUE,
-            metadata JSONB DEFAULT '{}',
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
+            summary TEXT NOT NULL,
+            attachments JSONB DEFAULT '[]'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
         );
         """,
-        "CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING hnsw (embedding vector_cosine_ops);",
-        "CREATE INDEX IF NOT EXISTS idx_documents_content_hash ON documents (content_hash);",
-        "CREATE INDEX IF NOT EXISTS idx_documents_title_trgm ON documents USING gin (title gin_trgm_ops);",
-        "CREATE INDEX IF NOT EXISTS idx_documents_content_trgm ON documents USING gin (content gin_trgm_ops);",
+        "CREATE INDEX IF NOT EXISTS idx_articles_published_on ON articles (published_on);",
+        "CREATE INDEX IF NOT EXISTS idx_articles_title_trgm ON articles USING gin (title gin_trgm_ops);",
+        "CREATE INDEX IF NOT EXISTS idx_articles_content_trgm ON articles USING gin (content gin_trgm_ops);",
+        "COMMENT ON TABLE articles IS 'OA文章表';",
+        """
+        CREATE TABLE IF NOT EXISTS vectors (
+            id BIGSERIAL PRIMARY KEY,
+            article_id BIGINT REFERENCES articles(id) ON DELETE CASCADE,
+            embedding vector(1024),
+            published_on DATE NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_vectors_published_on ON vectors (published_on);",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_vectors_article ON vectors(article_id);",
+        "CREATE INDEX IF NOT EXISTS idx_vectors_embedding_hnsw ON vectors USING hnsw (embedding vector_cosine_ops);",
+        "COMMENT ON TABLE vectors IS '文章向量表';",
         """
         CREATE TABLE IF NOT EXISTS skills (
             id SERIAL PRIMARY KEY,
@@ -268,18 +283,18 @@ async def run_migration(auto_repair: bool = False):
                 is_nullable,
                 column_default
             FROM information_schema.columns
-            WHERE table_name = 'documents'
-            ORDER BY ordinal_position;
+            WHERE table_name IN ('articles', 'vectors')
+            ORDER BY table_name, ordinal_position;
         """)
 
         if table_info:
-            print("\n📋 documents 表结构:")
+            print("\n📋 articles + vectors 表结构:")
             print("-" * 80)
             for col in table_info:
                 print(f"  {col['column_name']:20} | {col['data_type']:20} | NULL: {col['is_nullable']:5} | DEFAULT: {col['column_default'] or '-'}")
             print("-" * 80)
         else:
-            print("❌ 未找到 documents 表")
+            print("❌ 未找到 articles 或 vectors 表")
 
         # 验证索引
         print("\n🔍 验证索引...")
@@ -288,11 +303,11 @@ async def run_migration(auto_repair: bool = False):
                 indexname,
                 indexdef
             FROM pg_indexes
-            WHERE tablename = 'documents';
+            WHERE tablename IN ('articles', 'vectors');
         """)
 
         if indexes:
-            print("\n📋 documents 表索引:")
+            print("\n📋 articles + vectors 表索引:")
             print("-" * 80)
             for idx in indexes:
                 print(f"  {idx['indexname']}")
@@ -325,10 +340,11 @@ async def run_migration(auto_repair: bool = False):
 
         # 验证注释
         print("\n🔍 验证表和列注释...")
-        table_comment = await conn.fetchval("""
-            SELECT obj_description('documents'::regclass, 'pg_class');
-        """)
-        print(f"  表注释: {table_comment or '(无)'}")
+        for tbl in ['articles', 'vectors']:
+            table_comment = await conn.fetchval(f"""
+                SELECT obj_description('{tbl}'::regclass, 'pg_class');
+            """)
+            print(f"  {tbl} 表注释: {table_comment or '(无)'}")
 
         column_comments = await conn.fetch("""
             SELECT
@@ -339,12 +355,12 @@ async def run_migration(auto_repair: bool = False):
             JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid
             LEFT JOIN pg_catalog.pg_description pgd
                 ON pgd.objoid = c.oid AND pgd.objsubid = a.attnum
-            WHERE c.relname = 'documents'
+            WHERE c.relname IN ('articles', 'vectors')
                 AND n.nspname = 'public'
                 AND a.attnum > 0
                 AND NOT a.attisdropped
                 AND pgd.description IS NOT NULL
-            ORDER BY a.attnum;
+            ORDER BY c.relname, a.attnum;
         """)
 
         if column_comments:

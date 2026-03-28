@@ -1,17 +1,11 @@
 tools:
-  - name: search_documents
+  - name: search_articles
     description: |
-      向量搜索相关文档，返回匹配文档的标题和摘要。
+      向量搜索相关文章，返回匹配文章的标题、发布单位和摘要。
 
       使用场景：
-      - 用户询问某个主题时，先用此工具找到相关文档
-      - 获取文档 ID 和摘要，判断是否需要获取详情
-
-      参数说明：
-      - query: 搜索查询文本，描述要查找的文档主题
-      - keywords: (可选) 关键词，逗号分隔，用于精确匹配
-      - top_k: 返回结果数量，默认 10
-      - threshold: 相似度阈值 0-1，默认 0.5
+      - 用户询问某个主题时，先用此工具找到相关文章
+      - 获取文章 ID 和摘要，判断是否需要获取详情
     parameters:
       type: object
       properties:
@@ -20,7 +14,7 @@ tools:
           description: 搜索查询文本
         keywords:
           type: string
-          description: 关键词，逗号分隔，如 "合同,违约,赔偿"
+          description: 关键词，逗号分隔，如 "考试,安排,期末"
         top_k:
           type: integer
           description: 返回结果数量，默认 10
@@ -29,36 +23,25 @@ tools:
           description: 相似度阈值，默认 0.5
       required:
         - query
-    handler: document_retrieval.search_documents
+    handler: article_retrieval.search_articles
 
-  - name: grep_document
+  - name: grep_article
     description: |
-      获取指定文档的具体内容。支持多种搜索模式。
+      获取指定文章的具体内容。支持多种搜索模式。
 
       搜索模式：
       - auto: 自动检测（根据参数选择）
-      - summary: 返回文档前500字摘要
-      - keyword: 关键词精确匹配（返回包含关键词的段落）
-      - regex: 正则表达式匹配（适用于多种表述）
+      - summary: 返回文章前500字摘要
+      - keyword: 关键词精确匹配
+      - regex: 正则表达式匹配
       - section: 按章节标题提取
       - line_range: 精确行范围
-
-      返回格式：
-      - status: success / not_found / error
-      - data.title: 文档标题
-      - data.matches: 匹配结果列表，每个包含 content, line_number, context_before, context_after, highlight_ranges
-      - metadata: total_matches, search_mode
-
-      使用建议：
-      - 获取详情：mode="summary"
-      - 查找具体条款：mode="keyword" + context_lines=2
-      - 查找多种表述：mode="regex"
     parameters:
       type: object
       properties:
-        document_id:
+        article_id:
           type: integer
-          description: 文档 ID（从 search_documents 返回结果中获取）
+          description: 文章 ID（从 search_articles 返回结果中获取）
         keyword:
           type: string
           description: 关键词（mode="keyword" 时使用）
@@ -86,24 +69,20 @@ tools:
           type: integer
           description: 结束行号（mode="line_range" 时使用）
       required:
-        - document_id
-    handler: document_retrieval.grep_document
+        - article_id
+    handler: article_retrieval.grep_article
 
-  - name: grep_documents
+  - name: grep_articles
     description: |
-      跨多个文档搜索内容。用于对比多个文档的同一主题。
-
-      使用场景：
-      - 对比多个方案在交付条款上的差异
-      - 查找多个文档中关于责任边界的描述
+      跨多个文章搜索内容。用于对比多篇文章的同一主题。
     parameters:
       type: object
       properties:
-        document_ids:
+        article_ids:
           type: array
           items:
             type: integer
-          description: 文档 ID 列表
+          description: 文章 ID 列表
         keyword:
           type: string
           description: 关键词
@@ -119,10 +98,10 @@ tools:
           description: 上下文行数
         max_results:
           type: integer
-          description: 每个文档的最大结果数
+          description: 每篇文章的最大结果数
         pattern:
           type: string
           description: 正则表达式（mode="regex" 时使用）
       required:
-        - document_ids
-    handler: document_retrieval.grep_documents
+        - article_ids
+    handler: article_retrieval.grep_articles

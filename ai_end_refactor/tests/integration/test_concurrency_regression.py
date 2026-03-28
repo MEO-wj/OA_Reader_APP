@@ -13,7 +13,7 @@ async def test_concurrent_search_and_chat_no_unhandled_concurrency_errors(
     from src.config import Config
     from src.core import api_clients
     from src.core import api_queue as api_queue_module
-    from src.core import document_retrieval
+    from src.core import article_retrieval
 
     api_clients.close_clients()
     api_queue_module._api_queue = None
@@ -46,8 +46,8 @@ async def test_concurrent_search_and_chat_no_unhandled_concurrency_errors(
     async def fake_get_pool():
         return FakePool()
 
-    monkeypatch.setattr(document_retrieval, "get_pool", fake_get_pool)
-    monkeypatch.setattr(document_retrieval, "_generate_embedding_sync", lambda text: [0.1, 0.2])
+    monkeypatch.setattr(article_retrieval, "get_pool", fake_get_pool)
+    monkeypatch.setattr(article_retrieval, "_generate_embedding_sync", lambda text: [0.1, 0.2])
 
     class FakeLLMClient:
         def __init__(self):
@@ -75,7 +75,7 @@ async def test_concurrent_search_and_chat_no_unhandled_concurrency_errors(
     )
     client = ChatClient(config)
 
-    searches = [document_retrieval.search_documents(f"q-{i}") for i in range(3)]
+    searches = [article_retrieval.search_articles(f"q-{i}") for i in range(3)]
     chat_call = asyncio.to_thread(client.chat, "规培几年")
     outputs = await asyncio.gather(*searches, chat_call, return_exceptions=True)
 

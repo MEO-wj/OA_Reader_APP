@@ -1,4 +1,4 @@
-"""document_content 单元测试"""
+"""article_content 单元测试"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -149,8 +149,8 @@ async def test_line_range_matcher():
 
 @pytest.mark.asyncio
 @patch("src.core.document_content.get_pool")
-async def test_content_fetcher_queries_documents_table(mock_get_pool):
-    """ContentFetcher 应查询 documents 表而非 policies 表。"""
+async def test_content_fetcher_queries_articles_table(mock_get_pool):
+    """ContentFetcher 应查询 articles 表而非 documents 表。"""
     mock_conn = AsyncMock()
     mock_conn.fetchrow.return_value = MagicMock(title="测试文档", content="测试内容")
     mock_get_pool.return_value = MockPool(mock_conn)
@@ -158,7 +158,7 @@ async def test_content_fetcher_queries_documents_table(mock_get_pool):
     fetcher = ContentFetcher()
     await fetcher.get(1)
 
-    # 验证 SQL 查询使用的是 documents 表
+    # 验证 SQL 查询使用的是 articles 表
     call_args = mock_conn.fetchrow.call_args
     query = call_args[0][0] if call_args[0] else str(call_args)
-    assert "documents" in query.lower(), f"Expected 'documents' in query, got: {query}"
+    assert "articles" in query.lower(), f"Expected 'articles' in query, got: {query}"

@@ -579,8 +579,8 @@ class TestReadReferenceActivation:
                 verification_token="",
                 metadata={"read_reference_parent": True},
             ),
-            "document-retrieval": SkillInfo(
-                name="document-retrieval",
+            "article-retrieval": SkillInfo(
+                name="article-retrieval",
                 description="检索技能",
                 content="# retrieval",
                 verification_token="",
@@ -589,7 +589,7 @@ class TestReadReferenceActivation:
         }
 
         assert should_enable_read_reference({"guidance-skill"}, available_skills) is True
-        assert should_enable_read_reference({"document-retrieval"}, available_skills) is False
+        assert should_enable_read_reference({"article-retrieval"}, available_skills) is False
 
     def test_read_reference_disabled_when_no_skills_activated(self):
         """

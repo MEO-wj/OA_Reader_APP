@@ -4,8 +4,8 @@
 针对不同工具类型实现差异化截断策略：
 - skill content: 不截断（通常小，且高价值）
 - read_reference: 语义边界截断（按段落）
-- search_documents: 按配置限制返回数量，摘要长度
-- grep_document: 限制匹配数，每条内容长度
+- search_articles: 按配置限制返回数量，摘要长度
+- grep_article: 限制匹配数，每条内容长度
 - 其他工具: 统一硬上限
 """
 import re
@@ -74,7 +74,7 @@ def truncate_tool_output(
     # 其他工具：统一截断
     if original_size > _GENERIC_TOOL_MAX_CHARS:
         truncated = content[:_GENERIC_TOOL_MAX_CHARS]
-        hint = f"\n\n[内容过长已截断，原文 {original_size} 字符，返回前 {_GENERIC_TOOL_MAX_CHARS} 字符。如需完整内容请使用 grep_document 搜索关键词。]"
+        hint = f"\n\n[内容过长已截断，原文 {original_size} 字符，返回前 {_GENERIC_TOOL_MAX_CHARS} 字符。如需完整内容请使用 grep_article 搜索关键词。]"
         return {
             "content": truncated + hint,
             "truncated": True,
@@ -148,7 +148,7 @@ def _truncate_by_paragraph(content: str, max_chars: int) -> TruncationResult:
     result_content = "\n\n".join(kept_paragraphs)
     omitted = len(paragraphs) - len(kept_paragraphs)
 
-    hint = f"\n\n[截断提示] 原文共 {len(paragraphs)} 个章节，已省略中间 {omitted} 个章节（原文 {len(content)} 字符）。如需中间章节内容，请使用 grep_document 搜索关键词。"
+    hint = f"\n\n[截断提示] 原文共 {len(paragraphs)} 个章节，已省略中间 {omitted} 个章节（原文 {len(content)} 字符）。如需中间章节内容，请使用 grep_article 搜索关键词。"
 
     # 应用最终收口，确保总长度不超过 max_chars
     final_content, final_hint, final_size = _enforce_hard_cap(result_content, hint, max_chars)

@@ -14,7 +14,6 @@ from pathlib import Path
 
 # 导入数据加载脚本
 from scripts.import_skills import main as import_skills_main
-from scripts.import_documents import main as import_documents_main
 
 from src.chat.handlers import shutdown_tool_loop
 from src.api.models import ChatRequest, ConversationCreate, HealthResponse, SkillsResponse
@@ -23,7 +22,7 @@ from src.api.admin import router as admin_router
 from src.core.api_clients import close_clients
 from src.core.api_queue import close_api_queue
 from src.core.db import close_pool
-from src.core.document_retrieval import close_resources
+from src.core.article_retrieval import close_resources
 from src.di.providers import get_chat_service
 
 
@@ -52,19 +51,8 @@ async def lifespan(_app: FastAPI):
             if should_import:
                 print("🔄 检测到数据缺失或变更，开始自动导入...")
                 try:
-                    # 并发执行两个导入任务：skills 和 documents
-                    results = await asyncio.gather(
-                        import_skills_main(Path("skills")),
-                        import_documents_main(Path("docs")),
-                        return_exceptions=True,
-                    )
-                    # 检查是否有错误
-                    errors = [r for r in results if isinstance(r, Exception)]
-                    if errors:
-                        for err in errors:
-                            print(f"⚠️ 导入任务失败: {err}")
-                    else:
-                        print("✅ 数据导入完成")
+                    await import_skills_main(Path("skills"))
+                    print("✅ skills 导入完成")
                 except Exception as e:
                     print(f"⚠️ 数据导入失败: {e}")
                     # 数据导入失败不阻塞启动，让服务可以正常运行

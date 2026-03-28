@@ -832,7 +832,7 @@ class TestChatClientAsyncStreaming:
                 SimpleNamespace(
                     index=0,
                     id="call_1",
-                    function=SimpleNamespace(name="document-retrieval", arguments="{}"),
+                    function=SimpleNamespace(name="article-retrieval", arguments="{}"),
                 )
             ],
         )
@@ -1052,7 +1052,7 @@ class TestChatClientAsyncStreaming:
                     SimpleNamespace(
                         index=1,
                         id="call_minimax_1",
-                        function=SimpleNamespace(name="document-retrieval", arguments=""),
+                        function=SimpleNamespace(name="article-retrieval", arguments=""),
                     )
                 ],
                 content=None,
@@ -1112,7 +1112,7 @@ class TestChatClientAsyncStreaming:
         assert len(tool_events) == 0
         assert len(captured_tool_calls) == 1
         assert captured_tool_calls[0]["id"] == "call_minimax_1"
-        assert captured_tool_calls[0]["function"]["name"] == "document-retrieval"
+        assert captured_tool_calls[0]["function"]["name"] == "article-retrieval"
         assert captured_tool_calls[0]["function"]["arguments"] == "{}"
 
     @pytest.mark.asyncio
