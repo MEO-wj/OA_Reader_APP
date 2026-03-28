@@ -47,7 +47,11 @@ async def test_concurrent_search_and_chat_no_unhandled_concurrency_errors(
         return FakePool()
 
     monkeypatch.setattr(article_retrieval, "get_pool", fake_get_pool)
-    monkeypatch.setattr(article_retrieval, "_generate_embedding_sync", lambda text: [0.1, 0.2])
+
+    async def fake_generate_embedding(text):
+        return [0.1, 0.2]
+
+    monkeypatch.setattr(article_retrieval, "generate_embedding", fake_generate_embedding)
 
     class FakeLLMClient:
         def __init__(self):
