@@ -12,7 +12,7 @@ services:
     ports:
       - "${HOST_POSTGRES_PORT:-5430}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-Unself} -d ${POSTGRES_DB:-oa-reader}"]
@@ -46,12 +46,8 @@ services:
     ports:
       - "${HOST_BACKEND_PORT:-4420}:4420"
     volumes:
-      - backend_uploads:/app/uploads
+      - ./data/backend_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-  backend_uploads:
+    restart: always
