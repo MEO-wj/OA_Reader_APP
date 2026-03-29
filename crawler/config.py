@@ -63,8 +63,13 @@ class Config:
         self.api_key: Optional[str] = None  # AI服务API密钥
         self.ai_base_url: str = "https://open.bigmodel.cn/api/paas/v4/chat/completions"  # GLM API URL
         self.ai_model: str = "glm-4.5-flash"  # 默认AI模型
-        self.ai_models: list[dict] = []  # 多模型配置（JSON数组）
-        self.ai_enable_load_balancing: bool = True  # 是否启用AI负载均衡
+        self.ai_primary_api_key: Optional[str] = None
+        self.ai_primary_base_url: Optional[str] = None
+        self.ai_primary_model: Optional[str] = None
+        self.ai_fallback_api_key: Optional[str] = None
+        self.ai_fallback_base_url: Optional[str] = None
+        self.ai_fallback_model: Optional[str] = None
+        self.ai_provider_mode: str = "single"  # "single" | "fallback"
         self.database_url: Optional[str] = None  # 数据库连接字符串
         self.embed_base_url: Optional[str] = None  # 嵌入服务URL
         self.embed_model: Optional[str] = None  # 嵌入模型名称
@@ -89,13 +94,14 @@ class Config:
     # ------------------------------------------------------------------
     def load(self) -> None:
         """从文件和环境变量填充配置值。
-        
+
         按以下顺序加载设置：
         1. 从环境文件（如果存在）
         2. 从系统环境变量（覆盖文件值）
         """
         self._load_from_env_file()
         self._override_with_environment()
+        self._detect_provider_mode()
 
     def reload(self) -> None:
         """强制重新读取配置源。
@@ -126,6 +132,23 @@ class Config:
     # ------------------------------------------------------------------
     # 内部辅助方法
     # ------------------------------------------------------------------
+    def _detect_provider_mode(self) -> None:
+        """根据已加载的配置推断 ai_provider_mode。"""
+        has_primary = all([
+            self.ai_primary_api_key,
+            self.ai_primary_base_url,
+            self.ai_primary_model,
+        ])
+        has_fallback = all([
+            self.ai_fallback_api_key,
+            self.ai_fallback_base_url,
+            self.ai_fallback_model,
+        ])
+        if has_primary and has_fallback:
+            self.ai_provider_mode = "fallback"
+        else:
+            self.ai_provider_mode = "single"
+
     def _resolve_path(self, value: str | Path) -> Path:
         """将路径解析为绝对路径，如果需要，相对于项目根目录。
         
@@ -197,8 +220,12 @@ class Config:
             "API_KEY",          # AI服务API密钥
             "AI_BASE_URL",      # AI API基础URL
             "AI_MODEL",         # AI模型名称
-            "AI_MODELS",        # AI多模型配置
-            "AI_ENABLE_LOAD_BALANCING",  # 是否启用AI负载均衡
+            "AI_PRIMARY_API_KEY",   # 主AI服务API密钥
+            "AI_PRIMARY_BASE_URL",  # 主AI API基础URL
+            "AI_PRIMARY_MODEL",     # 主AI模型名称
+            "AI_FALLBACK_API_KEY",  # 备用AI服务API密钥
+            "AI_FALLBACK_BASE_URL", # 备用AI API基础URL
+            "AI_FALLBACK_MODEL",    # 备用AI模型名称
             "DATABASE_URL",     # 数据库连接字符串
             "EMBED_BASE_URL",   # 嵌入服务基础URL
             "EMBED_MODEL",      # 嵌入模型名称
@@ -262,14 +289,18 @@ class Config:
         elif key == "AI_MODEL":
             if value:
                 self.ai_model = value
-        elif key == "AI_MODELS":
-            parsed = safe_json_parse(value, default=None)
-            if isinstance(parsed, list):
-                self.ai_models = parsed
-            else:
-                print(f"⚠️ AI_MODELS JSON解析失败: {value}")
-        elif key == "AI_ENABLE_LOAD_BALANCING":
-            self.ai_enable_load_balancing = value.lower() in ("1", "true", "yes", "on")
+        elif key == "AI_PRIMARY_API_KEY":
+            self.ai_primary_api_key = value or None
+        elif key == "AI_PRIMARY_BASE_URL":
+            self.ai_primary_base_url = value or None
+        elif key == "AI_PRIMARY_MODEL":
+            self.ai_primary_model = value or None
+        elif key == "AI_FALLBACK_API_KEY":
+            self.ai_fallback_api_key = value or None
+        elif key == "AI_FALLBACK_BASE_URL":
+            self.ai_fallback_base_url = value or None
+        elif key == "AI_FALLBACK_MODEL":
+            self.ai_fallback_model = value or None
         elif key == "DATABASE_URL":
             self.database_url = value or None
         elif key == "EMBED_BASE_URL":
