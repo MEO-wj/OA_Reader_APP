@@ -35,7 +35,7 @@ def _today_range(tz_name: str | None) -> tuple[datetime, datetime]:
         (start_utc, end_utc) — 均带 ``timezone.utc`` 信息。
     """
     if tz_name:
-        tz: Any = ZoneInfo(tz_name)
+        tz: ZoneInfo | timezone = ZoneInfo(tz_name)
     else:
         tz = timezone(timedelta(hours=8))  # 默认中国标准时间
 
@@ -173,6 +173,10 @@ class CompatService:
                     try:
                         parsed = json.loads(raw_result)
                     except (json.JSONDecodeError, TypeError):
+                        logger.warning(
+                            "Failed to parse tool_result as JSON: %s",
+                            raw_result[:200],
+                        )
                         parsed = None
                 else:
                     parsed = raw_result

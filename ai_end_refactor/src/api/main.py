@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -25,6 +26,8 @@ from src.core.api_queue import close_api_queue
 from src.core.db import close_pool
 from src.core.article_retrieval import close_resources
 from src.di.providers import get_chat_service
+
+logger = logging.getLogger(__name__)
 
 
 async def _maybe_await(result: object) -> None:
@@ -241,14 +244,18 @@ async def ask_compat(request: AskCompatRequest) -> dict:
         return JSONResponse(status_code=400, content={"error": "请求参数错误，缺少question字段"})
     from src.api.compat_service import CompatService
 
-    service = CompatService()
-    payload = await service.ask(
-        question=request.question,
-        user_id=request.user_id,
-        top_k=request.top_k,
-        display_name=request.display_name,
-    )
-    return JSONResponse(content=payload, media_type="application/json")
+    try:
+        service = CompatService()
+        payload = await service.ask(
+            question=request.question,
+            user_id=request.user_id,
+            top_k=request.top_k,
+            display_name=request.display_name,
+        )
+        return JSONResponse(content=payload, media_type="application/json")
+    except Exception as exc:
+        logger.exception("/ask compat error")
+        return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
 @app.post("/clear_memory", response_model=dict)
@@ -258,9 +265,13 @@ async def clear_memory_compat(request: ClearMemoryCompatRequest) -> dict:
         return JSONResponse(status_code=400, content={"error": "用户信息缺失"})
     from src.api.compat_service import CompatService
 
-    service = CompatService()
-    payload = await service.clear_memory(user_id=request.user_id)
-    return JSONResponse(content=payload, media_type="application/json")
+    try:
+        service = CompatService()
+        payload = await service.clear_memory(user_id=request.user_id)
+        return JSONResponse(content=payload, media_type="application/json")
+    except Exception as exc:
+        logger.exception("/clear_memory compat error")
+        return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
 @app.post("/embed", response_model=dict)
@@ -270,6 +281,10 @@ async def embed_compat(request: EmbedCompatRequest) -> dict:
         return JSONResponse(status_code=400, content={"error": "请求参数错误，缺少text字段"})
     from src.api.compat_service import CompatService
 
-    service = CompatService()
-    embedding = await service.embed(text=request.text)
-    return JSONResponse(content={"embedding": embedding}, media_type="application/json")
+    try:
+        service = CompatService()
+        embedding = await service.embed(text=request.text)
+        return JSONResponse(content={"embedding": embedding}, media_type="application/json")
+    except Exception as exc:
+        logger.exception("/embed compat error")
+        return JSONResponse(status_code=500, content={"error": str(exc)})

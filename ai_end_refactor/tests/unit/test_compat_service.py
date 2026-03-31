@@ -20,6 +20,15 @@ from unittest.mock import AsyncMock, Mock, patch
 from src.config.settings import Config
 
 
+def test_ask_compat_request_rejects_bool_top_k():
+    """I1: AskCompatRequest 应在模型层拒绝 bool 类型的 top_k。"""
+    from pydantic import ValidationError
+    from src.api.compat_models import AskCompatRequest
+
+    with pytest.raises(ValidationError, match="boolean"):
+        AskCompatRequest(question="test", top_k=True)
+
+
 # ---------------------------------------------------------------------------
 # Helpers: fake client / fake MemoryDB
 # ---------------------------------------------------------------------------
@@ -260,6 +269,24 @@ class TestCompatServiceAsk:
         assert result["session_created"] is False
         # 不应创建新会话
         assert len(fake_memory._created_sessions) == 0
+
+
+class TestAggregateEvents:
+    """_aggregate_events 静态方法单元测试"""
+
+    def test_aggregate_events_logs_warning_on_invalid_json(self, caplog):
+        """M2: tool_result 包含非 JSON 字符串时应输出 warning 日志。"""
+        import logging
+        from src.api.compat_service import CompatService
+
+        events = [
+            {"type": "tool_result", "result": "<<<not-json>>>"},
+        ]
+        with caplog.at_level(logging.WARNING, logger="src.api.compat_service"):
+            result = CompatService._aggregate_events(events)
+
+        assert result["related_articles"] == []
+        assert any("Failed to parse tool_result" in rec.message for rec in caplog.records)
 
 
 class TestCompatServiceClearMemory:
