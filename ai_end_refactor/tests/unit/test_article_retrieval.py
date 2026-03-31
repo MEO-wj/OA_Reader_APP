@@ -435,3 +435,104 @@ async def test_generate_embedding_uses_queue(monkeypatch):
     result = await base_retrieval.generate_embedding("abc")
 
     assert result == [0.1, 0.2]
+
+
+@pytest.mark.asyncio
+@patch('src.core.article_retrieval.get_pool')
+@patch('src.core.article_retrieval.generate_embedding')
+@patch('src.core.article_retrieval._rerank_documents')
+async def test_search_articles_returns_content_snippet(mock_rerank, mock_generate_embedding, mock_get_pool):
+    """search_articles 结果应包含 content_snippet 字段。"""
+    mock_generate_embedding.return_value = [0.1] * 1024
+
+    mock_conn = AsyncMock()
+
+    row = MagicMock()
+    row.__getitem__ = lambda self, key: {
+        "id": 1,
+        "title": "文章A",
+        "unit": "教务处",
+        "published_on": "2026-03-20",
+        "summary": "摘要内容",
+        "similarity": 0.9,
+        "content_snippet": "这是文章正文前80个字符的截取内容用于展示在搜索结果列表中",
+    }[key]
+
+    async def mock_fetch(query, *args):
+        return [row]
+
+    mock_conn.fetch = mock_fetch
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    mock_rerank.return_value = [
+        {
+            "id": 1,
+            "title": "文章A",
+            "unit": "教务处",
+            "published_on": "2026-03-20",
+            "summary": "摘要内容",
+            "ebd_similarity": 0.9,
+            "keyword_similarity": None,
+            "rerank_score": 0.85,
+            "content_snippet": "这是文章正文前80个字符的截取内容用于展示在搜索结果列表中",
+        }
+    ]
+
+    result = await search_articles("测试查询")
+
+    assert "results" in result
+    assert len(result["results"]) == 1
+    assert "content_snippet" in result["results"][0]
+    assert result["results"][0]["content_snippet"] == "这是文章正文前80个字符的截取内容用于展示在搜索结果列表中"
+
+
+# ========== content_snippet 字段测试 ==========
+
+
+@pytest.mark.asyncio
+@patch('src.core.article_retrieval.get_pool')
+@patch('src.core.article_retrieval.generate_embedding')
+@patch('src.core.article_retrieval._rerank_documents')
+async def test_search_articles_returns_content_snippet(mock_rerank, mock_generate_embedding, mock_get_pool):
+    """search_articles 结果应包含 content_snippet 字段。"""
+    mock_generate_embedding.return_value = [0.1] * 1024
+
+    mock_conn = AsyncMock()
+
+    row = MagicMock()
+    row.__getitem__ = lambda self, key: {
+        "id": 1,
+        "title": "文章A",
+        "unit": "教务处",
+        "published_on": "2026-03-20",
+        "summary": "摘要内容",
+        "similarity": 0.9,
+        "content_snippet": "这是文章正文前80个字符的截取内容用于展示在搜索结果列表中",
+    }[key]
+
+    async def mock_fetch(query, *args):
+        return [row]
+
+    mock_conn.fetch = mock_fetch
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    mock_rerank.return_value = [
+        {
+            "id": 1,
+            "title": "文章A",
+            "unit": "教务处",
+            "published_on": "2026-03-20",
+            "summary": "摘要内容",
+            "ebd_similarity": 0.9,
+            "keyword_similarity": None,
+            "rerank_score": 0.85,
+            "content_snippet": "这是文章正文前80个字符的截取内容用于展示在搜索结果列表中",
+        }
+    ]
+
+    result = await search_articles("测试查询")
+
+    assert "results" in result
+    assert len(result["results"]) == 1
+    assert "content_snippet" in result["results"][0]
+    assert result["results"][0]["content_snippet"] == "这是文章正文前80个字符的截取内容用于展示在搜索结果列表中"

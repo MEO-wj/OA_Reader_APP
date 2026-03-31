@@ -131,6 +131,24 @@ class CompatService:
     # -- 事件聚合 --
 
     @staticmethod
+    def _truncate_text(text: str | None, limit: int = 80) -> str:
+        """截断文本并压缩空白。
+
+        Args:
+            text:  待处理的文本，None 或空字符串返回空字符串。
+            limit: 最大字符数，超出时截断并添加省略号。
+
+        Returns:
+            压缩空白后的文本，超长时以 "…" 结尾。
+        """
+        if not text:
+            return ""
+        normalized = " ".join(text.split())
+        if len(normalized) <= limit:
+            return normalized
+        return f"{normalized[:limit].rstrip()}…"
+
+    @staticmethod
     def _aggregate_events(
         events: list[dict[str, Any]],
     ) -> dict[str, Any]:
@@ -138,7 +156,7 @@ class CompatService:
 
         事件类型：
           - ``delta``      → 拼接 content 到 answer
-          - ``tool_result``→ 解析 result 中的列表追加到 related_articles
+          - ``tool_result``→ 仅 tool 为 ``search_articles`` 时，解析 result 追加到 related_articles；其他 tool 跳过
           - ``done``       → 忽略（标记结束）
           - ``error``      → 记录错误信息
         """
@@ -155,6 +173,10 @@ class CompatService:
                     answer_parts.append(content)
 
             elif event_type == "tool_result":
+                # 只提取 search_articles 的结果，跳过其他 tool（如 grep_article）
+                tool_name = event.get("tool", "")
+                if tool_name != "search_articles":
+                    continue
                 raw_result = event.get("result", "")
                 if isinstance(raw_result, str):
                     try:
@@ -170,13 +192,24 @@ class CompatService:
 
                 # 解析后的数据可能是列表或 dict
                 if isinstance(parsed, list):
+                    for doc in parsed:
+                        doc["summary_snippet"] = CompatService._truncate_text(
+                            doc.get("summary"),
+                        )
                     related_articles.extend(parsed)
                 elif isinstance(parsed, dict):
                     # 尝试从 dict 中提取 results 列表
                     results = parsed.get("results", [])
                     if results:
+                        for doc in results:
+                            doc["summary_snippet"] = CompatService._truncate_text(
+                                doc.get("summary"),
+                            )
                         related_articles.extend(results)
                     else:
+                        parsed["summary_snippet"] = CompatService._truncate_text(
+                            parsed.get("summary"),
+                        )
                         related_articles.append(parsed)
 
             elif event_type == "error":

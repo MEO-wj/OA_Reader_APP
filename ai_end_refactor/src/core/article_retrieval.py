@@ -197,6 +197,7 @@ class ArticleRetriever(BaseRetriever):
 
         sql = f"""
             SELECT v.id, a.title, a.unit, a.published_on, a.summary,
+                   LEFT(a.content, 80) as content_snippet,
                    1 - (v.embedding <=> $1::vector) as similarity
             FROM vectors v
             JOIN articles a ON v.article_id = a.id
@@ -265,15 +266,14 @@ class ArticleRetriever(BaseRetriever):
                 "unit": _row_value(row, "unit"),
                 "published_on": str(_row_value(row, "published_on", "")),
                 "summary": _row_value(row, "summary"),
+                "content_snippet": _row_value(row, "content_snippet"),
                 "ebd_similarity": float(_row_value(row, "similarity", 0.0)),
                 "keyword_similarity": None,
             }
 
         keyword_results: dict[int, dict[str, Any]] = {}
         if keywords:
-            logger.debug("search_articles keywords: %s", keywords)
-        else:
-            logger.debug("search_articles keywords: (empty, Layer 2 skipped)")
+            logger.info("search_articles keywords: %s", keywords)
             try:
                 pool = await get_pool()
                 kw_rows = await _search_by_keywords(keywords, pool, limit=20)
@@ -289,11 +289,14 @@ class ArticleRetriever(BaseRetriever):
                             "unit": row.get("unit"),
                             "published_on": str(row.get("published_on", "")),
                             "summary": row["summary"],
+                            "content_snippet": row.get("content_snippet"),
                             "ebd_similarity": None,
                             "keyword_similarity": row["keyword_similarity"],
                         }
             except Exception:
-                pass
+                logger.warning("Layer 2 keyword search failed: %s", keywords)
+        else:
+            logger.info("search_articles keywords: (empty, Layer 2 skipped)")
 
         candidates = _merge_results(ebd_results, keyword_results)
         reranked_results = await self._rerank(query, candidates, top_k)
@@ -306,6 +309,7 @@ class ArticleRetriever(BaseRetriever):
                 "unit": doc.get("unit"),
                 "published_on": doc.get("published_on"),
                 "summary": doc["summary"],
+                "content_snippet": doc.get("content_snippet"),
                 "ebd_similarity": doc.get("ebd_similarity"),
                 "keyword_similarity": doc.get("keyword_similarity"),
                 "rerank_score": doc.get("rerank_score"),
@@ -328,6 +332,7 @@ async def _search_by_keywords(
         for keyword in keyword_list:
             rows = await conn.fetch("""
                 SELECT id, title, unit, published_on, summary,
+                       LEFT(content, 80) as content_snippet,
                        GREATEST(
                            similarity(title, $2),
                            similarity(content, $2)
@@ -345,6 +350,7 @@ async def _search_by_keywords(
                     "unit": row.get("unit"),
                     "published_on": str(row.get("published_on", "")),
                     "summary": row["summary"],
+                    "content_snippet": row["content_snippet"],
                     "keyword_similarity": float(row["similarity"]),
                     "matched_keyword": keyword,
                 })

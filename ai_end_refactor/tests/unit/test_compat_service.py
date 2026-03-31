@@ -268,19 +268,124 @@ class TestCompatServiceAsk:
 class TestAggregateEvents:
     """_aggregate_events 静态方法单元测试"""
 
+    def test_aggregate_events_skips_non_search_articles_tool_results(self):
+        """grep_article 等非 search_articles 的 tool_result 不应追加到 related_articles。"""
+        from src.api.compat_service import CompatService
+
+        events = [
+            {"type": "tool_result", "tool": "grep_article", "result": '{"status": "success", "data": {}}'},
+            {"type": "tool_result", "tool": "read_reference", "result": '{"text": "ref"}'},
+            {"type": "tool_result", "tool": "search_articles", "result": '[{"title": "有效文章"}]'},
+        ]
+        result = CompatService._aggregate_events(events)
+
+        assert len(result["related_articles"]) == 1
+        assert result["related_articles"][0]["title"] == "有效文章"
+
+    def test_aggregate_events_skips_tool_result_with_none_tool(self):
+        """tool 值为 None 时不应追加到 related_articles。"""
+        from src.api.compat_service import CompatService
+
+        events = [
+            {"type": "tool_result", "tool": None, "result": '[{"title": "不应出现"}]'},
+        ]
+        result = CompatService._aggregate_events(events)
+
+        assert len(result["related_articles"]) == 0
+
     def test_aggregate_events_logs_warning_on_invalid_json(self, caplog):
         """M2: tool_result 包含非 JSON 字符串时应输出 warning 日志。"""
         import logging
         from src.api.compat_service import CompatService
 
         events = [
-            {"type": "tool_result", "result": "<<<not-json>>>"},
+            {"type": "tool_result", "tool": "search_articles", "result": "<<<not-json>>>"},
         ]
         with caplog.at_level(logging.WARNING, logger="src.api.compat_service"):
             result = CompatService._aggregate_events(events)
 
         assert result["related_articles"] == []
         assert any("Failed to parse tool_result" in rec.message for rec in caplog.records)
+
+    def test_aggregate_events_adds_summary_snippet_and_keeps_summary(self):
+        """search_articles 的 results 应新增 summary_snippet，且保留原始 summary。"""
+        import json
+        from src.api.compat_service import CompatService
+
+        long_summary = "这是一段非常长的摘要内容。" * 7  # 91 字符，超过默认 limit=80
+        events = [
+            {
+                "type": "tool_result",
+                "tool": "search_articles",
+                "result": json.dumps({"results": [
+                    {"id": 1, "title": "文章A", "summary": long_summary},
+                    {"id": 2, "title": "文章B", "summary": "短摘要"},
+                ]}),
+            },
+        ]
+        result = CompatService._aggregate_events(events)
+
+        articles = result["related_articles"]
+        assert len(articles) == 2
+
+        # 文章A: 长 summary → 应有截断的 summary_snippet，保留原始 summary
+        assert articles[0]["summary"] == long_summary
+        assert "summary_snippet" in articles[0]
+        assert len(articles[0]["summary_snippet"]) <= 81
+        assert articles[0]["summary_snippet"].endswith("…")
+
+        # 文章B: 短 summary → summary_snippet == summary
+        assert articles[1]["summary_snippet"] == "短摘要"
+        assert articles[1]["summary"] == "短摘要"
+
+    def test_aggregate_events_handles_missing_summary(self):
+        """缺少 summary 字段时 summary_snippet 应为空字符串。"""
+        import json
+        from src.api.compat_service import CompatService
+
+        events = [
+            {
+                "type": "tool_result",
+                "tool": "search_articles",
+                "result": json.dumps({"results": [
+                    {"id": 1, "title": "无摘要文章"},
+                ]}),
+            },
+        ]
+        result = CompatService._aggregate_events(events)
+
+        assert result["related_articles"][0]["summary_snippet"] == ""
+
+    def test_truncate_text_short(self):
+        """短文本不截断，直接返回。"""
+        from src.api.compat_service import CompatService
+        assert CompatService._truncate_text("短文本") == "短文本"
+
+    def test_truncate_text_none(self):
+        """None 返回空字符串。"""
+        from src.api.compat_service import CompatService
+        assert CompatService._truncate_text(None) == ""
+
+    def test_truncate_text_empty(self):
+        """空字符串返回空字符串。"""
+        from src.api.compat_service import CompatService
+        assert CompatService._truncate_text("") == ""
+
+    def test_truncate_text_long(self):
+        """超长文本截取到 limit 并加省略号。"""
+        from src.api.compat_service import CompatService
+        text = "这是一段非常长的文本用来测试截断功能是否正常工作"
+        result = CompatService._truncate_text(text, limit=10)
+        assert len(result) <= 11  # 10字符 + 省略号
+        assert result.endswith("…")
+
+    def test_truncate_text_collapses_whitespace(self):
+        """多余空白应被压缩为单空格。"""
+        from src.api.compat_service import CompatService
+        text = "这是  多余   空白"
+        result = CompatService._truncate_text(text)
+        assert "  " not in result
+        assert result == "这是 多余 空白"
 
 
 class TestCompatServiceClearMemory:
