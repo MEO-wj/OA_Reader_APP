@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -11,6 +12,8 @@ from src.config.settings import Config
 from src.core.api_clients import get_embedding_client
 from src.core.api_queue import get_api_queue
 from src.core.db import get_pool
+
+logger = logging.getLogger(__name__)
 
 
 class BaseRetriever(ABC):
@@ -116,7 +119,8 @@ class BaseRetriever(ABC):
 
         try:
             return await self._rerank_fn(query, candidates, top_k)
-        except Exception:
+        except Exception as e:
+            logger.warning("_rerank fn failed, returning candidates as-is: %s", e)
             return candidates[:top_k]
 
 

@@ -6,12 +6,17 @@
 from __future__ import annotations
 
 import re
+import logging
 from typing import Any
+
+from openai import BaseModel
 
 from src.config.settings import Config
 from src.core.api_clients import get_embedding_client, get_rerank_client
 from src.core.api_queue import get_api_queue
 from src.core.base_retrieval import BaseRetriever, generate_embedding
+
+logger = logging.getLogger(__name__)
 from src.core.db import get_pool
 from src.core.document_content import (
     ContentFetcher,
@@ -40,6 +45,15 @@ def _get_embedding_client():
 
 def _get_rerank_client():
     return get_rerank_client()
+
+
+class _RerankResult(BaseModel):
+    index: int
+    relevance_score: float
+
+
+class _RerankResponse(BaseModel):
+    results: list[_RerankResult] = []
 
 
 def _parse_id_list_from_content(content: str) -> list[int]:
@@ -72,17 +86,21 @@ def _rerank_documents_sync(
         documents.append("\n".join(text_parts) if text_parts else str(doc.get("id", "")))
 
     try:
-        response = client.responses.create(
-            model=config.rerank_model,
-            query=query,
-            documents=documents,
-            top_k=top_k,
+        response = client.post(
+            "/rerank",
+            cast_to=_RerankResponse,
+            body={
+                "model": config.rerank_model,
+                "query": query,
+                "documents": documents,
+                "top_n": top_k,
+            },
         )
 
         id_map = {i: doc for i, doc in enumerate(candidates)}
         results = []
 
-        if hasattr(response, "results") and response.results:
+        if response.results:
             for item in sorted(response.results, key=lambda x: x.relevance_score, reverse=True):
                 idx = item.index
                 if idx in id_map:
@@ -117,7 +135,8 @@ async def _rerank_documents(
         return []
     try:
         return await get_api_queue().submit("rerank", _rerank_documents_sync, query, candidates, top_k)
-    except Exception:
+    except Exception as e:
+        logger.warning("Rerank failed, returning candidates as-is: %s", e)
         return candidates
 
 
@@ -252,6 +271,9 @@ class ArticleRetriever(BaseRetriever):
 
         keyword_results: dict[int, dict[str, Any]] = {}
         if keywords:
+            logger.debug("search_articles keywords: %s", keywords)
+        else:
+            logger.debug("search_articles keywords: (empty, Layer 2 skipped)")
             try:
                 pool = await get_pool()
                 kw_rows = await _search_by_keywords(keywords, pool, limit=20)
