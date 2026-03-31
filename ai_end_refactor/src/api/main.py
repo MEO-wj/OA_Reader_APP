@@ -7,7 +7,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from migrations.migrate import run_migration
 from pathlib import Path
@@ -17,6 +17,7 @@ from scripts.import_skills import main as import_skills_main
 
 from src.chat.handlers import shutdown_tool_loop
 from src.api.models import ChatRequest, ConversationCreate, HealthResponse, SkillsResponse
+from src.api.compat_models import AskCompatRequest, ClearMemoryCompatRequest, EmbedCompatRequest
 from src.api.import_decider import should_run_auto_import
 from src.api.admin import router as admin_router
 from src.core.api_clients import close_clients
@@ -226,3 +227,49 @@ async def delete_chat_history(user_id: str = Query(min_length=1, max_length=64))
     db = MemoryDB()
     await db.clear_user_memory(user_id)
     return {"status": "ok", "user_id": user_id}
+
+
+# ---------------------------------------------------------------------------
+# 旧 AI End 兼容路由（通过 CompatService 桥接到新 ChatClient 事件流）
+# ---------------------------------------------------------------------------
+
+
+@app.post("/ask", response_model=dict)
+async def ask_compat(request: AskCompatRequest) -> dict:
+    """旧 /ask 兼容端点"""
+    if not request.question:
+        return JSONResponse(status_code=400, content={"error": "请求参数错误，缺少question字段"})
+    from src.api.compat_service import CompatService
+
+    service = CompatService()
+    payload = await service.ask(
+        question=request.question,
+        user_id=request.user_id,
+        top_k=request.top_k,
+        display_name=request.display_name,
+    )
+    return JSONResponse(content=payload, media_type="application/json")
+
+
+@app.post("/clear_memory", response_model=dict)
+async def clear_memory_compat(request: ClearMemoryCompatRequest) -> dict:
+    """旧 /clear_memory 兼容端点"""
+    if not request.user_id:
+        return JSONResponse(status_code=400, content={"error": "用户信息缺失"})
+    from src.api.compat_service import CompatService
+
+    service = CompatService()
+    payload = await service.clear_memory(user_id=request.user_id)
+    return JSONResponse(content=payload, media_type="application/json")
+
+
+@app.post("/embed", response_model=dict)
+async def embed_compat(request: EmbedCompatRequest) -> dict:
+    """旧 /embed 兼容端点"""
+    if not request.text:
+        return JSONResponse(status_code=400, content={"error": "请求参数错误，缺少text字段"})
+    from src.api.compat_service import CompatService
+
+    service = CompatService()
+    embedding = await service.embed(text=request.text)
+    return JSONResponse(content={"embedding": embedding}, media_type="application/json")

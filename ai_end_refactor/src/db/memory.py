@@ -3,6 +3,7 @@
 
 import json
 import uuid
+from datetime import datetime
 from typing import Any
 from src.core.db import get_pool
 
@@ -137,6 +138,29 @@ class MemoryDB:
                 user_id,
             )
             return [dict(row) for row in rows]
+
+    async def get_latest_session_in_utc_range(
+        self,
+        user_id: str,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> dict[str, Any] | None:
+        """查询指定用户在给定 UTC 时间范围内最新创建的会话。"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT user_id, conversation_id, title, created_at, updated_at
+                FROM conversation_sessions
+                WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                user_id,
+                start_utc,
+                end_utc,
+            )
+            return dict(row) if row else None
 
     async def update_session_title(
         self,

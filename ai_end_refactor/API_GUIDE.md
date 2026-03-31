@@ -179,6 +179,105 @@ curl -N -X POST http://localhost:8000/chat \
 
 ---
 
+## 2.5 兼容接口（旧 AI End 协议）
+
+以下接口兼容旧 `ai_end` JSON 协议，backend 无需改代码即可通过 `AI_END_URL` 切换。
+
+### 2.5.1 问答接口
+
+**POST** `/ask`
+
+兼容旧 `/ask` 接口，聚合事件流为单次 JSON 响应（`application/json`）。
+
+**请求体:**
+```json
+{
+  "question": "string",        // 必需，用户问题
+  "top_k": 5,                  // 可选，建议返回的相关结果数（仅正整数有效）
+  "display_name": "张三",       // 可选，用户称呼
+  "user_id": "string"          // 可选，用户ID（传入时启用会话管理）
+}
+```
+
+**响应（有 user_id 时）:**
+```json
+{
+  "answer": "回答内容",
+  "related_articles": [],
+  "conversation_id": "a1b2c3d4",
+  "session_created": true
+}
+```
+
+**响应（无 user_id 时）:**
+```json
+{
+  "answer": "回答内容",
+  "related_articles": []
+}
+```
+
+**错误响应（缺少 question）:**
+```json
+{"error": "请求参数错误，缺少question字段"}
+```
+HTTP 400
+
+### 2.5.2 清除记忆
+
+**POST** `/clear_memory`
+
+新语义：不删除历史，创建新会话。
+
+**请求体:**
+```json
+{
+  "user_id": "string"          // 必需
+}
+```
+
+**响应:**
+```json
+{
+  "cleared": true,
+  "conversation_id": "e5f6g7h8"
+}
+```
+
+**错误响应（缺少 user_id）:**
+```json
+{"error": "用户信息缺失"}
+```
+HTTP 400
+
+### 2.5.3 文本向量化
+
+**POST** `/embed`
+
+复用 embedding 能力，返回文本向量。
+
+**请求体:**
+```json
+{
+  "text": "string"             // 必需
+}
+```
+
+**响应:**
+```json
+{
+  "embedding": [0.1, 0.2, ...]
+}
+```
+
+**错误响应（缺少 text）:**
+```json
+{"error": "请求参数错误，缺少text字段"}
+```
+HTTP 400
+
+---
+
 ## 三、数据模型
 
 ### 3.1 Article（OA 文章）
@@ -225,6 +324,21 @@ curl -N -X POST http://localhost:8000/chat \
 
 # 4. 获取用户会话列表
 curl "http://localhost:8000/chat/sessions?user_id=test-user"
+
+# 5. 兼容接口 - 问答（单次 JSON）
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "最近有什么通知？", "user_id": "test-user"}'
+
+# 6. 兼容接口 - 清除记忆（创建新会话）
+curl -X POST http://localhost:8000/clear_memory \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "test-user"}'
+
+# 7. 兼容接口 - 文本向量化
+curl -X POST http://localhost:8000/embed \
+  -H "Content-Type: application/json" \
+  -d '{"text": "测试文本"}'
 ```
 
 ---
