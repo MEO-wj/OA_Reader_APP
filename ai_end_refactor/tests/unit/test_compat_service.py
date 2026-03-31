@@ -13,8 +13,7 @@ TDD RED -> GREEN 阶段 - CompatService 兼容编排服务测试
 """
 import pytest
 import uuid
-from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 from src.config.settings import Config
@@ -64,14 +63,9 @@ class _FakeMemoryDB:
         pass
 
 
-def _make_config(ai_compat_timezone: str | None = None) -> Config:
+def _make_config() -> Config:
     """创建用于测试的 Config 实例。"""
-    return Config(
-        api_key="test-key",
-        base_url="https://api.example.com/v1",
-        model="test-model",
-        ai_compat_timezone=ai_compat_timezone,
-    )
+    return Config.with_defaults()
 
 
 # ---------------------------------------------------------------------------
@@ -93,8 +87,8 @@ class TestCompatServiceAsk:
             "conversation_id": "existing-conv",
             "user_id": "u1",
             "title": "旧会话",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
         })
 
         fake_client = _FakeClient([
@@ -247,8 +241,8 @@ class TestCompatServiceAsk:
             "conversation_id": "reuse-me",
             "user_id": "u1",
             "title": "今日会话",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
         })
 
         fake_client = _FakeClient([
@@ -487,34 +481,22 @@ class TestTodayRange:
 
     def test_today_range_default_timezone(self):
         """
-        默认时区（UTC+8）时，_today_range 返回正确的 UTC 范围。
+        _today_range 返回 naive datetime，start 是今天 00:00 UTC，end 是明天 00:00 UTC。
         """
         from src.api.compat_service import _today_range
 
-        start, end = _today_range(None)
-        # 默认 UTC+8，验证 start 和 end 是 UTC 时间
-        assert start.tzinfo == timezone.utc
-        assert end.tzinfo == timezone.utc
+        start, end = _today_range()
+        assert start.tzinfo is None
+        assert end.tzinfo is None
         # end - start 应该是 24 小时
-        assert (end - start) == timedelta(days=1)
-
-    def test_today_range_with_explicit_timezone(self):
-        """
-        显式指定时区时，_today_range 正确计算。
-        """
-        from src.api.compat_service import _today_range
-
-        start, end = _today_range("Asia/Shanghai")
-        assert start.tzinfo == timezone.utc
-        assert end.tzinfo == timezone.utc
         assert (end - start) == timedelta(days=1)
 
     def test_today_range_with_utc_timezone(self):
         """
-        UTC 时区时，start 是今天 00:00 UTC，end 是明天 00:00 UTC。
+        start 是今天 00:00 UTC，end 是明天 00:00 UTC，当前时间在范围内。
         """
         from src.api.compat_service import _today_range
 
-        start, end = _today_range("UTC")
-        now_utc = datetime.now(timezone.utc)
+        start, end = _today_range()
+        now_utc = datetime.utcnow()
         assert start <= now_utc < end

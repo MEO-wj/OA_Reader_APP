@@ -6,7 +6,7 @@ TDD RED 阶段 - 会话与时区能力扩展：MemoryDB 兼容测试
   - 无匹配时返回 None
 """
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 from src.db.memory import MemoryDB
 
@@ -29,8 +29,8 @@ class TestGetLatestSessionInRange:
             "user_id": "user1",
             "conversation_id": "c-latest",
             "title": "最新会话",
-            "created_at": datetime(2025, 6, 1, 12, 0, tzinfo=timezone.utc),
-            "updated_at": datetime(2025, 6, 1, 12, 30, tzinfo=timezone.utc),
+            "created_at": datetime(2025, 6, 1, 12, 0),
+            "updated_at": datetime(2025, 6, 1, 12, 30),
         }
 
         conn = AsyncMock()
@@ -47,8 +47,8 @@ class TestGetLatestSessionInRange:
         pool.acquire.return_value = _AcquireCtx()
         monkeypatch.setattr("src.db.memory.get_pool", AsyncMock(return_value=pool))
 
-        start = datetime(2025, 6, 1, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2025, 6, 2, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2025, 6, 1, 0, 0)
+        end = datetime(2025, 6, 2, 0, 0)
         result = await db.get_latest_session_in_utc_range("user1", start, end)
 
         assert result is not None
@@ -83,8 +83,8 @@ class TestGetLatestSessionInRange:
         pool.acquire.return_value = _AcquireCtx()
         monkeypatch.setattr("src.db.memory.get_pool", AsyncMock(return_value=pool))
 
-        start = datetime(2025, 6, 1, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2025, 6, 2, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2025, 6, 1, 0, 0)
+        end = datetime(2025, 6, 2, 0, 0)
         result = await db.get_latest_session_in_utc_range("user1", start, end)
 
         assert result is None
@@ -113,8 +113,8 @@ class TestGetLatestSessionInRange:
         pool.acquire.return_value = _AcquireCtx()
         monkeypatch.setattr("src.db.memory.get_pool", AsyncMock(return_value=pool))
 
-        start = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2025, 1, 2, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2025, 1, 1, 0, 0)
+        end = datetime(2025, 1, 2, 0, 0)
         await db.get_latest_session_in_utc_range("user42", start, end)
 
         # fetchrow 的参数：(sql, user_id, start_utc, end_utc)

@@ -67,8 +67,6 @@ class Config:
     # LLM 生成参数
     llm_max_tokens: int = field(default_factory=lambda: Config.DEFAULT_LLM_MAX_TOKENS)
     llm_temperature: float = field(default_factory=lambda: Config.DEFAULT_LLM_TEMPERATURE)
-    # 兼容层时区配置
-    ai_compat_timezone: str | None = field(default=None)
 
     @property
     def effective_rerank_base_url(self) -> str:
@@ -106,7 +104,6 @@ class Config:
             embedding_timeout=cls.DEFAULT_EMBEDDING_TIMEOUT,
             llm_max_tokens=cls.DEFAULT_LLM_MAX_TOKENS,
             llm_temperature=cls.DEFAULT_LLM_TEMPERATURE,
-            ai_compat_timezone=None,
         )
 
     @classmethod
@@ -185,9 +182,6 @@ class Config:
         except ValueError:
             raise ConfigError(f"Invalid LLM_TEMPERATURE value: {llm_temperature_str!r}. Must be a float.")
 
-        # 兼容层时区配置：AI_COMPAT_TZ 优先于 AI_COMPAT_TIMEZONE
-        ai_compat_timezone = os.getenv("AI_COMPAT_TZ") or os.getenv("AI_COMPAT_TIMEZONE")
-
         config = cls(
             api_key=api_key,
             base_url=base_url,
@@ -211,7 +205,6 @@ class Config:
             embedding_timeout=embedding_timeout,
             llm_max_tokens=llm_max_tokens,
             llm_temperature=llm_temperature,
-            ai_compat_timezone=ai_compat_timezone,
         )
 
         # 验证配置

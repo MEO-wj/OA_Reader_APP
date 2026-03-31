@@ -10,9 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from src.config.settings import Config
 from src.db.memory import MemoryDB
@@ -24,28 +23,16 @@ logger = logging.getLogger(__name__)
 # 工具函数
 # ---------------------------------------------------------------------------
 
-def _today_range(tz_name: str | None) -> tuple[datetime, datetime]:
-    """返回"今天"在指定时区下的 UTC 时间范围 [start_utc, end_utc)。
-
-    Args:
-        tz_name: IANA 时区名称（如 ``"Asia/Shanghai"``）。
-                 为 ``None`` 时默认使用 UTC+8（中国标准时间）。
+def _today_range() -> tuple[datetime, datetime]:
+    """返回"今天"的 UTC 时间范围 [start, end)（naive datetime）。
 
     Returns:
-        (start_utc, end_utc) — 均带 ``timezone.utc`` 信息。
+        (start, end) — 均为 naive datetime，UTC+0。
     """
-    if tz_name:
-        tz: ZoneInfo | timezone = ZoneInfo(tz_name)
-    else:
-        tz = timezone(timedelta(hours=8))  # 默认中国标准时间
-
-    now_in_tz = datetime.now(tz)
-    start_of_day = now_in_tz.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_of_day = start_of_day + timedelta(days=1)
-
-    start_utc = start_of_day.astimezone(timezone.utc)
-    end_utc = end_of_day.astimezone(timezone.utc)
-    return start_utc, end_utc
+    now = datetime.utcnow()
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return start, end
 
 
 def build_runtime_hints(
@@ -126,7 +113,7 @@ class CompatService:
         db = self._create_memory_db()
 
         # 用 config 中的时区计算"今天"的 UTC 范围
-        start_utc, end_utc = _today_range(self.config.ai_compat_timezone)
+        start_utc, end_utc = _today_range()
 
         session = await db.get_latest_session_in_utc_range(
             user_id, start_utc, end_utc,
