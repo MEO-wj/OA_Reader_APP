@@ -7,6 +7,8 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles

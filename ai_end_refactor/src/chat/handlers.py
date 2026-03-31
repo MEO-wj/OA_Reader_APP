@@ -4,8 +4,11 @@
 import asyncio
 import importlib
 import json
+import logging
 import threading
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from src.chat.context_truncator import (
     truncate_grep_document_result,
@@ -88,6 +91,7 @@ async def _dispatch_secondary_tool(tool_name: str, tool_def: dict, function_args
         JSON 格式的结果字符串
     """
     handler_path = tool_def.get("handler", "")
+    logger.info("_dispatch_secondary_tool: tool=%s handler=%s args=%s", tool_name, handler_path, function_args)
     if not handler_path:
         return json.dumps({"error": f"工具 {tool_name} 缺少 handler 定义"}, ensure_ascii=False)
 

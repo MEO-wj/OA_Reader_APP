@@ -325,10 +325,13 @@ async def _search_by_keywords(
     """使用 pg_trgm 进行关键词模糊搜索（查 articles 表）。"""
     keyword_list = [k.strip() for k in keywords.split(",") if k.strip()]
     if not keyword_list:
+        logger.info("_search_by_keywords: no keywords after split, keywords=%r", keywords)
         return []
 
     results = []
     async with pool.acquire() as conn:
+        # pg_trgm 默认 threshold=0.3 会过滤掉中文等低相似度结果，需降为 0
+        await conn.execute("SET pg_trgm.similarity_threshold = 0")
         for keyword in keyword_list:
             rows = await conn.fetch("""
                 SELECT id, title, unit, published_on, summary,
@@ -343,6 +346,7 @@ async def _search_by_keywords(
                 LIMIT $1
             """, limit, keyword)
 
+            logger.info("_search_by_keywords keyword=%r rows=%d", keyword, len(rows))
             for row in rows:
                 results.append({
                     "id": row["id"],
@@ -355,6 +359,7 @@ async def _search_by_keywords(
                     "matched_keyword": keyword,
                 })
 
+    logger.info("_search_by_keywords total results=%d", len(results))
     return results
 
 
