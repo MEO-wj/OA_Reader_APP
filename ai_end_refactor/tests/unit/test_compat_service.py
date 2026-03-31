@@ -56,6 +56,9 @@ class _FakeMemoryDB:
     async def get_latest_session_in_utc_range(self, user_id, start_utc, end_utc):
         return self._latest_session
 
+    async def get_latest_session_with_messages(self, user_id, start_utc, end_utc):
+        return self._latest_session
+
     async def create_session(self, user_id, conversation_id, title="新会话"):
         self._created_sessions.append((user_id, conversation_id))
 
@@ -392,14 +395,61 @@ class TestCompatServiceClearMemory:
     """CompatService.clear_memory 测试"""
 
     @pytest.mark.asyncio
-    async def test_clear_memory_creates_new_session(self, monkeypatch):
-        """
-        clear_memory 应创建新会话并返回 cleared=True + conversation_id。
-        """
+    async def test_clear_memory_creates_new_when_today_session_has_messages(self, monkeypatch):
+        """当天会话存在且有消息 → 创建新会话。"""
         from src.api.compat_service import CompatService
 
         config = _make_config()
-        fake_memory = _FakeMemoryDB()
+        fake_memory = _FakeMemoryDB(latest_session={
+            "conversation_id": "existing-conv",
+            "user_id": "u1",
+            "title": "旧会话",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "messages": [{"role": "user", "content": "hello"}],
+        })
+
+        service = CompatService(config=config)
+        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
+
+        result = await service.clear_memory(user_id="u1")
+
+        assert result["cleared"] is True
+        assert "conversation_id" in result
+        assert result["conversation_id"] != "existing-conv"
+        assert len(fake_memory._created_sessions) == 1
+
+    @pytest.mark.asyncio
+    async def test_clear_memory_reuses_when_today_session_has_no_messages(self, monkeypatch):
+        """当天会话存在但无消息 → 复用该会话，不创建新的。"""
+        from src.api.compat_service import CompatService
+
+        config = _make_config()
+        fake_memory = _FakeMemoryDB(latest_session={
+            "conversation_id": "empty-conv",
+            "user_id": "u1",
+            "title": "空会话",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "messages": [],
+        })
+
+        service = CompatService(config=config)
+        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
+
+        result = await service.clear_memory(user_id="u1")
+
+        assert result["cleared"] is True
+        assert result["conversation_id"] == "empty-conv"
+        assert len(fake_memory._created_sessions) == 0
+
+    @pytest.mark.asyncio
+    async def test_clear_memory_creates_new_when_no_today_session(self, monkeypatch):
+        """无当天会话 → 创建新会话。"""
+        from src.api.compat_service import CompatService
+
+        config = _make_config()
+        fake_memory = _FakeMemoryDB(latest_session=None)
 
         service = CompatService(config=config)
         monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
@@ -412,10 +462,57 @@ class TestCompatServiceClearMemory:
         assert len(fake_memory._created_sessions) == 1
 
     @pytest.mark.asyncio
+    async def test_clear_memory_reuses_when_messages_is_json_string_empty(self, monkeypatch):
+        """asyncpg 返回 JSONB 为字符串 '[]' 时，应视为无消息并复用。"""
+        from src.api.compat_service import CompatService
+
+        config = _make_config()
+        fake_memory = _FakeMemoryDB(latest_session={
+            "conversation_id": "empty-conv",
+            "user_id": "u1",
+            "title": "空会话",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "messages": "[]",  # asyncpg 返回字符串而非列表
+        })
+
+        service = CompatService(config=config)
+        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
+
+        result = await service.clear_memory(user_id="u1")
+
+        assert result["cleared"] is True
+        assert result["conversation_id"] == "empty-conv"
+        assert len(fake_memory._created_sessions) == 0
+
+    @pytest.mark.asyncio
+    async def test_clear_memory_creates_new_when_messages_is_json_string_nonempty(self, monkeypatch):
+        """asyncpg 返回 JSONB 为字符串（非空）时，应创建新会话。"""
+        import json as json_mod
+        from src.api.compat_service import CompatService
+
+        config = _make_config()
+        fake_memory = _FakeMemoryDB(latest_session={
+            "conversation_id": "used-conv",
+            "user_id": "u1",
+            "title": "有消息会话",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "messages": json_mod.dumps([{"role": "user", "content": "hello"}]),
+        })
+
+        service = CompatService(config=config)
+        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
+
+        result = await service.clear_memory(user_id="u1")
+
+        assert result["cleared"] is True
+        assert result["conversation_id"] != "used-conv"
+        assert len(fake_memory._created_sessions) == 1
+
+    @pytest.mark.asyncio
     async def test_clear_memory_without_user_id_raises(self, monkeypatch):
-        """
-        无 user_id 时 clear_memory 应抛出异常。
-        """
+        """无 user_id 时 clear_memory 应抛出异常。"""
         from src.api.compat_service import CompatService
 
         config = _make_config()

@@ -162,6 +162,37 @@ class MemoryDB:
             )
             return dict(row) if row else None
 
+    async def get_latest_session_with_messages(
+        self,
+        user_id: str,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> dict[str, Any] | None:
+        """查询当天最新会话及其消息状态。
+
+        LEFT JOIN conversations 表获取 messages 字段，
+        用于判断会话是否有消息（clear_memory 空会话复用）。
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT cs.user_id, cs.conversation_id, cs.title,
+                       cs.created_at, cs.updated_at,
+                       COALESCE(c.messages, '[]'::jsonb) AS messages
+                FROM conversation_sessions cs
+                LEFT JOIN conversations c
+                    ON c.user_id = cs.user_id AND c.conversation_id = cs.conversation_id
+                WHERE cs.user_id = $1 AND cs.created_at >= $2 AND cs.created_at < $3
+                ORDER BY cs.created_at DESC
+                LIMIT 1
+                """,
+                user_id,
+                start_utc,
+                end_utc,
+            )
+            return dict(row) if row else None
+
     async def update_session_title(
         self,
         user_id: str,

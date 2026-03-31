@@ -282,9 +282,12 @@ class CompatService:
         return result
 
     async def clear_memory(self, user_id: str | None = None) -> dict[str, Any]:
-        """兼容旧 /clear_memory 接口：创建新会话。
+        """兼容旧 /clear_memory 接口：创建或复用当天会话。
 
-        新语义：不删除旧数据，而是为用户创建一个新的会话。
+        查询当天最新会话：
+          1. 会话存在且有消息 → 创建新会话
+          2. 会话存在但无消息 → 复用现有会话
+          3. 无当天会话 → 创建新会话
 
         Args:
             user_id: 用户 ID（必须提供）。
@@ -298,10 +301,42 @@ class CompatService:
         if not user_id:
             raise ValueError("clear_memory requires a user_id")
 
-        new_id = uuid.uuid4().hex[:8]
         db = self._create_memory_db()
-        await db.create_session(user_id, new_id, "新会话")
+        start_utc, end_utc = _today_range()
 
+        logger.info(
+            "clear_memory debug: user_id=%s, range=[%s, %s)",
+            user_id, start_utc.isoformat(), end_utc.isoformat(),
+        )
+
+        session = await db.get_latest_session_with_messages(
+            user_id, start_utc, end_utc,
+        )
+
+        if session:
+            messages = session.get("messages")
+            # asyncpg 可能将 JSONB 返回为字符串，需要反序列化
+            if isinstance(messages, str):
+                messages = json.loads(messages)
+            logger.info(
+                "clear_memory debug: found session=%s, messages type=%s, len=%s",
+                session.get("conversation_id"),
+                type(messages).__name__,
+                len(messages) if messages is not None else "N/A",
+            )
+            if messages:
+                # 有消息 → 创建新会话
+                new_id = uuid.uuid4().hex[:8]
+                await db.create_session(user_id, new_id, "新会话")
+                return {"cleared": True, "conversation_id": new_id}
+            else:
+                # 无消息 → 复用
+                return {"cleared": True, "conversation_id": session["conversation_id"]}
+
+        logger.info("clear_memory debug: no session found, creating new")
+        # 无当天会话 → 创建新的
+        new_id = uuid.uuid4().hex[:8]
+        await db.create_session(user_id, new_id, "新会话")
         return {"cleared": True, "conversation_id": new_id}
 
     async def embed(self, text: str) -> list[float]:
