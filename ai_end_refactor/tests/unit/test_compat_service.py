@@ -390,6 +390,155 @@ class TestAggregateEvents:
         assert "  " not in result
         assert result == "这是 多余 空白"
 
+    def test_aggregate_events_keeps_no_id_docs_passthrough(self):
+        """无 id 的文档应透传保留，有 id 的按 id 去重聚合。"""
+        from src.api.compat_service import CompatService
+
+        events = [
+            {
+                "type": "tool_result",
+                "tool": "search_articles",
+                "result": [
+                    {"id": 1, "title": "有ID", "ebd_similarity": 0.8},
+                    {"title": "无ID", "ebd_similarity": 0.9},
+                ],
+            },
+            {
+                "type": "tool_result",
+                "tool": "search_articles",
+                "result": [{"id": 1, "title": "有ID", "ebd_similarity": 0.6}],
+            },
+        ]
+
+        result = CompatService._aggregate_events(events)
+        assert len(result["related_articles"]) == 2
+        assert sum(1 for x in result["related_articles"] if x.get("id") == 1) == 1
+        assert any(x.get("id") is None for x in result["related_articles"])
+
+    def test_aggregate_events_dedup_by_id_and_average_scores(self):
+        """同一 id 出现在多个 tool_result 中时，应去重并对数值型分数取均值。"""
+        from src.api.compat_service import CompatService
+
+        events = [
+            {
+                "type": "tool_result",
+                "tool": "search_articles",
+                "result": [
+                    {
+                        "id": 101,
+                        "title": "文章A",
+                        "summary": "摘要A-1",
+                        "ebd_similarity": 0.8,
+                        "keyword_similarity": None,
+                        "rerank_score": 0.7,
+                    }
+                ],
+            },
+            {
+                "type": "tool_result",
+                "tool": "search_articles",
+                "result": {
+                    "results": [
+                        {
+                            "id": 101,
+                            "title": "文章A",
+                            "summary": "摘要A-2",
+                            "ebd_similarity": None,
+                            "keyword_similarity": 0.9,
+                            "rerank_score": 0.5,
+                        },
+                        {
+                            "id": 101,
+                            "title": "文章A",
+                            "summary": "摘要A-3",
+                            "ebd_similarity": 0.6,
+                            "keyword_similarity": 0.3,
+                            "rerank_score": None,
+                        },
+                    ]
+                },
+            },
+        ]
+
+        result = CompatService._aggregate_events(events)
+        assert len(result["related_articles"]) == 1
+        doc = result["related_articles"][0]
+        assert doc["id"] == 101
+        assert doc["ebd_similarity"] == pytest.approx(0.7)
+        assert doc["keyword_similarity"] == pytest.approx(0.6)
+        assert doc["rerank_score"] == pytest.approx(0.6)
+
+    def test_display_field_skips_none_and_empty_takes_first_nonempty(self):
+        """展示字段应跳过 None 和空字符串，取第一个非空值。"""
+        from src.api.compat_service import CompatService
+
+        docs = [
+            {
+                "id": 200,
+                "title": None,
+                "unit": "",
+                "summary": None,
+                "ebd_similarity": 0.5,
+            },
+            {
+                "id": 200,
+                "title": "有效标题",
+                "unit": "教务处",
+                "summary": "有效摘要",
+                "ebd_similarity": 0.7,
+            },
+            {
+                "id": 200,
+                "title": "应被跳过的标题",
+                "unit": "应被跳过的单位",
+                "summary": "应被跳过的摘要",
+                "ebd_similarity": 0.9,
+            },
+        ]
+
+        result = CompatService._dedupe_and_aggregate_docs(docs)
+        assert len(result) == 1
+        doc = result[0]
+        assert doc["title"] == "有效标题"
+        assert doc["unit"] == "教务处"
+        assert doc["summary"] == "有效摘要"
+
+    def test_aggregate_events_ignores_invalid_score_values(self):
+        """字符串、bool、NaN 等无效评分值应被过滤，仅保留有效数值。"""
+        from src.api.compat_service import CompatService
+
+        events = [
+            {
+                "type": "tool_result",
+                "tool": "search_articles",
+                "result": [
+                    {"id": 7, "title": "A", "ebd_similarity": "bad", "keyword_similarity": True, "rerank_score": float("nan")},
+                    {"id": 7, "title": "A", "ebd_similarity": 0.5, "keyword_similarity": None, "rerank_score": 0.4},
+                ],
+            }
+        ]
+
+        result = CompatService._aggregate_events(events)
+        doc = result["related_articles"][0]
+        assert doc["ebd_similarity"] == pytest.approx(0.5)
+        assert doc["keyword_similarity"] is None
+        assert doc["rerank_score"] == pytest.approx(0.4)
+
+    def test_display_field_all_empty_falls_back_to_empty(self):
+        """所有文档的展示字段都为 None/空字符串时，保留空值。"""
+        from src.api.compat_service import CompatService
+
+        docs = [
+            {"id": 300, "title": None, "unit": "", "ebd_similarity": 0.5},
+            {"id": 300, "title": "", "unit": None, "ebd_similarity": 0.6},
+        ]
+
+        result = CompatService._dedupe_and_aggregate_docs(docs)
+        assert len(result) == 1
+        doc = result[0]
+        assert doc["title"] is None or doc["title"] == ""
+        assert doc["unit"] is None or doc["unit"] == ""
+
 
 class TestCompatServiceClearMemory:
     """CompatService.clear_memory 测试"""

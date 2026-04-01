@@ -148,6 +148,110 @@ class CompatService:
             return normalized
         return f"{normalized[:limit].rstrip()}…"
 
+    # -- 标准化与去重 --
+
+    @staticmethod
+    def _normalize_tool_result_to_docs(parsed: Any) -> list[dict]:
+        """将 tool_result 解析后的数据统一标准化为文档列表。
+
+        兼容三种输入结构：
+          - list → 直接使用
+          - dict 含 "results" 键 → 取 results 列表
+          - 单个 dict → 包裹为单元素列表
+
+        过滤非 dict 项，并为每篇文档补 summary_snippet。
+        """
+        docs: list[dict] = []
+        if isinstance(parsed, list):
+            docs = list(parsed)
+        elif isinstance(parsed, dict):
+            results = parsed.get("results")
+            if isinstance(results, list):
+                docs = list(results)
+            else:
+                docs = [parsed]
+        else:
+            return []
+
+        # 过滤非 dict 项
+        docs = [d for d in docs if isinstance(d, dict)]
+
+        # 为每篇文档补 summary_snippet
+        for doc in docs:
+            doc["summary_snippet"] = CompatService._truncate_text(
+                doc.get("summary"),
+            )
+
+        return docs
+
+    @staticmethod
+    def _dedupe_and_aggregate_docs(docs: list[dict]) -> list[dict]:
+        """对文档列表按 id 去重并聚合评分字段。
+
+        - 有 id 的文档：按 id 分组聚合
+        - 无 id 的文档：直接透传（passthrough）
+        - 评分字段（ebd_similarity, keyword_similarity, rerank_score）：分别计算非空平均值
+        - 展示字段（title, unit, summary 等）：保留首个非空值
+        """
+        _SCORE_FIELDS = ("ebd_similarity", "keyword_similarity", "rerank_score")
+
+        # 分离：有 id / 无 id
+        with_id: dict[Any, list[dict]] = {}
+        no_id: list[dict] = []
+
+        for doc in docs:
+            doc_id = doc.get("id")
+            if doc_id is not None:
+                with_id.setdefault(doc_id, []).append(doc)
+            else:
+                no_id.append(doc)
+
+        aggregated: list[dict] = []
+
+        for doc_id, group in with_id.items():
+            merged: dict[str, Any] = {"id": doc_id}
+
+            # 展示字段：保留首个非空值
+            all_keys: set[str] = set()
+            for d in group:
+                all_keys.update(d.keys())
+            display_keys = all_keys - {"id"} - set(_SCORE_FIELDS)
+
+            for key in display_keys:
+                # 优先取首个非空值（跳过 None 和空字符串）
+                fallback: Any = None
+                for d in group:
+                    val = d.get(key)
+                    if val is not None and val != "":
+                        merged[key] = val
+                        break
+                    if fallback is None and key in d:
+                        fallback = val
+                else:
+                    # 所有文档中该字段都为空，保留空值
+                    if key not in merged:
+                        merged[key] = fallback
+
+            # 评分字段：仅接受 int/float（排除 bool/NaN）后求平均
+            for field in _SCORE_FIELDS:
+                values = [
+                    d[field] for d in group
+                    if isinstance(d.get(field), (int, float))
+                    and not isinstance(d.get(field), bool)
+                    and d[field] == d[field]  # NaN != NaN → 排除 NaN
+                ]
+                if values:
+                    merged[field] = sum(values) / len(values)
+                else:
+                    merged[field] = None
+
+            aggregated.append(merged)
+
+        # 无 id 文档直接透传
+        aggregated.extend(no_id)
+
+        return aggregated
+
     @staticmethod
     def _aggregate_events(
         events: list[dict[str, Any]],
@@ -161,7 +265,7 @@ class CompatService:
           - ``error``      → 记录错误信息
         """
         answer_parts: list[str] = []
-        related_articles: list[Any] = []
+        all_docs: list[dict] = []
         error_message: str | None = None
 
         for event in events:
@@ -190,32 +294,17 @@ class CompatService:
                 else:
                     parsed = raw_result
 
-                # 解析后的数据可能是列表或 dict
-                if isinstance(parsed, list):
-                    for doc in parsed:
-                        doc["summary_snippet"] = CompatService._truncate_text(
-                            doc.get("summary"),
-                        )
-                    related_articles.extend(parsed)
-                elif isinstance(parsed, dict):
-                    # 尝试从 dict 中提取 results 列表
-                    results = parsed.get("results", [])
-                    if results:
-                        for doc in results:
-                            doc["summary_snippet"] = CompatService._truncate_text(
-                                doc.get("summary"),
-                            )
-                        related_articles.extend(results)
-                    else:
-                        parsed["summary_snippet"] = CompatService._truncate_text(
-                            parsed.get("summary"),
-                        )
-                        related_articles.append(parsed)
+                if parsed is not None:
+                    normalized = CompatService._normalize_tool_result_to_docs(parsed)
+                    all_docs.extend(normalized)
 
             elif event_type == "error":
                 msg = event.get("message", "")
                 if msg:
                     error_message = msg
+
+        # 去重聚合
+        related_articles = CompatService._dedupe_and_aggregate_docs(all_docs)
 
         result: dict[str, Any] = {
             "answer": "".join(answer_parts),
