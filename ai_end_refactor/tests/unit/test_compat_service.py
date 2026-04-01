@@ -521,7 +521,7 @@ class TestAggregateEvents:
         result = CompatService._aggregate_events(events)
         doc = result["related_articles"][0]
         assert doc["ebd_similarity"] == pytest.approx(0.5)
-        assert doc["keyword_similarity"] is None
+        assert doc["keyword_similarity"] == 0
         assert doc["rerank_score"] == pytest.approx(0.4)
 
     def test_display_field_all_empty_falls_back_to_empty(self):
@@ -538,6 +538,37 @@ class TestAggregateEvents:
         doc = result[0]
         assert doc["title"] is None or doc["title"] == ""
         assert doc["unit"] is None or doc["unit"] == ""
+
+    def test_no_id_docs_null_scores_replaced_with_zero(self):
+        """无 id 的透传文档中，null 的评分字段应替换为 0。"""
+        from src.api.compat_service import CompatService
+
+        docs = [
+            {"title": "无ID文章", "ebd_similarity": None, "keyword_similarity": None, "rerank_score": None},
+        ]
+
+        result = CompatService._dedupe_and_aggregate_docs(docs)
+        assert len(result) == 1
+        doc = result[0]
+        assert doc["ebd_similarity"] == 0
+        assert doc["keyword_similarity"] == 0
+        assert doc["rerank_score"] == 0
+
+    def test_all_null_scores_in_dedup_group_replaced_with_zero(self):
+        """去重聚合中，所有评分值均为 null 时应返回 0 而非 None。"""
+        from src.api.compat_service import CompatService
+
+        docs = [
+            {"id": 400, "title": "全null", "ebd_similarity": None, "keyword_similarity": None, "rerank_score": None},
+            {"id": 400, "title": "全null", "ebd_similarity": None, "keyword_similarity": None, "rerank_score": None},
+        ]
+
+        result = CompatService._dedupe_and_aggregate_docs(docs)
+        assert len(result) == 1
+        doc = result[0]
+        assert doc["ebd_similarity"] == 0
+        assert doc["keyword_similarity"] == 0
+        assert doc["rerank_score"] == 0
 
 
 class TestCompatServiceClearMemory:

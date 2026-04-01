@@ -243,11 +243,15 @@ class CompatService:
                 if values:
                     merged[field] = sum(values) / len(values)
                 else:
-                    merged[field] = None
+                    merged[field] = 0
 
             aggregated.append(merged)
 
-        # 无 id 文档直接透传
+        # 无 id 文档直接透传，null 评分字段替换为 0
+        for doc in no_id:
+            for field in _SCORE_FIELDS:
+                if doc.get(field) is None:
+                    doc[field] = 0
         aggregated.extend(no_id)
 
         return aggregated
