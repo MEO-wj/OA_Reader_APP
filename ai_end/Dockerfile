@@ -1,25 +1,20 @@
 FROM python:3.11-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+
 WORKDIR /app
 
-# 安装 uv
-RUN pip install uv
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件（构建上下文需为仓库根目录）
-COPY ai_end/pyproject.toml ai_end/uv.lock ./ai_end/
+RUN pip install --no-cache-dir uv
 
-# 使用 uv 安装依赖
-WORKDIR /app/ai_end
-RUN uv sync --frozen --no-dev
+COPY pyproject.toml uv.lock README.md /app/
+RUN uv sync --frozen --no-dev --no-install-project --extra di
 
-# 复制应用与共享 backend 代码
-WORKDIR /app
-COPY ai_end ./ai_end
-COPY backend ./backend
+COPY . /app
 
-# 暴露端口
-WORKDIR /app/ai_end
-EXPOSE 4421
-
-# 启动命令
-CMD ["uv", "run", "gunicorn", "--bind", "0.0.0.0:4421", "--workers", "2", "--timeout", "120", "app:app"]
+EXPOSE 8000
