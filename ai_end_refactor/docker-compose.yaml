@@ -17,7 +17,7 @@ services:
       --reload-dir src
       --reload-dir static
     ports:
-      - "8000:8000"
+      - "4421:8000"
     volumes:
       - .:/app
     working_dir: /app

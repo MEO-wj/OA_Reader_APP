@@ -30,13 +30,13 @@ func InitDB(databaseURL string) error {
 		return err
 	}
 
+	// 创建 pgvector 扩展 (必须在 AutoMigrate 之前，否则 vector 类型不存在)
+	DB.Exec("CREATE EXTENSION IF NOT EXISTS vector")
+
 	// 自动迁移
 	if err := DB.AutoMigrate(autoMigrateModels()...); err != nil {
 		return err
 	}
-
-	// 创建 pgvector 扩展 (如需要)
-	DB.Exec("CREATE EXTENSION IF NOT EXISTS vector")
 
 	log.Println("Database initialized")
 	return nil
