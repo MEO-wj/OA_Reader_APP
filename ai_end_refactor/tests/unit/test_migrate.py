@@ -53,7 +53,7 @@ class FakeConn:
             return [{"version": version} for version in sorted(self.applied_versions)]
         return []
 
-    async def fetchval(self, query: str):
+    async def fetchval(self, query: str, *args):
         return None
 
     async def close(self):
@@ -287,3 +287,59 @@ def test_baseline_migration_contains_articles_content_trgm_index():
 
     assert "idx_articles_content_trgm" in content
     assert "articles using gin (content gin_trgm_ops)" in content.replace("\n", " ")
+
+
+def test_baseline_migration_uses_uuid_for_chat_tables_user_id():
+    """契约测试：对话相关表的 user_id 列必须使用 UUID 类型而非 VARCHAR(64)。"""
+    migrations_dir = Path(migrate.__file__).parent
+    baseline = migrations_dir / "001_init_generic_backend.sql"
+    content = baseline.read_text(encoding="utf-8").lower().replace("\n", " ")
+
+    assert "conversations" in content
+    assert "conversation_sessions" in content
+    assert "user_profiles" in content
+    assert "user_id uuid" in content
+    assert "user_id varchar(64)" not in content
+
+
+@pytest.mark.asyncio
+async def test_schema_drift_detects_non_uuid_user_id_columns(monkeypatch):
+    """当 user_id 列类型为 character varying 而非 uuid 时，应检测到 schema 漂移。"""
+
+    class TypeFakeConn(FakeConn):
+        async def fetchval(self, query: str, *args):
+            q = " ".join(query.lower().split())
+            if "from information_schema.columns" in q and "data_type" in q:
+                table_name, column_name = args
+                if (table_name, column_name) in {
+                    ("conversations", "user_id"),
+                    ("conversation_sessions", "user_id"),
+                    ("user_profiles", "user_id"),
+                }:
+                    return "character varying"
+                return "uuid"
+            return True
+
+    drift = await migrate._has_schema_drift(TypeFakeConn())
+    assert drift is True
+
+
+@pytest.mark.asyncio
+async def test_apply_schema_repair_uses_uuid_user_id_for_chat_tables():
+    """auto_repair 的建表 SQL 中 user_id 必须使用 UUID 类型而非 VARCHAR(64)。"""
+    fake_conn = FakeConn()
+    await migrate._apply_schema_repair(fake_conn)
+    executed_sql = "\n".join(fake_conn.executed_sql).lower()
+    assert "create table if not exists conversations" in executed_sql
+    assert "user_id uuid not null" in executed_sql
+    assert "user_id varchar(64)" not in executed_sql
+
+
+@pytest.mark.asyncio
+async def test_apply_schema_repair_alters_existing_varchar_user_id_to_uuid():
+    """auto_repair 应包含 ALTER TABLE 语句，将已有表的 VARCHAR user_id 转为 UUID。"""
+    fake_conn = FakeConn()
+    await migrate._apply_schema_repair(fake_conn)
+    executed_sql = "\n".join(fake_conn.executed_sql).lower()
+    assert "alter table conversations" in executed_sql
+    assert "user_id type uuid" in executed_sql

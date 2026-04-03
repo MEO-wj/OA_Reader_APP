@@ -84,6 +84,28 @@ async def _has_schema_drift(conn: asyncpg.Connection) -> bool:
         )
         if not exists:
             return True
+
+    uuid_type_checks = [
+        ("conversations", "user_id", "uuid"),
+        ("conversation_sessions", "user_id", "uuid"),
+        ("user_profiles", "user_id", "uuid"),
+    ]
+
+    for table_name, column_name, expected_type in uuid_type_checks:
+        data_type = await conn.fetchval(
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = $1
+              AND column_name = $2
+            """,
+            table_name,
+            column_name,
+        )
+        if data_type != expected_type:
+            return True
+
     return False
 
 
@@ -171,9 +193,24 @@ async def _apply_schema_repair(conn: asyncpg.Connection) -> None:
         );
         """,
         """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'conversations'
+                  AND column_name = 'user_id'
+                  AND data_type = 'character varying'
+            ) THEN
+                ALTER TABLE conversations ALTER COLUMN user_id TYPE UUID USING user_id::uuid;
+            END IF;
+        END $$;
+        """,
+        """
         CREATE TABLE IF NOT EXISTS conversations (
             id SERIAL PRIMARY KEY,
-            user_id VARCHAR(64) NOT NULL,
+            user_id UUID NOT NULL,
             conversation_id VARCHAR(64) NOT NULL,
             title VARCHAR(256) DEFAULT '新会话',
             messages JSONB DEFAULT '[]',
@@ -182,9 +219,24 @@ async def _apply_schema_repair(conn: asyncpg.Connection) -> None:
         );
         """,
         """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'conversation_sessions'
+                  AND column_name = 'user_id'
+                  AND data_type = 'character varying'
+            ) THEN
+                ALTER TABLE conversation_sessions ALTER COLUMN user_id TYPE UUID USING user_id::uuid;
+            END IF;
+        END $$;
+        """,
+        """
         CREATE TABLE IF NOT EXISTS conversation_sessions (
             id SERIAL PRIMARY KEY,
-            user_id VARCHAR(64) NOT NULL,
+            user_id UUID NOT NULL,
             conversation_id VARCHAR(64) NOT NULL,
             title VARCHAR(256) DEFAULT '新会话',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -192,9 +244,24 @@ async def _apply_schema_repair(conn: asyncpg.Connection) -> None:
         );
         """,
         """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'user_profiles'
+                  AND column_name = 'user_id'
+                  AND data_type = 'character varying'
+            ) THEN
+                ALTER TABLE user_profiles ALTER COLUMN user_id TYPE UUID USING user_id::uuid;
+            END IF;
+        END $$;
+        """,
+        """
         CREATE TABLE IF NOT EXISTS user_profiles (
             id SERIAL PRIMARY KEY,
-            user_id VARCHAR(64) UNIQUE NOT NULL,
+            user_id UUID UNIQUE NOT NULL,
             portrait_text TEXT,
             knowledge_text TEXT,
             preferences JSONB DEFAULT '{}',

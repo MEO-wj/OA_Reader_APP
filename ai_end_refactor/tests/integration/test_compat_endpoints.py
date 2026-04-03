@@ -6,6 +6,8 @@ TDD GREEN 阶段: 旧 AI End 兼容接口集成测试
 
 from fastapi.testclient import TestClient
 
+VALID_UUID = "123e4567-e89b-12d3-a456-426614174000"
+
 
 # ---------------------------------------------------------------------------
 # 请求验证契约测试（RED 阶段遗留）
@@ -129,7 +131,7 @@ def test_clear_memory_success(monkeypatch):
     monkeypatch.setattr(CompatService, "clear_memory", _mock_clear_memory)
     client = TestClient(app)
 
-    resp = client.post("/clear_memory", json={"user_id": "user123"})
+    resp = client.post("/clear_memory", json={"user_id": VALID_UUID})
 
     assert resp.status_code == 200
     data = resp.json()
@@ -155,7 +157,7 @@ def test_ask_with_user_id_success(monkeypatch):
     monkeypatch.setattr(CompatService, "ask", _mock_ask_with_session)
     client = TestClient(app)
 
-    resp = client.post("/ask", json={"question": "测试", "user_id": "user123"})
+    resp = client.post("/ask", json={"question": "测试", "user_id": VALID_UUID})
 
     assert resp.status_code == 200
     data = resp.json()
@@ -207,7 +209,7 @@ def test_clear_memory_returns_500_on_exception(monkeypatch):
     monkeypatch.setattr(CompatService, "clear_memory", _mock_clear_memory_raise)
     client = TestClient(app)
 
-    resp = client.post("/clear_memory", json={"user_id": "user123"})
+    resp = client.post("/clear_memory", json={"user_id": VALID_UUID})
 
     assert resp.status_code == 500
     assert "error" in resp.json()

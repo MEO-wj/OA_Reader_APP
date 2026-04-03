@@ -1,8 +1,9 @@
 """API 请求/响应模型"""
 
+from uuid import UUID
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ChatRequest(BaseModel):
@@ -12,12 +13,28 @@ class ChatRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=64)  # 限制长度，避免数据库约束错误
     conversation_id: str | None = None
 
+    @field_validator("user_id")
+    @classmethod
+    def _validate_user_id_uuid(cls, v: str) -> str:
+        try:
+            return str(UUID(v))
+        except ValueError as exc:
+            raise ValueError("user_id must be a valid UUID") from exc
+
 
 class ConversationCreate(BaseModel):
     """创建会话请求"""
 
     user_id: str = Field(min_length=1, max_length=64)
     title: str | None = None
+
+    @field_validator("user_id")
+    @classmethod
+    def _validate_user_id_uuid(cls, v: str) -> str:
+        try:
+            return str(UUID(v))
+        except ValueError as exc:
+            raise ValueError("user_id must be a valid UUID") from exc
 
 
 class ConversationResponse(BaseModel):

@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS skill_references (
 -- 对话记录表（按会话聚合存储）
 CREATE TABLE IF NOT EXISTS conversations (
     id SERIAL PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
+    user_id UUID NOT NULL,
     conversation_id VARCHAR(64) NOT NULL,
     title VARCHAR(256) DEFAULT '新会话',
     messages JSONB DEFAULT '[]',
@@ -86,7 +86,7 @@ CREATE INDEX IF NOT EXISTS idx_conversations_created_at
 -- 会话元信息表
 CREATE TABLE IF NOT EXISTS conversation_sessions (
     id SERIAL PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
+    user_id UUID NOT NULL,
     conversation_id VARCHAR(64) NOT NULL,
     title VARCHAR(256) DEFAULT '新会话',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -101,7 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON conversation_sessions(user_id
 -- 用户画像表
 CREATE TABLE IF NOT EXISTS user_profiles (
     id SERIAL PRIMARY KEY,
-    user_id VARCHAR(64) UNIQUE NOT NULL,
+    user_id UUID UNIQUE NOT NULL,
     portrait_text TEXT,
     knowledge_text TEXT,
     preferences JSONB DEFAULT '{}',

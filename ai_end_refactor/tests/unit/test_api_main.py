@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+VALID_UUID = "123e4567-e89b-12d3-a456-426614174000"
+
 
 def test_root_endpoint_returns_app_info():
     from src.api.main import app
@@ -64,7 +66,7 @@ async def test_chat_endpoint_streams_sse_from_chat_service(monkeypatch):
 
     class _FakeMemoryDB:
         async def get_or_create_session(self, user_id: str, conversation_id: str | None = None):
-            assert user_id == "test_user"
+            assert user_id == VALID_UUID
             assert conversation_id is None
             return "conv-default", "新会话"
 
@@ -88,7 +90,7 @@ async def test_chat_endpoint_streams_sse_from_chat_service(monkeypatch):
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
     monkeypatch.setattr("src.api.main.get_chat_service", _fake_get_chat_service)
 
-    response = await chat(ChatRequest(message="hello", user_id="test_user"))
+    response = await chat(ChatRequest(message="hello", user_id=VALID_UUID))
     chunks = []
     async for chunk in response.body_iterator:
         chunks.append(chunk)
@@ -96,7 +98,7 @@ async def test_chat_endpoint_streams_sse_from_chat_service(monkeypatch):
 
     assert "event: start" in body
     assert "event: done" in body
-    assert called == {"user_id": "test_user", "conversation_id": "conv-default"}
+    assert called == {"user_id": VALID_UUID, "conversation_id": "conv-default"}
 
 
 @pytest.mark.asyncio
@@ -106,7 +108,7 @@ async def test_chat_endpoint_sets_conversation_header(monkeypatch):
 
     class _FakeMemoryDB:
         async def get_or_create_session(self, user_id: str, conversation_id: str | None = None):
-            assert user_id == "u1"
+            assert user_id == VALID_UUID
             assert conversation_id == "conv-in"
             return "conv-in", "标题"
 
@@ -124,7 +126,7 @@ async def test_chat_endpoint_sets_conversation_header(monkeypatch):
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
     monkeypatch.setattr("src.api.main.get_chat_service", _fake_get_chat_service)
 
-    response = await chat(ChatRequest(message="hello", user_id="u1", conversation_id="conv-in"))
+    response = await chat(ChatRequest(message="hello", user_id=VALID_UUID, conversation_id="conv-in"))
     assert response.headers["x-conversation-id"] == "conv-in"
 
 
@@ -133,13 +135,13 @@ def test_list_sessions_endpoint(monkeypatch):
 
     class _FakeMemoryDB:
         async def list_sessions(self, user_id: str):
-            assert user_id == "u1"
-            return [{"user_id": "u1", "conversation_id": "c1", "title": "会话1"}]
+            assert user_id == VALID_UUID
+            return [{"user_id": VALID_UUID, "conversation_id": "c1", "title": "会话1"}]
 
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
 
     client = TestClient(app)
-    response = client.get("/chat/sessions", params={"user_id": "u1"})
+    response = client.get("/chat/sessions", params={"user_id": VALID_UUID})
 
     assert response.status_code == 200
     body = response.json()
@@ -162,12 +164,12 @@ def test_create_session_endpoint(monkeypatch):
     monkeypatch.setattr("src.api.main.uuid.uuid4", lambda: "12345678-aaaa-bbbb")
 
     client = TestClient(app)
-    response = client.post("/chat/sessions", json={"user_id": "u1", "title": "考研咨询"})
+    response = client.post("/chat/sessions", json={"user_id": VALID_UUID, "title": "考研咨询"})
 
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "created"
-    assert called["user_id"] == "u1"
+    assert called["user_id"] == VALID_UUID
     assert called["title"] == "考研咨询"
 
 
@@ -181,19 +183,19 @@ def test_get_session_endpoint_returns_session_and_messages(monkeypatch):
             return {"user_id": user_id, "conversation_id": conversation_id, "title": "会话"}
 
         async def get_conversation(self, user_id: str, conversation_id: str = "default"):
-            assert user_id == "u1"
+            assert user_id == VALID_UUID
             assert conversation_id == "c1"
             return [{"role": "user", "content": "hi"}]
 
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
 
     client = TestClient(app)
-    ok_resp = client.get("/chat/sessions/c1", params={"user_id": "u1"})
+    ok_resp = client.get("/chat/sessions/c1", params={"user_id": VALID_UUID})
     assert ok_resp.status_code == 200
     assert ok_resp.json()["session"]["conversation_id"] == "c1"
     assert len(ok_resp.json()["messages"]) == 1
 
-    not_found = client.get("/chat/sessions/missing", params={"user_id": "u1"})
+    not_found = client.get("/chat/sessions/missing", params={"user_id": VALID_UUID})
     assert not_found.status_code == 404
 
 
@@ -210,11 +212,11 @@ def test_delete_session_endpoint(monkeypatch):
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
 
     client = TestClient(app)
-    response = client.delete("/chat/sessions/c1", params={"user_id": "u1"})
+    response = client.delete("/chat/sessions/c1", params={"user_id": VALID_UUID})
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert called == {"user_id": "u1", "conversation_id": "c1"}
+    assert called == {"user_id": VALID_UUID, "conversation_id": "c1"}
 
 
 def test_app_shutdown_closes_resources_in_order(monkeypatch):
@@ -347,7 +349,7 @@ def test_get_chat_history_returns_messages(monkeypatch):
 
     class _FakeMemoryDB:
         async def get_conversation(self, user_id: str, conversation_id: str = "default"):
-            assert user_id == "u1"
+            assert user_id == VALID_UUID
             assert conversation_id == "default"
             return [
                 {"role": "user", "content": "你好"},
@@ -357,10 +359,10 @@ def test_get_chat_history_returns_messages(monkeypatch):
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
 
     client = TestClient(app)
-    response = client.get("/chat/history", params={"user_id": "u1"})
+    response = client.get("/chat/history", params={"user_id": VALID_UUID})
 
     assert response.status_code == 200
-    assert response.json()["user_id"] == "u1"
+    assert response.json()["user_id"] == VALID_UUID
     assert len(response.json()["messages"]) == 2
 
 
@@ -398,8 +400,8 @@ def test_delete_chat_history_clears_user(monkeypatch):
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
 
     client = TestClient(app)
-    response = client.delete("/chat/history", params={"user_id": "u1"})
+    response = client.delete("/chat/history", params={"user_id": VALID_UUID})
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "user_id": "u1"}
-    assert called["user_id"] == "u1"
+    assert response.json() == {"status": "ok", "user_id": VALID_UUID}
+    assert called["user_id"] == VALID_UUID
