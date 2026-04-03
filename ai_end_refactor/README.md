@@ -326,11 +326,7 @@ erDiagram
 
 ```mermaid
 flowchart TB
-    subgraph Docker["Docker Compose"]
-        subgraph Frontend["前端服务"]
-            Nginx["Nginx<br/>静态资源"]
-        end
-
+    subgraph Docker["Docker Compose (AI End)"]
         subgraph Backend["后端服务"]
             API["FastAPI<br/>API Gateway"]
             Worker["Worker Service<br/>多进程"]
@@ -339,16 +335,10 @@ flowchart TB
         subgraph Queue["消息队列"]
             Redis["Redis<br/>队列 + 缓存"]
         end
+    end
 
-        subgraph Database["数据库"]
-            PG["PostgreSQL<br/>+ pgvector"]
-        end
-
-        Nginx --> API
-        API --> Redis
-        Worker --> Redis
-        Worker --> PG
-        API --> PG
+    subgraph ExternalDB["外部数据库"]
+        PG["PostgreSQL<br/>+ pgvector<br/>(由 backend 或宿主机管理)"]
     end
 
     subgraph External["外部服务"]
@@ -357,18 +347,23 @@ flowchart TB
         Rerank["Rerank API"]
     end
 
+    API --> Redis
+    Worker --> Redis
+    Worker --> PG
+    API --> PG
     Worker --> OpenAI
     Worker --> EBD
     Worker --> Rerank
 ```
+
+> 注意：PostgreSQL 数据库由外部服务管理（backend 或宿主机部署），AI End 通过 `.env` 配置连接。
 
 | 服务 | 技术栈 | 职责 |
 |------|--------|------|
 | **API Gateway** | FastAPI + Uvicorn | 接收请求、SSE 推送、队列管理 |
 | **Worker Service** | Python multiprocessing | 消费队列、调用 AI、执行业务逻辑 |
 | **Redis** | Redis | 消息队列、缓存 |
-| **PostgreSQL** | PostgreSQL + pgvector + pg_trgm | 持久化存储、向量搜索 |
-| **Nginx** | Nginx | 反向代理、静态资源 |
+| **PostgreSQL** | PostgreSQL + pgvector + pg_trgm | 持久化存储、向量搜索（外部服务） |
 
 ---
 

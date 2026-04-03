@@ -1,24 +1,6 @@
+# AI End - 仅运行 API 服务
+# 数据库通过 .env 文件配置外部 PostgreSQL (pgvector) 连接
 services:
-  postgres:
-    image: docker.1ms.run/ankane/pgvector:latest
-    container_name: postgres
-    environment:
-      POSTGRES_DB: oa
-      POSTGRES_USER: oa
-      POSTGRES_PASSWORD: oa
-      TZ: Asia/Shanghai
-    ports:
-      - "5432:5432"
-    volumes:
-      - data:/var/lib/postgresql/data
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U oa -d oa"]
-      interval: 20s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-
   api:
     build:
       context: .
@@ -26,14 +8,7 @@ services:
     env_file:
       - .env
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: oa
-      DB_PASSWORD: oa
-      DB_NAME: oa
       SKILLS_DIR: ./skills
-      AUTO_MIGRATE: "true"
-      AUTO_IMPORT: "false"
     command: >
       uv run uvicorn src.api.main:app
       --host 0.0.0.0
@@ -43,14 +18,7 @@ services:
       --reload-dir static
     ports:
       - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
     volumes:
       - .:/app
     working_dir: /app
     restart: always
-
-volumes:
-  data:
-  

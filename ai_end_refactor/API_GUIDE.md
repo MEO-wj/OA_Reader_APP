@@ -352,20 +352,12 @@ uv run uvicorn src.api.main:app --reload --port 8000
 ## Docker Compose 启动
 
 ```bash
-# 启动 PostgreSQL + API（镜像构建时已用 uv 安装依赖，运行时使用 uv run）
+# 启动 API 服务（数据库连接通过 .env 配置）
 docker compose up --build
-
-# 手动执行一次迁移（可选，通常用于手工修复）
-docker compose --profile init run --rm migrate
 ```
 
 说明：
 
-- `api` 服务默认设置了 `AUTO_MIGRATE=true`，启动时会自动检测并执行增量迁移/结构对齐。
-- 如不希望自动迁移，可在 compose 环境变量中将 `AUTO_MIGRATE` 设为 `false`。
-- `AUTO_IMPORT` 在开发 compose 默认是 `false`，避免 `--reload` 场景重复触发高成本导入。
-- 若将 `AUTO_IMPORT=true`，启动时会先做“缺失/变更探测”，仅当技能或文档数据集落后于本地文件时才执行导入。
-
-## Docker 内一次性导入业务数据
-
-> 注意：数据导入已迁移至通用文档处理框架，无需手动执行导入脚本。
+- API 服务通过 `.env` 文件连接外部 PostgreSQL (pgvector)，需确保 `.env` 中 `DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD`、`DB_NAME` 配置正确。
+- 如需自动迁移，可在 `.env` 中设置 `AUTO_MIGRATE=true`。
+- 如需自动导入技能数据，可设置 `AUTO_IMPORT=true`。
