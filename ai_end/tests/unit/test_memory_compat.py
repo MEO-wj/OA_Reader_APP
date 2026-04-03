@@ -10,6 +10,10 @@ from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 from src.db.memory import MemoryDB
 
+# Hardcoded test UUIDs (DB requires UUID type for user_id)
+_UID_USER1 = "11111111-1111-1111-1111-111111111111"
+_UID_USER42 = "42424242-4242-4242-4242-424242424242"
+
 
 class TestGetLatestSessionInRange:
     """get_latest_session_in_utc_range 测试"""
@@ -26,7 +30,7 @@ class TestGetLatestSessionInRange:
 
         # 构造 mock row（模拟 asyncpg Record）
         mock_row = {
-            "user_id": "user1",
+            "user_id": _UID_USER1,
             "conversation_id": "c-latest",
             "title": "最新会话",
             "created_at": datetime(2025, 6, 1, 12, 0),
@@ -49,11 +53,11 @@ class TestGetLatestSessionInRange:
 
         start = datetime(2025, 6, 1, 0, 0)
         end = datetime(2025, 6, 2, 0, 0)
-        result = await db.get_latest_session_in_utc_range("user1", start, end)
+        result = await db.get_latest_session_in_utc_range(_UID_USER1, start, end)
 
         assert result is not None
         assert result["conversation_id"] == "c-latest"
-        assert result["user_id"] == "user1"
+        assert result["user_id"] == _UID_USER1
         # 验证 SQL 排序和参数
         sql = conn.fetchrow.call_args[0][0]
         assert "ORDER BY created_at DESC" in sql
@@ -85,7 +89,7 @@ class TestGetLatestSessionInRange:
 
         start = datetime(2025, 6, 1, 0, 0)
         end = datetime(2025, 6, 2, 0, 0)
-        result = await db.get_latest_session_in_utc_range("user1", start, end)
+        result = await db.get_latest_session_in_utc_range(_UID_USER1, start, end)
 
         assert result is None
 
@@ -115,10 +119,10 @@ class TestGetLatestSessionInRange:
 
         start = datetime(2025, 1, 1, 0, 0)
         end = datetime(2025, 1, 2, 0, 0)
-        await db.get_latest_session_in_utc_range("user42", start, end)
+        await db.get_latest_session_in_utc_range(_UID_USER42, start, end)
 
         # fetchrow 的参数：(sql, user_id, start_utc, end_utc)
         call_args = conn.fetchrow.call_args[0]
-        assert call_args[1] == "user42"
+        assert call_args[1] == _UID_USER42
         assert call_args[2] == start
         assert call_args[3] == end

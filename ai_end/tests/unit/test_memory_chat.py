@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from src.chat.client import ChatClient
@@ -5,37 +7,46 @@ from src.config.settings import Config
 from src.core.db import get_pool
 from src.db.memory import MemoryDB
 
-
-TEST_USER_PREFIX = "test_user_memory_chat_"
+# 确定性 UUID 生成：从 seed 字符串派生可复现的 UUID v5
+_TEST_UUID_NAMESPACE = uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+_used_uids: set[str] = set()
 
 
 def _uid(suffix: str) -> str:
-    return f"{TEST_USER_PREFIX}{suffix}"
+    """根据 suffix 生成确定性 UUID，并自动注册到清理集合。"""
+    uid = str(uuid.uuid5(_TEST_UUID_NAMESPACE, f"memory_chat_{suffix}"))
+    _used_uids.add(uid)
+    return uid
 
 
 async def _cleanup_test_users() -> None:
+    """使用 = ANY($1::uuid[]) 精确清理已注册的测试 UUID。"""
+    if not _used_uids:
+        return
     pool = await get_pool()
-    pattern = f"{TEST_USER_PREFIX}%"
+    uid_list = list(_used_uids)
     async with pool.acquire() as conn:
         await conn.execute(
-            "DELETE FROM conversation_sessions WHERE user_id LIKE $1",
-            pattern,
+            "DELETE FROM conversation_sessions WHERE user_id = ANY($1::uuid[])",
+            uid_list,
         )
         await conn.execute(
-            "DELETE FROM conversations WHERE user_id LIKE $1",
-            pattern,
+            "DELETE FROM conversations WHERE user_id = ANY($1::uuid[])",
+            uid_list,
         )
         await conn.execute(
-            "DELETE FROM user_profiles WHERE user_id LIKE $1",
-            pattern,
+            "DELETE FROM user_profiles WHERE user_id = ANY($1::uuid[])",
+            uid_list,
         )
 
 
 @pytest.fixture(autouse=True)
 async def isolate_memory_chat_db():
     await _cleanup_test_users()
+    _used_uids.clear()
     yield
     await _cleanup_test_users()
+    _used_uids.clear()
 
 
 @pytest.mark.asyncio

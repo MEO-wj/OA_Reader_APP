@@ -22,6 +22,8 @@ class TestMemoryManager:
     @pytest.mark.asyncio
     async def test_form_memory_calls_queue_and_save_profile(self):
         """应调用 LLM 队列并保存画像。"""
+        uid_a = "00000000-0000-0000-0008-000000000001"
+
         queue = MagicMock()
         queue.submit = AsyncMock(
             return_value=MagicMock(
@@ -40,14 +42,18 @@ class TestMemoryManager:
 
         with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
             manager = MemoryManager(
-                user_id="user-1",
+                user_id=uid_a,
                 conversation_id="conv-1",
                 memory_db=db,
             )
             result = await manager.form_memory([{"role": "user", "content": "我想去北京读内科"}])
 
         queue.submit.assert_awaited_once()
-        db.save_profile.assert_awaited_once()
+        db.save_profile.assert_awaited_once_with(
+            uid_a,
+            result["portrait"],
+            result["knowledge"],
+        )
         assert "北京" in result["portrait"]
         assert "已确认" in result["knowledge"]
 

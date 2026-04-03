@@ -22,17 +22,18 @@ class TestHistoryManager:
     @pytest.mark.asyncio
     async def test_load_and_append_use_memory_db(self):
         """应通过 MemoryDB 读写会话历史。"""
+        uid_a = "00000000-0000-0000-0007-000000000001"
         db = MagicMock()
         db.get_conversation = AsyncMock(return_value=[{"role": "user", "content": "hello"}])
         db.append_conversation = AsyncMock()
 
-        manager = HistoryManager(user_id="user-1", conversation_id="conv-1", memory_db=db)
+        manager = HistoryManager(user_id=uid_a, conversation_id="conv-1", memory_db=db)
         history = await manager.load()
         await manager.append([{"role": "assistant", "content": "world"}])
 
-        db.get_conversation.assert_awaited_once_with("user-1", "conv-1")
+        db.get_conversation.assert_awaited_once_with(uid_a, "conv-1")
         db.append_conversation.assert_awaited_once_with(
-            "user-1",
+            uid_a,
             [{"role": "assistant", "content": "world"}],
             "conv-1",
         )
@@ -41,6 +42,7 @@ class TestHistoryManager:
     @pytest.mark.asyncio
     async def test_generate_title_uses_queue_and_updates_db(self):
         """应生成标题并回写到会话表。"""
+        uid_a = "00000000-0000-0000-0007-000000000001"
         queue = MagicMock()
         queue.submit = AsyncMock(
             return_value=MagicMock(
@@ -55,11 +57,11 @@ class TestHistoryManager:
             "src.chat.history_manager.MemoryDB",
             return_value=db,
         ):
-            manager = HistoryManager(user_id="user-1", conversation_id="conv-1")
+            manager = HistoryManager(user_id=uid_a, conversation_id="conv-1")
             title = await manager.generate_title("我想考内科研究生", "先明确城市和院校层次")
 
         assert title == "内科考研规划"
-        db.update_session_title.assert_awaited_once_with("user-1", "conv-1", "内科考研规划")
+        db.update_session_title.assert_awaited_once_with(uid_a, "conv-1", "内科考研规划")
 
     def test_create_title_completion_sync_uses_shared_llm_client(self):
         """标题生成应复用统一 LLM client，而不是自行创建 OpenAI 实例。"""

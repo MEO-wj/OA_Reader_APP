@@ -3,9 +3,19 @@
 
 测试画像和储存全流程
 """
+import uuid
+
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from pathlib import Path
+
+# 确定性 UUID 生成：从 seed 字符串派生可复现的 UUID v5
+_PROFILE_UUID_NAMESPACE = uuid.UUID("b2c3d4e5-f6a7-8901-bcde-f12345678901")
+
+
+def make_uuid(seed: str) -> str:
+    """根据 seed 生成确定性 UUID v5，用于测试中的 user_id。"""
+    return str(uuid.uuid5(_PROFILE_UUID_NAMESPACE, f"profile_{seed}"))
 
 # 测试用的模拟对话数据
 SAMPLE_CONVERSATION = [
@@ -33,6 +43,8 @@ class TestUserProfileIntegration:
         from src.chat.handlers import handle_form_memory
         from src.db.memory import MemoryDB
         from unittest.mock import MagicMock
+
+        uid_a = make_uuid("test_user_123")
 
         # 1. Mock LLM 响应（结构化标签格式）
         mock_response = MagicMock()
@@ -69,7 +81,7 @@ class TestUserProfileIntegration:
                 # 3. 调用 form_memory
                 result = await handle_form_memory(
                     reason="用户明确表示这次先到这里",
-                    user_id="test_user_123",
+                    user_id=uid_a,
                     conversation_id="test_conv_456"
                 )
 
@@ -81,7 +93,7 @@ class TestUserProfileIntegration:
                 call_args = mock_db.save_profile.call_args
                 saved_user_id = call_args[0][0]
 
-                assert saved_user_id == "test_user_123", "用户ID应正确保存"
+                assert saved_user_id == uid_a, "用户ID应正确保存"
 
                 # 验证画像内容被正确解析
                 portrait_text = call_args[0][1]
@@ -109,6 +121,7 @@ class TestUserProfileIntegration:
         from unittest.mock import MagicMock, AsyncMock, patch
 
         config = Config.load()
+        uid_b = make_uuid("test_user_auto")
 
         # Mock LLM 响应（JSON 格式）
         # 正确设置 message.content，使其返回真实字符串而非 MagicMock
@@ -134,7 +147,7 @@ class TestUserProfileIntegration:
 
                 # 创建客户端（直接实例化并设置属性）
                 client = ChatClient(config)
-                client.user_id = "test_user_auto"
+                client.user_id = uid_b
                 client.skill_system = MagicMock()
                 client.messages = SAMPLE_CONVERSATION[:6]  # 3 轮对话
 
@@ -163,7 +176,7 @@ class TestUserProfileIntegration:
 
         # 测试 save_profile 方法签名和基本功能
         # 由于数据库连接池的 mock 比较复杂，这里只验证方法存在性
-        test_user_id = "test_user_profile_db"
+        uid_c = make_uuid("test_user_profile_db")
         test_portrait = "必须满足：北京,专硕"
         test_knowledge = "已确认：北京有三所医学院"
 
@@ -205,6 +218,8 @@ class TestUserProfileTriggerConditions:
         from src.chat.handlers import handle_tool_calls
         from src.core.skill_system import SkillSystem
 
+        uid_e = make_uuid("test_user_tool")
+
         # 模拟 form_memory 工具调用
         tool_calls = [
             {
@@ -218,8 +233,7 @@ class TestUserProfileTriggerConditions:
         ]
 
         with patch('src.chat.handlers.handle_form_memory') as mock_handler:
-            mock_handler = AsyncMock(return_value="记忆已形成")
-            mock_handler.return_value = "记忆已形成"
+            mock_handler = AsyncMock(return_value={"user_id": uid_e, "conversation_id": "test_conv_tool", "message": "记忆已形成"})
 
             # 需要 patch handle_form_memory 整个模块路径
             with patch('src.chat.handlers.handle_form_memory', new=mock_handler):
@@ -229,11 +243,13 @@ class TestUserProfileTriggerConditions:
 
                 result = await handle_form_memory(
                     reason="用户表示这次先到这里",
-                    user_id="test_user_tool",
+                    user_id=uid_e,
                     conversation_id="test_conv_tool"
                 )
 
-                assert "记忆已形成" in result or result != "", "应返回记忆形成结果"
+                assert result["user_id"] == uid_e
+                assert result["conversation_id"] == "test_conv_tool"
+                assert "记忆已形成" in result["message"]
 
     def test_trigger_threshold_is_5(self):
         """
