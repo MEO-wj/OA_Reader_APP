@@ -283,7 +283,7 @@
             <div class="header-right">
                 <div class="user-selector">
                     <label>用户ID:</label>
-                    <input type="text" id="user-id" placeholder="输入用户ID..." value="debug_user">
+                    <input type="text" id="user-id" placeholder="输入用户ID..." value="deb00000-0000-0000-0000-000000000000">
                     <button class="switch-btn" onclick="switchUser()">切换</button>
                     <button class="clear-btn" onclick="clearChat()">清空</button>
                     <label>历史用户:</label>
@@ -291,7 +291,7 @@
                         <option value="">选择历史用户</option>
                     </select>
                 </div>
-                <span class="user-badge" id="current-user">当前: debug_user</span>
+                <span class="user-badge" id="current-user">当前: deb00000-0000-0000-0000-000000000000</span>
             </div>
         </div>
         <div class="workspace">
@@ -309,7 +309,7 @@
                     <button id="send-btn" onclick="send()">发送</button>
                 </div>
                 <div class="stats-bar">
-                    <span class="stat-item">用户: <span class="stat-value" id="stat-user">debug_user</span></span>
+                    <span class="stat-item">用户: <span class="stat-value" id="stat-user">deb00000-0000-0000-0000-000000000000</span></span>
                     <span class="stat-item">会话: <span class="stat-value" id="stat-conversation">default</span></span>
                     <span class="stat-item">数据源: <span class="stat-value" id="stat-datasource">加载中...</span></span>
                     <span class="stat-item">技能数: <span class="stat-value" id="stat-skillcount">-</span></span>
@@ -331,7 +331,7 @@
         let currentThinkingTrace = null;
         let currentAssistantMessage = null;
         let isStreaming = false;
-        let currentUserId = "debug_user";
+        let currentUserId = "deb00000-0000-0000-0000-000000000000";
         let conversations = [];
         let currentConversationId = null;
         let compactToastId = null;
@@ -559,7 +559,7 @@
         async function switchUser() {
             if (isStreaming) return;
             const input = document.getElementById("user-id");
-            const newUserId = input.value.trim() || "debug_user";
+            const newUserId = input.value.trim() || "deb00000-0000-0000-0000-000000000000";
             const error = validateUserId(newUserId);
             if (error) {
                 addMessage("system", "切换失败: " + error);
