@@ -3,6 +3,7 @@ package repository
 import (
 	"log"
 
+	"github.com/oap/backend-go/internal/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
