@@ -2,6 +2,7 @@ package migration
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"gorm.io/gorm"
@@ -117,5 +118,41 @@ func TestRunnerRun_PassesTransactionToVersion(t *testing.T) {
 	}
 	if received != nil {
 		t.Fatalf("expected fake store to pass nil tx in test double, got %#v", received)
+	}
+}
+
+func TestDefaultVersions_ContainsConversationIndexFixMigration(t *testing.T) {
+	versions := DefaultVersions(nil)
+	ids := make([]string, 0, len(versions))
+	for _, v := range versions {
+		ids = append(ids, v.ID)
+	}
+
+	if !slices.Contains(ids, "2026040701_conversation_indexes") {
+		t.Fatalf("missing migration 2026040701_conversation_indexes, got: %#v", ids)
+	}
+}
+
+func TestDefaultVersions_ContainsAiEndBaselineIndexAndExtensionMigration(t *testing.T) {
+	versions := DefaultVersions(nil)
+	ids := make([]string, 0, len(versions))
+	for _, v := range versions {
+		ids = append(ids, v.ID)
+	}
+
+	if !slices.Contains(ids, "2026040702_ai_end_baseline_indexes_extensions") {
+		t.Fatalf("missing migration 2026040702_ai_end_baseline_indexes_extensions, got: %#v", ids)
+	}
+}
+
+func TestDefaultVersions_ContainsSessionsUserIndexConflictFixMigration(t *testing.T) {
+	versions := DefaultVersions(nil)
+	ids := make([]string, 0, len(versions))
+	for _, v := range versions {
+		ids = append(ids, v.ID)
+	}
+
+	if !slices.Contains(ids, "2026040703_sessions_user_index_conflict_fix") {
+		t.Fatalf("missing migration 2026040703_sessions_user_index_conflict_fix, got: %#v", ids)
 	}
 }
