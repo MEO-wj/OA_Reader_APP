@@ -93,8 +93,8 @@
 2. 依次执行:
    - JSON 语法校验
    - v2 结构校验
-   - identity 二次裁决
-   - 裁决后二次结构校验
+   - identity 裁决
+   - 裁决仅做列表元素移动与来源标注补齐，不破坏 JSON 结构，无需二次校验
 3. 通过后写入 portrait_text / knowledge_text。
 
 ### 5.2 重试规则
@@ -132,12 +132,12 @@
 
 ```json
 {
-  "knowledge": {
-    "confirmed_facts": ["..."],
-    "pending_queries": ["..."]
-  }
+  "confirmed_facts": ["..."],
+  "pending_queries": ["..."]
 }
 ```
+
+注：knowledge_text 列已是 knowledge 专属列，无需 `knowledge` 外层包装。LLM 输出含 `knowledge` 包装，`_parse_memory` 提取后去掉包装再存储。
 
 ## 7. 身份裁决规则
 
@@ -152,7 +152,7 @@
 1. 非 JSON。
 2. v2 结构不匹配。
 3. 字段类型非法。
-4. 裁决后二次校验失败。
+4. 裁决后二次校验失败（裁决不破坏结构，实际不会触发）。
 
 ### 8.2 不可重试错误
 
