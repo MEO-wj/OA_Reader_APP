@@ -51,3 +51,29 @@ services:
       postgres:
         condition: service_healthy
     restart: always
+
+  ai_end:
+    build:
+      context: ./ai_end
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${POSTGRES_USER:-Unself}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-Unself-oa-reader-5}
+      DB_NAME: ${POSTGRES_DB:-oa-reader}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-deepseek-v3.2}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      RERANK_MODEL: ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+      RERANK_MAX_CANDIDATES: ${RERANK_MAX_CANDIDATES:-40}
+      AUTO_MIGRATE: ${AI_AUTO_MIGRATE:-true}
+      AUTO_IMPORT: ${AI_AUTO_IMPORT:-true}
+    ports:
+      - "${HOST_AI_END_PORT:-4421}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
