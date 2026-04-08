@@ -1,6 +1,12 @@
 # OAP Docker Compose
 # 统一编排 postgres + backend 服务
 
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.26.0.0/16
+
 services:
   postgres:
     image: docker.1ms.run/ankane/pgvector:latest
