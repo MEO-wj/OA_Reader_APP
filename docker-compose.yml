@@ -5,7 +5,7 @@ networks:
   default:
     ipam:
       config:
-        - subnet: 10.200.0.0/16
+        - subnet: ${DOCKER_SUBNET:-10.200.0.0/16}
 
 services:
   postgres:
