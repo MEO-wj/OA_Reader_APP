@@ -78,11 +78,11 @@ services:
       AUTO_MIGRATE: ${AI_AUTO_MIGRATE:-true}
       AUTO_IMPORT: ${AI_AUTO_IMPORT:-true}
     ports:
-      - "${HOST_AI_END_PORT:-4421}:8000"
+      - "${HOST_AI_END_PORT:-4421}:4421"
     command: >
       uv run uvicorn src.api.main:app
       --host 0.0.0.0
-      --port 8000
+      --port 4421
     depends_on:
       postgres:
         condition: service_healthy
