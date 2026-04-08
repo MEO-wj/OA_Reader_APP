@@ -3,6 +3,7 @@ FROM docker.1ms.run/python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 WORKDIR /app
 
@@ -14,8 +15,7 @@ RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.li
 RUN pip install --no-cache-dir uv -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY pyproject.toml uv.lock README.md /app/
-RUN uv sync --frozen --no-dev --no-install-project --extra di \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+RUN uv sync --frozen --no-dev --no-install-project --extra di
 
 COPY . /app
 
