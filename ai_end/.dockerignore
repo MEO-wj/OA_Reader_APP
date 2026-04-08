@@ -1,0 +1,13 @@
+.git
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+data/postgres_data
+docs

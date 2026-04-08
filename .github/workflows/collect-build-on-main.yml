@@ -1,0 +1,315 @@
+name: Collect Build (Main)
+
+on:
+  workflow_run:
+    workflows:
+      - APP EAS Build (Main)
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: EAS Build ID (required for manual trigger)
+        required: false
+        type: string
+      tag:
+        description: Release Tag (default: v-manual-<run_id>)
+        required: false
+        type: string
+      timeout_minutes:
+        description: Max wait minutes (default: 90)
+        required: false
+        default: "90"
+        type: string
+      poll_interval_seconds:
+        description: Poll interval seconds (default: 30)
+        required: false
+        default: "30"
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  collect-build:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install EAS CLI
+        run: |
+          set -euo pipefail
+          npm install -g eas-cli@18.3.0
+
+      - name: Install app dependencies
+        working-directory: app_end
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+
+      - name: Download build metadata from trigger run
+        if: ${{ github.event_name == 'workflow_run' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: eas-build-meta-main
+          path: /tmp/eas-meta
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve collect parameters
+        id: resolve
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            BUILD_ID="${{ inputs.build_id }}"
+            TAG="${{ inputs.tag }}"
+            TIMEOUT_MINUTES="${{ inputs.timeout_minutes }}"
+            POLL_INTERVAL_SECONDS="${{ inputs.poll_interval_seconds }}"
+          else
+            META_FILE="/tmp/eas-meta/eas-build-meta.json"
+            if [ ! -f "$META_FILE" ]; then
+              echo "Missing build metadata artifact: $META_FILE"
+              exit 1
+            fi
+
+            BUILD_ID="$(jq -r '.build_id // empty' "$META_FILE")"
+            TAG="$(jq -r '.tag // empty' "$META_FILE")"
+            TIMEOUT_MINUTES="90"
+            POLL_INTERVAL_SECONDS="30"
+          fi
+
+          if [ -z "$BUILD_ID" ]; then
+            echo "build_id is required. For manual run, please provide workflow input build_id."
+            exit 1
+          fi
+          BUILD_ID="$(echo "$BUILD_ID" | tr -d '\r\n\t ')"
+
+          if [ -z "$TAG" ]; then
+            TAG="v-manual-${GITHUB_RUN_ID}"
+          fi
+
+          if ! [[ "$TIMEOUT_MINUTES" =~ ^[0-9]+$ ]]; then
+            echo "timeout_minutes must be an integer"
+            exit 1
+          fi
+
+          if ! [[ "$POLL_INTERVAL_SECONDS" =~ ^[0-9]+$ ]]; then
+            echo "poll_interval_seconds must be an integer"
+            exit 1
+          fi
+
+          if [ "$POLL_INTERVAL_SECONDS" -lt 10 ]; then
+            echo "poll_interval_seconds must be >= 10"
+            exit 1
+          fi
+
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "timeout_minutes=$TIMEOUT_MINUTES" >> "$GITHUB_OUTPUT"
+          echo "poll_interval_seconds=$POLL_INTERVAL_SECONDS" >> "$GITHUB_OUTPUT"
+
+      - name: Poll EAS build status
+        id: poll
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          BUILD_ID: ${{ steps.resolve.outputs.build_id }}
+          TIMEOUT_MINUTES: ${{ steps.resolve.outputs.timeout_minutes }}
+          POLL_INTERVAL_SECONDS: ${{ steps.resolve.outputs.poll_interval_seconds }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p /tmp/eas-diag
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "EXPO_TOKEN is required"
+            exit 1
+          fi
+          cd app_end
+          echo "PWD=$(pwd)"
+
+          {
+            echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "pwd=$(pwd)"
+            echo "build_id=$BUILD_ID"
+            echo "timeout_minutes=$TIMEOUT_MINUTES"
+            echo "poll_interval_seconds=$POLL_INTERVAL_SECONDS"
+            echo "node=$(node -v)"
+            echo "npm=$(npm -v)"
+            echo "eas=$(eas --version)"
+          } | tee /tmp/eas-diag/runtime.txt
+
+          ls -la > /tmp/eas-diag/ls_app_end.txt || true
+          sed -n '1,200p' app.json > /tmp/eas-diag/app.json.head.txt || true
+          sed -n '1,200p' eas.json > /tmp/eas-diag/eas.json.head.txt || true
+
+          EXPO_DEBUG=1 eas whoami > /tmp/eas-diag/whoami.out 2> /tmp/eas-diag/whoami.err
+
+          DEADLINE=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
+
+          while true; do
+            if ! EXPO_DEBUG=1 eas build:view "$BUILD_ID" --json > /tmp/eas-build-view.json 2>/tmp/eas-build-view.err; then
+              echo "eas build:view failed for build ID: $BUILD_ID, fallback to build:list lookup"
+              echo "---- eas stderr ----"
+              cat /tmp/eas-build-view.err || true
+              echo "--------------------"
+              cp /tmp/eas-build-view.err /tmp/eas-diag/build-view.err || true
+              cp /tmp/eas-build-view.json /tmp/eas-diag/build-view.out || true
+
+              if ! EXPO_DEBUG=1 eas build:list --platform android --limit 100 --json > /tmp/eas-build-list.json 2>/tmp/eas-build-list.err; then
+                echo "---- eas list stderr ----"
+                cat /tmp/eas-build-list.err || true
+                echo "-------------------------"
+                cp /tmp/eas-build-list.err /tmp/eas-diag/build-list.err || true
+                exit 1
+              fi
+
+              cp /tmp/eas-build-list.json /tmp/eas-diag/build-list.out || true
+              jq --arg id "$BUILD_ID" 'map(select(.id == $id)) | first // {}' /tmp/eas-build-list.json > /tmp/eas-build-view.json
+              if [ "$(jq -r 'keys | length' /tmp/eas-build-view.json)" = "0" ]; then
+                echo "Build ID not found in build:list result: $BUILD_ID"
+                cp /tmp/eas-build-view.json /tmp/eas-diag/build-view.filtered.json || true
+                exit 1
+              fi
+            fi
+            STATUS="$(jq -r '.status // empty' /tmp/eas-build-view.json | tr '[:lower:]' '[:upper:]')"
+            echo "Current status: ${STATUS:-UNKNOWN}"
+
+            if [ "$STATUS" = "FINISHED" ]; then
+              break
+            fi
+
+            if [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELED" ] || [ "$STATUS" = "CANCELLED" ] || [ "$STATUS" = "FAILED" ]; then
+              echo "EAS build failed with status: $STATUS"
+              cat /tmp/eas-build-view.json
+              exit 1
+            fi
+
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "Timeout while waiting for EAS build: $BUILD_ID"
+              exit 1
+            fi
+
+            sleep "$POLL_INTERVAL_SECONDS"
+          done
+
+          BUILD_URL="$(jq -r '.artifacts.applicationArchiveUrl // .artifacts.buildUrl // empty' /tmp/eas-build-view.json)"
+          if [ -z "$BUILD_URL" ]; then
+            echo "Build finished but no downloadable artifact URL found"
+            cat /tmp/eas-build-view.json
+            exit 1
+          fi
+
+          echo "build_url=$BUILD_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Print EAS diagnostics
+        if: ${{ always() }}
+        run: |
+          set +e
+          echo "===== /tmp/eas-diag/runtime.txt ====="
+          cat /tmp/eas-diag/runtime.txt || true
+          echo "===== /tmp/eas-diag/whoami.out ====="
+          cat /tmp/eas-diag/whoami.out || true
+          echo "===== /tmp/eas-diag/whoami.err ====="
+          cat /tmp/eas-diag/whoami.err || true
+          echo "===== /tmp/eas-diag/build-view.err ====="
+          cat /tmp/eas-diag/build-view.err || true
+          echo "===== /tmp/eas-diag/build-view.out ====="
+          cat /tmp/eas-diag/build-view.out || true
+          echo "===== /tmp/eas-diag/build-list.err ====="
+          cat /tmp/eas-diag/build-list.err || true
+          echo "===== /tmp/eas-diag/build-list.out ====="
+          cat /tmp/eas-diag/build-list.out || true
+
+      - name: Download APK artifact
+        id: download
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+          BUILD_URL: ${{ steps.poll.outputs.build_url }}
+        run: |
+          set -euo pipefail
+
+          OUTPUT_DIR="${GITHUB_WORKSPACE}/output"
+          APK_FILE="${OUTPUT_DIR}/oa-reader-${TAG}.apk"
+
+          mkdir -p "$OUTPUT_DIR"
+          curl -fL "$BUILD_URL" -o "$APK_FILE"
+
+          if [ ! -s "$APK_FILE" ]; then
+            echo "Downloaded APK is empty"
+            exit 1
+          fi
+
+          ls -lh "$APK_FILE"
+          sha256sum "$APK_FILE"
+          echo "apk_file=$APK_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            PREV_TAG=$(git describe --tags --abbrev=0 "refs/tags/${TAG}^" 2>/dev/null || echo "")
+            if [ -n "$PREV_TAG" ]; then
+              echo "## Updates" > release_notes.txt
+              git log "$PREV_TAG..refs/tags/${TAG}" --pretty=format:"- %s" >> release_notes.txt
+            else
+              echo "## Initial Release" > release_notes.txt
+              git log "refs/tags/${TAG}" --pretty=format:"- %s" -10 >> release_notes.txt
+            fi
+          else
+            echo "## Manual Collect Release (Main)" > release_notes.txt
+            echo "- Source build ID: ${{ steps.resolve.outputs.build_id }}" >> release_notes.txt
+            echo "- Branch: main" >> release_notes.txt
+            echo "- Generated at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> release_notes.txt
+          fi
+
+      - name: Upload APK as artifact (debug)
+        uses: actions/upload-artifact@v4
+        with:
+          name: oa-reader-apk-main
+          path: ${{ steps.download.outputs.apk_file }}
+          retention-days: 7
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+          APK_FILE: ${{ steps.download.outputs.apk_file }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK_FILE#oa-reader-${TAG}.apk" --clobber
+            gh release edit "$TAG" --notes-file release_notes.txt
+          else
+            gh release create "$TAG" "$APK_FILE#oa-reader-${TAG}.apk" \
+              --title "OA Reader $TAG (Main)" \
+              --notes-file release_notes.txt
+          fi
+
+          echo "GitHub release published: $TAG"
+
+      - name: Collect summary
+        run: |
+          set -euo pipefail
+          echo "## EAS Build Collected (Main)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build ID: \`${{ steps.resolve.outputs.build_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`${{ steps.resolve.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"

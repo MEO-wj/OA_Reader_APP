@@ -75,3 +75,6 @@ worktrees/
 
 expo-env.d.ts
 # @end expo-cli
+
+uploads
+data/

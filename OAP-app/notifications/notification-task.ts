@@ -23,6 +23,11 @@ const JITTER_RANGE_MS = 15 * 60 * 1000; // ±15分钟随机抖动
 
 let notificationHandlerReady = false;
 
+type ParsedNotificationArticle = {
+  createdAt: number;
+  summary: string;
+};
+
 function ensureNotificationHandler(Notifications: typeof import('expo-notifications')) {
   if (notificationHandlerReady) {
     return;
@@ -30,6 +35,8 @@ function ensureNotificationHandler(Notifications: typeof import('expo-notificati
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       shouldPlaySound: false,
       shouldSetBadge: false,
     }),
@@ -198,7 +205,9 @@ TaskManager.defineTask(TASK_NAME, async () => {
       .filter((item: { createdAt: number }) => item.createdAt > 0)
       .sort((a: { createdAt: number }, b: { createdAt: number }) => b.createdAt - a.createdAt);
 
-    const newItems = since ? parsed.filter((item) => item.createdAt > since) : parsed;
+    const newItems = since
+      ? parsed.filter((item: ParsedNotificationArticle) => item.createdAt > since)
+      : parsed;
     if (newItems.length === 0) {
       await setNextAllowedAt(buildNextAllowedAt(nowMs));
       await record('no_new_items', '无新增文章');
@@ -212,11 +221,15 @@ TaskManager.defineTask(TASK_NAME, async () => {
         await notifySingle(item.summary);
       }
     } else {
-      const summaries = newItems.slice(0, 3).map((item) => item.summary);
+      const summaries = newItems
+        .slice(0, 3)
+        .map((item: ParsedNotificationArticle) => item.summary);
       await notifyCombined(summaries, newItems.length);
     }
 
-    const maxCreatedAt = Math.max(...newItems.map((item) => item.createdAt));
+    const maxCreatedAt = Math.max(
+      ...newItems.map((item: ParsedNotificationArticle) => item.createdAt)
+    );
     await setLastSince(maxCreatedAt);
     await setNextAllowedAt(buildNextAllowedAt(nowMs));
     await record('new_articles', `新增 ${newItems.length} 条`, newItems.length);
@@ -232,7 +245,7 @@ export async function registerNotificationTask() {
   if (Platform.OS !== 'android' || isExpoGo()) {
     return;
   }
-  const tasks = await BackgroundFetch.getRegisteredTasksAsync();
+  const tasks = await TaskManager.getRegisteredTasksAsync();
   const alreadyRegistered = tasks.some((task) => task.taskName === TASK_NAME);
   if (alreadyRegistered) {
     return;
@@ -452,7 +465,9 @@ export async function delayedPollTest(
       .sort((a: { createdAt: number }, b: { createdAt: number }) => b.createdAt - a.createdAt);
 
     // 计算新增文章
-    const newItems = since ? parsed.filter((item) => item.createdAt > since) : parsed;
+    const newItems = since
+      ? parsed.filter((item: ParsedNotificationArticle) => item.createdAt > since)
+      : parsed;
 
     // 发送通知
     if (newItems.length === 0) {
@@ -473,12 +488,16 @@ export async function delayedPollTest(
         await notifySingle(item.summary);
       }
     } else {
-      const summaries = newItems.slice(0, 3).map((item) => item.summary);
+      const summaries = newItems
+        .slice(0, 3)
+        .map((item: ParsedNotificationArticle) => item.summary);
       await notifyCombined(summaries, newItems.length);
     }
 
     // 发送测试完成通知
-    const maxCreatedAt = Math.max(...newItems.map((item) => item.createdAt));
+    const maxCreatedAt = Math.max(
+      ...newItems.map((item: ParsedNotificationArticle) => item.createdAt)
+    );
     await setLastSince(maxCreatedAt);
     await setNextAllowedAt(buildNextAllowedAt(nowMs));
     await notifyTestResult(`检查完成：发现 ${newItems.length} 篇新文章`);

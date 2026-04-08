@@ -1,34 +1,51 @@
+import { useCallback, useEffect, useState } from 'react';
 
-import { useEffect, useState } from 'react';
-import { getUserProfileRaw } from '@/storage/auth-storage';
-
-type UserProfile = {
-  display_name?: string;
-  username?: string;
-  is_vip?: boolean;
-  vip_expired_at?: string;
-};
+import { refreshProfileCache } from '@/services/profile';
+import type { UserProfile } from '@/types/profile';
+import { getUserProfile, subscribeUserProfile } from '@/storage/auth-storage';
 
 export function useUserProfile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isProfileLoaded, setIsProfileLoaded] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    getUserProfileRaw().then((value) => {
-      if (!mounted) {
-        return;
-      }
-      try {
-        const parsed = value ? (JSON.parse(value) as UserProfile) : null;
-        setProfile(parsed);
-      } catch {
-        setProfile(null);
-      }
-    });
-    return () => {
-      mounted = false;
-    };
+  const reloadProfile = useCallback(async () => {
+    const nextProfile = await getUserProfile();
+    setProfile(nextProfile);
+    setIsProfileLoaded(true);
   }, []);
 
-  return profile;
+  useEffect(() => {
+    void reloadProfile();
+    return subscribeUserProfile(() => {
+      void reloadProfile();
+    });
+  }, [reloadProfile]);
+
+  const syncProfileFromRemote = useCallback(async () => {
+    setIsSyncing(true);
+    setSyncError(null);
+    try {
+      const nextProfile = await refreshProfileCache();
+      setProfile(nextProfile);
+      setIsProfileLoaded(true);
+      return nextProfile;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '资料同步失败';
+      setSyncError(message);
+      throw error;
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  return {
+    profile,
+    isProfileLoaded,
+    isSyncing,
+    syncError,
+    reloadProfile,
+    syncProfileFromRemote,
+  };
 }

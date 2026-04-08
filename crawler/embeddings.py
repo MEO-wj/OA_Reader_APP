@@ -10,9 +10,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-import requests
-
 from crawler.config import Config
+from crawler.utils import http_post
 
 
 class Embedder:
@@ -54,34 +53,29 @@ class Embedder:
         }
         payload = {"model": cfg.embed_model, "input": texts}
         
-        try:
-            # 发送 API 请求
-            resp = requests.post(cfg.embed_base_url, json=payload, headers=headers, timeout=60)
-            
-            # 检查响应状态码
-            if resp.status_code != 200:
-                print(f"Embedding API 状态码异常: {resp.status_code}")
-                return None
-                
-            # 解析响应数据
-            data = resp.json()
-            items = data.get("data") or []
-            embeddings: List[List[float]] = []
-            
-            # 提取向量数据
-            for entry in items:
-                emb = entry.get("embedding")
-                if isinstance(emb, list):
-                    embeddings.append(emb)
-            
-            # 验证向量数量是否与输入文本数量一致
-            if len(embeddings) != len(texts):
-                print("Embedding 数量与输入不一致")
-                return None
-                
-            return embeddings
-            
-        except requests.RequestException as exc:
-            # 处理请求异常
-            print(f"调用 Embedding 失败: {exc}")
+        resp = http_post(cfg.embed_base_url, payload=payload, headers=headers, timeout=60)
+        if resp is None:
             return None
+
+        # 检查响应状态码
+        if resp.status_code != 200:
+            print(f"Embedding API 状态码异常: {resp.status_code}")
+            return None
+
+        # 解析响应数据
+        data = resp.json()
+        items = data.get("data") or []
+        embeddings: List[List[float]] = []
+
+        # 提取向量数据
+        for entry in items:
+            emb = entry.get("embedding")
+            if isinstance(emb, list):
+                embeddings.append(emb)
+
+        # 验证向量数量是否与输入文本数量一致
+        if len(embeddings) != len(texts):
+            print("Embedding 数量与输入不一致")
+            return None
+
+        return embeddings

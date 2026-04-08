@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CaretLeft, Code, Info, Timer } from 'phosphor-react-native';
-import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
 import { isExpoGo } from '@/notifications/notification-env';
 import { AmbientBackground } from '@/components/ambient-background';
 import { TopBar } from '@/components/top-bar';
@@ -80,7 +80,7 @@ type DiagnosticStatus = {
 
 export default function DeveloperSettingsScreen() {
   const router = useRouter();
-  const profile = useUserProfile();
+  const { profile } = useUserProfile();
   const displayName = profile?.display_name || profile?.username || '';
   const isAdmin = displayName.trim().toLowerCase() === 'admin';
   const [logs, setLogs] = useState<NotificationPollLog[]>([]);
@@ -95,7 +95,7 @@ export default function DeveloperSettingsScreen() {
     const nextAllowedAt = await getNextAllowedAt();
     let taskRegistered = false;
     try {
-      const tasks = await BackgroundFetch.getRegisteredTasksAsync();
+      const tasks = await TaskManager.getRegisteredTasksAsync();
       taskRegistered = tasks.some((task) => task.taskName === 'oap-articles-background-fetch');
     } catch {
       taskRegistered = false;

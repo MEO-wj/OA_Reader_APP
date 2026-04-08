@@ -1,26 +1,22 @@
-
 import { useEffect, useState } from 'react';
-import { getUserProfileRaw } from '@/storage/auth-storage';
+
+import { getUserProfile, subscribeUserProfile } from '@/storage/auth-storage';
+import { getDisplayName } from '@/utils/profile';
 
 export function useDisplayName(defaultName = '用户') {
   const [displayName, setDisplayName] = useState<string>(defaultName);
 
   useEffect(() => {
-    let mounted = true;
-    getUserProfileRaw().then((value) => {
-      if (!mounted) {
-        return;
-      }
-      try {
-        const parsed = value ? JSON.parse(value) : {};
-        setDisplayName(parsed?.display_name || parsed?.username || defaultName);
-      } catch {
-        setDisplayName(defaultName);
-      }
-    });
-    return () => {
-      mounted = false;
+    const loadDisplayName = async () => {
+      const profile = await getUserProfile();
+      setDisplayName(getDisplayName(profile, defaultName));
     };
+
+    void loadDisplayName();
+
+    return subscribeUserProfile(() => {
+      void loadDisplayName();
+    });
   }, [defaultName]);
 
   return displayName;

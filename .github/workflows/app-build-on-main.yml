@@ -1,0 +1,117 @@
+name: APP EAS Build (Main)
+
+on:
+  push:
+    tags: ['v*.*.*']
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eas-build-main
+  cancel-in-progress: false
+
+env:
+  APP_PATH: OAP-app
+
+jobs:
+  build-app-eas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install EAS CLI
+        run: |
+          npm install -g eas-cli@latest
+
+      - name: Install app dependencies
+        working-directory: ${{ env.APP_PATH }}
+        run: |
+          set -euo pipefail
+          npm ci
+
+      - name: Verify Expo auth
+        working-directory: ${{ env.APP_PATH }}
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "EXPO_TOKEN is required"
+            exit 1
+          fi
+          eas whoami
+
+      - name: Preflight Expo config
+        working-directory: ${{ env.APP_PATH }}
+        run: |
+          set -euo pipefail
+          bunx expo config --json > /tmp/expo-config.json
+          test -s /tmp/expo-config.json
+
+      - name: Trigger EAS build (non-blocking)
+        id: eas_build
+        working-directory: ${{ env.APP_PATH }}
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          BUILD_JSON=$(eas build \
+            --platform android \
+            --profile production \
+            --non-interactive \
+            --no-wait \
+            --json)
+
+          echo "$BUILD_JSON" > /tmp/eas-build.json
+
+          BUILD_ID=$(jq -r 'if type=="array" then (.[0].id // empty) else (.id // empty) end' /tmp/eas-build.json)
+          BUILD_PAGE_URL=$(jq -r 'if type=="array" then (.[0].buildDetailsPageUrl // empty) else (.buildDetailsPageUrl // empty) end' /tmp/eas-build.json)
+
+          if [ -z "$BUILD_ID" ]; then
+            echo "Failed to get build ID from EAS output"
+            cat /tmp/eas-build.json
+            exit 1
+          fi
+
+          mkdir -p /tmp/eas-meta
+          cat > /tmp/eas-meta/eas-build-meta.json <<EOF
+          {
+            "build_id": "$BUILD_ID",
+            "build_page_url": "$BUILD_PAGE_URL",
+            "tag": "${GITHUB_REF_NAME}",
+            "platform": "android",
+            "profile": "production",
+            "branch": "main"
+          }
+          EOF
+
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "build_page_url=$BUILD_PAGE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: eas-build-meta-main
+          path: /tmp/eas-meta/eas-build-meta.json
+          retention-days: 7
+
+      - name: Build summary
+        run: |
+          set -euo pipefail
+          echo "## EAS Build Triggered (Main)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build ID: \`${{ steps.eas_build.outputs.build_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Details: ${{ steps.eas_build.outputs.build_page_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Note**: EAS build takes 10-20 minutes. After it completes, manually trigger \`Collect Build (Main)\` workflow to download APK and create release." >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,114 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-03-03",
+  "test_cases": [
+    {
+      "id": "A1",
+      "priority": "P0",
+      "category": "API与SSE基础",
+      "name": "健康检查",
+      "endpoint": "/health",
+      "method": "GET",
+      "expected": {
+        "status_code": 200,
+        "body": {"status": "ok", "version": "0.1.0"}
+      }
+    },
+    {
+      "id": "A2",
+      "priority": "P0",
+      "category": "API与SSE基础",
+      "name": "技能列表",
+      "endpoint": "/skills",
+      "method": "GET",
+      "expected": {
+        "status_code": 200,
+        "required_skills": ["policy-retrieval", "general-guidance", "general-assessment"]
+      }
+    },
+    {
+      "id": "A3",
+      "priority": "P0",
+      "category": "API与SSE基础",
+      "name": "SSE基本事件顺序",
+      "type": "chat",
+      "input": "你好",
+      "expected": {
+        "events": ["start", "delta", "done"],
+        "has_usage": true
+      }
+    },
+    {
+      "id": "B1",
+      "priority": "P0",
+      "category": "技能系统与read_reference",
+      "name": "规划技能触发",
+      "type": "chat",
+      "input": "我刚入职新部门，比较迷茫，帮我做个接下来3个月规划。",
+      "expected": {
+        "skill_call": ["general-guidance"]
+      },
+      "evaluation_criteria": {
+        "expected_skills": ["general-guidance"],
+        "tool_chain": "应调用 general-guidance 技能"
+      }
+    },
+    {
+      "id": "B2",
+      "priority": "P0",
+      "category": "技能系统与read_reference",
+      "name": "评估技能触发",
+      "type": "chat",
+      "input": "我想先做个职业兴趣和性格快速评估。",
+      "expected": {
+        "skill_call": ["general-assessment"]
+      },
+      "evaluation_criteria": {
+        "expected_skills": ["general-assessment"],
+        "tool_chain": "应调用 general-assessment 技能"
+      }
+    },
+    {
+      "id": "C1",
+      "priority": "P0",
+      "category": "政策检索",
+      "name": "政策召回",
+      "type": "chat",
+      "input": "帮我查一下公司内部差旅报销相关制度。",
+      "expected": {
+        "skill_call": ["policy-retrieval"]
+      },
+      "evaluation_criteria": {
+        "expected_skills": ["policy-retrieval"]
+      }
+    },
+    {
+      "id": "D1",
+      "priority": "P0",
+      "category": "榜样检索",
+      "name": "案例分享",
+      "type": "chat",
+      "input": "有没有同事分享过项目经验和案例？给我2个参考。",
+      "expected": {
+        "skill_call": ["role-model-retrieval"]
+      },
+      "evaluation_criteria": {
+        "expected_skills": ["role-model-retrieval"]
+      }
+    },
+    {
+      "id": "E1",
+      "priority": "P0",
+      "category": "院校查询",
+      "name": "按条件查资源",
+      "type": "chat",
+      "input": "我负责新项目启动，能推荐哪些学习资源？",
+      "expected": {
+        "skill_call": ["resource-retrieval"]
+      },
+      "evaluation_criteria": {
+        "expected_skills": ["resource-retrieval"]
+      }
+    }
+  ]
+}

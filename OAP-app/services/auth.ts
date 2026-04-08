@@ -3,9 +3,11 @@ import { setAuthToken } from '@/hooks/use-auth-token';
 import {
   clearAuthStorage,
   getRefreshToken,
+  getUserProfile,
   setRefreshToken,
   setUserProfileRaw,
 } from '@/storage/auth-storage';
+import { mergeAuthUserIntoProfile } from '@/services/auth-profile-cache';
 
 type RefreshResponse = {
   access_token: string;
@@ -42,8 +44,9 @@ export async function refreshSessionOnForeground() {
       }
 
       const data = (await resp.json()) as RefreshResponse;
+      const mergedProfile = mergeAuthUserIntoProfile(await getUserProfile(), data.user || {});
       await setRefreshToken(data.refresh_token || null);
-      await setUserProfileRaw(JSON.stringify(data.user || {}));
+      await setUserProfileRaw(JSON.stringify(mergedProfile));
       await setAuthToken(data.access_token || null);
       return true;
     } catch (error) {

@@ -1,0 +1,89 @@
+# OAP Docker Compose
+# 统一编排 postgres + backend 服务
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.200.0.0/16
+
+services:
+  postgres:
+    image: docker.1ms.run/ankane/pgvector:latest
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oa-reader}
+      POSTGRES_USER: ${POSTGRES_USER:-Unself}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Unself-oa-reader-5}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${HOST_POSTGRES_PORT:-5430}:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-Unself} -d ${POSTGRES_DB:-oa-reader}"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-Unself}:${POSTGRES_PASSWORD:-Unself-oa-reader-5}@postgres:5432/${POSTGRES_DB:-oa-reader}?sslmode=disable
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-your-jwt-secret-key-change-in-production}
+      AUTH_REFRESH_HASH_KEY: ${AUTH_REFRESH_HASH_KEY:-your-refresh-hash-key}
+      AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-168h}
+      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-168h}
+      AUTH_PASSWORD_COST: ${AUTH_PASSWORD_COST:-12}
+      AUTH_ALLOW_AUTO_USER_CREATION: ${AUTH_ALLOW_AUTO_USER_CREATION:-true}
+      CAMPUS_AUTH_ENABLED: ${CAMPUS_AUTH_ENABLED:-true}
+      CAMPUS_AUTH_URL: ${CAMPUS_AUTH_URL:-http://a.stu.edu.cn/ac_portal/login.php}
+      CAMPUS_AUTH_TIMEOUT: ${CAMPUS_AUTH_TIMEOUT:-10}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+      RATE_LIMIT_PER_DAY: ${RATE_LIMIT_PER_DAY:-1000}
+      RATE_LIMIT_PER_HOUR: ${RATE_LIMIT_PER_HOUR:-100}
+      AI_END_URL: ${AI_END_URL:-http://ai_end:4421}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:${HOST_BACKEND_PORT:-4420}}
+      UPLOAD_ROOT_DIR: ${UPLOAD_ROOT_DIR:-uploads}
+      AUTH_DEBUG: ${AUTH_DEBUG:-false}
+    ports:
+      - "${HOST_BACKEND_PORT:-4420}:4420"
+    volumes:
+      - ./data/backend_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+
+  ai_end:
+    build:
+      context: ./ai_end
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${POSTGRES_USER:-Unself}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-Unself-oa-reader-5}
+      DB_NAME: ${POSTGRES_DB:-oa-reader}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-deepseek-v3.2}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      RERANK_MODEL: ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+      RERANK_MAX_CANDIDATES: ${RERANK_MAX_CANDIDATES:-40}
+      AUTO_MIGRATE: ${AI_AUTO_MIGRATE:-true}
+      AUTO_IMPORT: ${AI_AUTO_IMPORT:-true}
+    ports:
+      - "${HOST_AI_END_PORT:-4421}:4421"
+    command: >
+      uv run uvicorn src.api.main:app
+      --host 0.0.0.0
+      --port 4421
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always

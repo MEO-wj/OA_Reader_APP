@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from 'react';
-import { Asset } from 'expo-asset';
-import * as FileSystem from 'expo-file-system';
+
+const MERMAID_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js';
 
 export function useMermaidScript() {
   const [mermaidScript, setMermaidScript] = useState<string | null>(null);
@@ -10,10 +10,11 @@ export function useMermaidScript() {
     let mounted = true;
     const loadMermaid = async () => {
       try {
-        const asset = Asset.fromModule(require('../assets/mermaid.min.txt'));
-        await asset.downloadAsync();
-        const uri = asset.localUri ?? asset.uri;
-        const script = await FileSystem.readAsStringAsync(uri);
+        const response = await fetch(MERMAID_SCRIPT_URL);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch Mermaid script: ${response.status}`);
+        }
+        const script = await response.text();
         if (mounted) {
           setMermaidScript(script);
         }

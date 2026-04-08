@@ -1,0 +1,60 @@
+package model
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestUserProfileUserIDUsesUUIDUniqueIndex(t *testing.T) {
+	field, _ := reflect.TypeOf(UserProfile{}).FieldByName("UserID")
+	tag := field.Tag.Get("gorm")
+	if !strings.Contains(tag, "type:uuid") || !strings.Contains(tag, "uniqueIndex") {
+		t.Fatalf("unexpected UserProfile.UserID tag: %s", tag)
+	}
+}
+
+func TestSkillReferenceHasCompositeUniqueIndexTag(t *testing.T) {
+	typ := reflect.TypeOf(SkillReference{})
+	skillID, _ := typ.FieldByName("SkillID")
+	filePath, _ := typ.FieldByName("FilePath")
+
+	if !strings.Contains(skillID.Tag.Get("gorm"), "uniqueIndex:idx_skill_file") {
+		t.Fatalf("SkillID missing composite unique index tag")
+	}
+	if !strings.Contains(filePath.Tag.Get("gorm"), "uniqueIndex:idx_skill_file") {
+		t.Fatalf("FilePath missing composite unique index tag")
+	}
+}
+
+func TestConversationAndSessionUseDistinctCompositeUniqueIndexTags(t *testing.T) {
+	conversationType := reflect.TypeOf(Conversation{})
+	conversationUserID, _ := conversationType.FieldByName("UserID")
+	conversationID, _ := conversationType.FieldByName("ConversationID")
+
+	if !strings.Contains(conversationUserID.Tag.Get("gorm"), "uniqueIndex:idx_conversations_user_conv") {
+		t.Fatalf("Conversation.UserID missing idx_conversations_user_conv")
+	}
+	if !strings.Contains(conversationID.Tag.Get("gorm"), "uniqueIndex:idx_conversations_user_conv") {
+		t.Fatalf("Conversation.ConversationID missing idx_conversations_user_conv")
+	}
+
+	sessionType := reflect.TypeOf(ConversationSession{})
+	sessionUserID, _ := sessionType.FieldByName("UserID")
+	sessionConversationID, _ := sessionType.FieldByName("ConversationID")
+
+	if !strings.Contains(sessionUserID.Tag.Get("gorm"), "uniqueIndex:idx_sessions_user_conv") {
+		t.Fatalf("ConversationSession.UserID missing idx_sessions_user_conv")
+	}
+	if !strings.Contains(sessionConversationID.Tag.Get("gorm"), "uniqueIndex:idx_sessions_user_conv") {
+		t.Fatalf("ConversationSession.ConversationID missing idx_sessions_user_conv")
+	}
+}
+
+func TestAuthSessionUsesDedicatedUserIndexName(t *testing.T) {
+	field, _ := reflect.TypeOf(Session{}).FieldByName("UserID")
+	tag := field.Tag.Get("gorm")
+	if !strings.Contains(tag, "index:idx_auth_sessions_user_id") {
+		t.Fatalf("unexpected Session.UserID tag: %s", tag)
+	}
+}

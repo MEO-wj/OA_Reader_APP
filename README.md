@@ -391,10 +391,17 @@ npm run lint
 
 ### 快速部署
 
-**后端（Docker）：**
+**后端（Docker，单 .env）：**
 ```bash
-cd backend
-docker-compose up -d
+# 1) 准备根目录 .env
+cp .env.example .env
+
+# 2) 按当前目录这套环境修改端口（避免同机冲突）
+# HOST_POSTGRES_PORT=5430
+# HOST_BACKEND_PORT=4420
+
+# 3) 启动
+docker compose up -d --build
 ```
 
 **客户端（EAS Build）：**
