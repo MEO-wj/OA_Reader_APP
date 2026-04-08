@@ -30,6 +30,7 @@ class TestMemoryManagerV2ReturnContract:
         )
         db = MagicMock()
         db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
 
         with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
             manager = MemoryManager(user_id=uid, memory_db=db)
@@ -57,6 +58,7 @@ class TestMemoryManagerV2ReturnContract:
         )
         db = MagicMock()
         db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
 
         with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
             manager = MemoryManager(user_id=uid, memory_db=db)
@@ -86,6 +88,7 @@ class TestMemoryManagerV2ReturnContract:
         uid = "00000000-0000-0000-0008-000000000101"
         db = MagicMock()
         db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
 
         manager = MemoryManager(user_id=uid, memory_db=db)
         result = await manager.form_memory([])
@@ -104,6 +107,7 @@ class TestMemoryManagerV2ReturnContract:
         queue.submit = AsyncMock()
         db = MagicMock()
         db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
 
         # 无 messages 场景
         manager = MemoryManager(user_id=uid, api_queue=queue, memory_db=db)
@@ -137,6 +141,7 @@ class TestMemoryManagerV2ReturnContract:
         )
         db = MagicMock()
         db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
 
         with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
             manager = MemoryManager(user_id=uid, memory_db=db)
@@ -186,6 +191,7 @@ class TestMemoryManager:
 
         db = MagicMock()
         db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
 
         with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
             manager = MemoryManager(
@@ -488,6 +494,7 @@ class TestRetryProtocol:
         )
         db = MagicMock()
         db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
 
         with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
             manager = MemoryManager(user_id=uid, memory_db=db)
@@ -515,6 +522,7 @@ class TestRetryProtocol:
         )
         db = MagicMock()
         db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
 
         with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
             manager = MemoryManager(user_id=uid, memory_db=db)
@@ -546,6 +554,7 @@ class TestRetryProtocol:
         queue.submit = AsyncMock(side_effect=capture_submit)
         db = MagicMock()
         db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
 
         messages = [{"role": "user", "content": "你好"}]
 
@@ -559,10 +568,43 @@ class TestRetryProtocol:
         # 第 2 次 prompt 应包含错误信息（重试特征）
         retry_prompt = captured_prompts[1]
         assert "你好" in retry_prompt, "重试 prompt 应包含原始对话内容"
-        # 重试 prompt 不应包含任何已保存画像内容（如 confirmed、hypothesized 等字段值）
-        # 它只是一个带有错误提示的新 prompt，不含上次已保存的画像
-        assert "portrait" not in retry_prompt.lower() or "画像" in retry_prompt, \
-            "重试 prompt 不应包含已保存的画像文本"
+        assert "第1次尝试" in retry_prompt, "重试 prompt 应包含上次错误信息"
+        assert "请严格按要求输出合法 JSON" in retry_prompt, "重试 prompt 应包含修正指令"
+
+    @pytest.mark.asyncio
+    async def test_retry_prompt_does_not_include_existing_profile_section(self):
+        """重试 prompt 不应注入已有用户画像段落。"""
+        uid = "00000000-0000-0000-0008-000000000204"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            if len(captured_prompts) == 1:
+                return self._invalid_response()
+            return self._valid_v2_response()
+
+        queue.submit = AsyncMock(side_effect=capture_submit)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        # 模拟 DB 中有有效 v2 画像
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": '{"confirmed":{"identity":["大三学生"],"interests":["编程"],"constraints":[]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":["六级550分"],"pending_queries":["分数线"]}',
+        })
+
+        messages = [{"role": "user", "content": "你好"}]
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            result = await manager.form_memory(messages)
+
+        assert result["saved"] is True
+        assert len(captured_prompts) == 2, "应捕获 2 次 prompt"
+
+        retry_prompt = captured_prompts[1]
+        assert "已有用户画像（仅供参考" not in retry_prompt, \
+            "重试 prompt 不应包含已有用户画像段落"
 
     @pytest.mark.asyncio
     async def test_db_exception_is_not_retried_and_propagates(self):
@@ -573,6 +615,7 @@ class TestRetryProtocol:
         db = MagicMock()
         # 模拟 DB 写入异常
         db.save_profile = AsyncMock(side_effect=RuntimeError("数据库连接断开"))
+        db.get_profile = AsyncMock(return_value=None)
 
         with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
             manager = MemoryManager(user_id=uid, memory_db=db)
@@ -581,3 +624,157 @@ class TestRetryProtocol:
 
         # LLM 只调用了一次（DB 错误不应触发重试）
         queue.submit.assert_awaited_once()
+
+
+class TestExistingProfileInjection:
+    """已有画像注入首轮 prompt 测试（TDD RED → GREEN）。"""
+
+    @staticmethod
+    def _make_response(content: str) -> MagicMock:
+        return MagicMock(
+            choices=[MagicMock(message=MagicMock(content=content))]
+        )
+
+    @staticmethod
+    def _valid_v2_response() -> MagicMock:
+        return TestExistingProfileInjection._make_response(
+            '{"confirmed":{"identity":["大三"],"interests":["编程"],"constraints":[]},'
+            '"hypothesized":{"identity":[],"interests":[]},'
+            '"knowledge":{"confirmed_facts":["已确认"],"pending_queries":[]}}'
+        )
+
+    @pytest.mark.asyncio
+    async def test_first_prompt_includes_existing_profile_when_valid_v2(self):
+        """有效 v2 画像时，首轮 prompt 应包含已有用户画像段落。"""
+        uid = "00000000-0000-0000-0008-000000000300"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            return self._valid_v2_response()
+
+        queue.submit = AsyncMock(side_effect=capture_submit)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": '{"confirmed":{"identity":["大三学生"],"interests":["编程"],"constraints":["广州"]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":["六级550分"],"pending_queries":["分数线"]}',
+        })
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        first_prompt = captured_prompts[0]
+        assert "已有用户画像（仅供参考" in first_prompt, \
+            "首轮 prompt 应包含已有用户画像段落"
+        assert "已确认身份" in first_prompt, \
+            "首轮 prompt 应包含格式化的画像字段"
+
+    @pytest.mark.asyncio
+    async def test_first_prompt_skips_existing_profile_when_v1(self):
+        """v1 格式画像时，首轮 prompt 不应包含已有画像段落。"""
+        uid = "00000000-0000-0000-0008-000000000301"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            return self._valid_v2_response()
+
+        queue.submit = AsyncMock(side_effect=capture_submit)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": '{"hard_constraints":["广州"],"soft_constraints":["编程"],"risk_tolerance":"low","verified_facts":["用户是学生"]}',
+            "knowledge_text": '{}',
+        })
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        first_prompt = captured_prompts[0]
+        assert "已有用户画像（仅供参考" not in first_prompt, \
+            "v1 画像时首轮 prompt 不应包含已有画像段落"
+
+    @pytest.mark.asyncio
+    async def test_first_prompt_skips_existing_profile_when_invalid_json(self):
+        """非法 JSON 画像时，首轮 prompt 不应包含已有画像段落。"""
+        uid = "00000000-0000-0000-0008-000000000302"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            return self._valid_v2_response()
+
+        queue.submit = AsyncMock(side_effect=capture_submit)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": "this is not valid json{{{",
+            "knowledge_text": "",
+        })
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        first_prompt = captured_prompts[0]
+        assert "已有用户画像（仅供参考" not in first_prompt, \
+            "非法 JSON 画像时首轮 prompt 不应包含已有画像段落"
+
+    @pytest.mark.asyncio
+    async def test_first_prompt_skips_existing_profile_when_no_profile(self):
+        """无画像时，首轮 prompt 不应包含已有画像段落。"""
+        uid = "00000000-0000-0000-0008-000000000303"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            return self._valid_v2_response()
+
+        queue.submit = AsyncMock(side_effect=capture_submit)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        first_prompt = captured_prompts[0]
+        assert "已有用户画像（仅供参考" not in first_prompt, \
+            "无画像时首轮 prompt 不应包含已有画像段落"
+
+    @pytest.mark.asyncio
+    async def test_first_prompt_adjudicates_inferred_identity_from_existing_profile(self):
+        """已有画像注入时，也应对 confirmed.identity 做推断裁决。"""
+        uid = "00000000-0000-0000-0008-000000000304"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            return self._valid_v2_response()
+
+        queue.submit = AsyncMock(side_effect=capture_submit)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": '{"confirmed":{"identity":["可能是大三学生"],"interests":[],"constraints":[]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{}',
+        })
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        first_prompt = captured_prompts[0]
+        assert "已确认身份: 可能是大三学生" not in first_prompt, \
+            "推断型 identity 不应以已确认身份注入 prompt"
+        assert "推测身份: （来源未确认）可能是大三学生" in first_prompt, \
+            "推断型 identity 应降级并带来源前缀后注入 prompt"

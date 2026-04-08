@@ -93,7 +93,7 @@ class TestUserProfileIntegration:
 
         # Mock LLM 响应（v2 JSON 格式）
         mock_message = MagicMock()
-        mock_message.content = '{"confirmed":{"identity":["专硕学生"],"interests":["消化内科"],"constraints":["北京"]},"hypothesized":{"identity":[],"interests":[]},"confirmed_facts":[],"pending_queries":["分数线"]}'
+        mock_message.content = '{"confirmed":{"identity":["专硕学生"],"interests":["消化内科"],"constraints":["北京"]},"hypothesized":{"identity":[],"interests":[]},"knowledge":{"confirmed_facts":[],"pending_queries":["分数线"]}}'
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message = mock_message
@@ -108,6 +108,7 @@ class TestUserProfileIntegration:
                 mock_db = MagicMock()
                 mock_db.get_conversation = AsyncMock(return_value=SAMPLE_CONVERSATION)
                 mock_db.save_profile = AsyncMock()
+                mock_db.get_profile = AsyncMock(return_value=None)
                 MockDB.return_value = mock_db
 
                 client = ChatClient(config)

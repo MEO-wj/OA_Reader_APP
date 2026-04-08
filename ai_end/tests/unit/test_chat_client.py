@@ -822,6 +822,9 @@ class TestChatClientMemory:
         saved = {}
 
         class _FakeMemoryDB:
+            async def get_profile(self, _user_id):
+                return None
+
             async def save_profile(self, user_id, portrait_text, knowledge_text):
                 saved["user_id"] = user_id
                 saved["portrait_text"] = portrait_text

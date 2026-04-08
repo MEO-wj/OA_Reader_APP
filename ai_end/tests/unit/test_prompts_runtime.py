@@ -89,3 +89,8 @@ def test_form_memory_prompt_contains_v2_fields():
         assert field in p.FORM_MEMORY_PROMPT_TEMPLATE, (
             f"FORM_MEMORY_PROMPT_TEMPLATE 缺少 v2 字段: {field}"
         )
+
+
+def test_memory_prompt_contains_existing_profile_placeholder():
+    """验证 MEMORY_PROMPT_TEMPLATE 支持 existing_profile 占位符。"""
+    assert "{existing_profile}" in p.MEMORY_PROMPT_TEMPLATE

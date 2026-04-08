@@ -89,7 +89,7 @@ class MemoryManager:
         for attempt in range(1, max_attempts + 1):
             # 构建提示词：首次用原始 prompt，重试用带错误信息的 prompt
             if attempt == 1:
-                prompt = self._build_memory_prompt(messages)
+                prompt = await self._build_memory_prompt(messages)
             else:
                 prompt = self._build_retry_prompt(messages, last_error)
 
@@ -134,14 +134,95 @@ class MemoryManager:
             "knowledge_text": "",
         }
 
-    def _build_memory_prompt(self, messages: list[dict[str, Any]]) -> str:
+    async def _build_memory_prompt(self, messages: list[dict[str, Any]]) -> str:
         conversation = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
-        return MEMORY_PROMPT_TEMPLATE.format(conversation=conversation)
+        existing_profile = await self._load_existing_profile()
+        profile_section = ""
+        if existing_profile:
+            profile_section = (
+                "\n## 已有用户画像（仅供参考，请基于当前对话更新，冲突以当前对话为准）\n"
+                + existing_profile
+            )
+        return MEMORY_PROMPT_TEMPLATE.format(
+            conversation=conversation,
+            existing_profile=profile_section,
+        )
+
+    async def _load_existing_profile(self) -> str:
+        """从 DB 加载已有用户画像，校验 v2 格式后返回可读文本。
+
+        v1 或非法 JSON 返回空字符串（等效于无画像）。
+        DB 异常静默降级（画像注入是可选装饰，不应阻塞主流程）。
+        """
+        try:
+            profile = await self.memory_db.get_profile(self.user_id)
+        except Exception:
+            return ""
+        if not profile:
+            return ""
+
+        portrait_raw = profile.get("portrait_text", "") or ""
+        knowledge_raw = profile.get("knowledge_text", "") or ""
+
+        if not portrait_raw:
+            return ""
+
+        try:
+            portrait_data = json.loads(portrait_raw)
+        except (json.JSONDecodeError, TypeError):
+            return ""
+
+        if not isinstance(portrait_data, dict):
+            return ""
+
+        if not self._validate_v2_memory_schema(portrait_data):
+            return ""
+
+        # 注入已有画像前先复用统一裁决逻辑，避免推断项以 confirmed 身份进入 prompt。
+        self._adjudicate_identity(portrait_data)
+
+        sections: list[str] = []
+        confirmed = portrait_data.get("confirmed", {})
+        identity = self._normalize_string_list(confirmed.get("identity"))
+        if identity:
+            sections.append("已确认身份: " + ", ".join(identity))
+        interests = self._normalize_string_list(confirmed.get("interests"))
+        if interests:
+            sections.append("已确认兴趣: " + ", ".join(interests))
+        constraints = self._normalize_string_list(confirmed.get("constraints"))
+        if constraints:
+            sections.append("已确认约束: " + ", ".join(constraints))
+
+        hypothesized = portrait_data.get("hypothesized", {})
+        hypo_identity = self._normalize_string_list(hypothesized.get("identity"))
+        if hypo_identity:
+            sections.append("推测身份: " + ", ".join(hypo_identity))
+        hypo_interests = self._normalize_string_list(hypothesized.get("interests"))
+        if hypo_interests:
+            sections.append("推测兴趣: " + ", ".join(hypo_interests))
+
+        if knowledge_raw:
+            try:
+                knowledge_data = json.loads(knowledge_raw)
+                if isinstance(knowledge_data, dict):
+                    facts = self._normalize_string_list(knowledge_data.get("confirmed_facts"))
+                    if facts:
+                        sections.append("已确认事实: " + ", ".join(facts))
+                    queries = self._normalize_string_list(knowledge_data.get("pending_queries"))
+                    if queries:
+                        sections.append("待查询事项: " + ", ".join(queries))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        return "\n".join(sections) if sections else ""
 
     def _build_retry_prompt(self, messages: list[dict[str, Any]], last_error: str) -> str:
         """构建重试提示词：仅包含原始对话 + 上次错误信息，不追加已保存画像。"""
         conversation = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
-        base_prompt = MEMORY_PROMPT_TEMPLATE.format(conversation=conversation)
+        base_prompt = MEMORY_PROMPT_TEMPLATE.format(
+            conversation=conversation,
+            existing_profile="",
+        )
         return (
             f"{base_prompt}\n\n"
             f"【注意】上一次尝试失败，错误原因：{last_error}\n"
