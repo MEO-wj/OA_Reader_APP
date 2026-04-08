@@ -99,6 +99,6 @@ func newCORSConfig(cfg *config.Config) cors.Config {
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length", "ETag"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 	}
 }
