@@ -15,8 +15,6 @@ from src.chat.context_truncator import (
     truncate_search_documents_result,
     truncate_tool_output,
 )
-from src.chat.prompts_runtime import FORM_MEMORY_PROMPT_TEMPLATE
-from src.chat.utils import _sanitize_memory_text
 from src.core.skill_system import SkillSystem
 from src.core.tool_activation import should_enable_read_reference
 
@@ -258,7 +256,7 @@ async def handle_form_memory(
     conversation_id: str | None = None,
 ) -> str:
     """
-    处理 form_memory 工具调用
+    处理 form_memory 工具调用 — 薄适配层，委托给 MemoryManager 统一入口。
 
     Args:
         reason: 触发记忆形成的原因
@@ -266,7 +264,7 @@ async def handle_form_memory(
         conversation_id: 会话ID
 
     Returns:
-        记忆形成结果消息
+        记忆形成结果消息（用户可读字符串）
     """
     if not user_id:
         return "用户ID不存在，无法形成记忆。"
@@ -274,74 +272,24 @@ async def handle_form_memory(
     if not conversation_id:
         conversation_id = "default"
 
-    # 获取对话历史
     from src.db.memory import MemoryDB
+    from src.chat.memory_manager import MemoryManager
+
     db = MemoryDB()
     messages = await db.get_conversation(user_id, conversation_id)
 
     if not messages:
         return "对话历史为空，无需形成记忆。"
 
-    # 构建结构化浓缩 prompt
-    prompt = FORM_MEMORY_PROMPT_TEMPLATE.format(
-        conversation_lines=chr(10).join([f"{m['role']}: {m['content']}" for m in messages])
-    )
+    manager = MemoryManager(user_id=user_id, conversation_id=conversation_id, memory_db=db)
+    result = await manager.form_memory(messages)
 
-    # 调用 LLM 浓缩
-    from src.config.settings import Config
-    from openai import OpenAI
-
-    config = Config.load()
-    client = OpenAI(api_key=config.api_key, base_url=config.base_url)
-
-    response = await asyncio.to_thread(
-        client.chat.completions.create,
-        model=config.model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1000,
-        temperature=0.1,  # 低温度，提高一致性
-    )
-
-    content = response.choices[0].message.content or ""
-
-    # 清洗内容，去除 markdown 和 think 标签
-    content = _sanitize_memory_text(content)
-
-    # 解析画像和知识（支持结构化格式）
-    portrait_text = ""
-    knowledge_text = ""
-
-    # 尝试新格式：结构化标签
-    if "<必须满足>" in content:
-        # 提取各部分内容
-        import re
-
-        def extract_section(text, tag):
-            tag_name = tag.replace("<", "").replace(">", "")
-            # 使用 [\s\S]*? 替代 [^]*? 来匹配任意字符（包括换行）
-            pattern = rf'{tag}([\s\S]*?)</{tag_name}>'
-            match = re.search(pattern, text)
-            return match.group(1).strip() if match else ""
-
-        hard_constraints = extract_section(content, "<必须满足>")
-        soft_constraints = extract_section(content, "<优先考虑>")
-        risk_tolerance = extract_section(content, "<风险承受>")
-        verified_facts = extract_section(content, "<已确认事实>")
-        pending_queries = extract_section(content, "<待查询事项>")
-
-        # 合并为统一格式（与后续解析方法兼容）
-        portrait_text = f"必须满足：{hard_constraints}\n优先考虑：{soft_constraints}\n风险承受：{risk_tolerance}"
-        knowledge_text = f"已确认事实：{verified_facts}\n待查询：{pending_queries}"
-    # 尝试旧格式兼容
-    elif "【用户画像】" in content:
-        parts = content.split("【知识记忆】")
-        portrait_text = parts[0].replace("【用户画像】", "").strip()
-        knowledge_text = parts[1].strip() if len(parts) > 1 else ""
-
-    # 保存到数据库
-    await db.save_profile(user_id, portrait_text, knowledge_text)
-
-    return f"记忆已形成：\n【用户画像】{portrait_text}\n【知识记忆】{knowledge_text}"
+    if result["saved"]:
+        return f"记忆已形成：\n【用户画像】{result['portrait_text']}\n【知识记忆】{result['knowledge_text']}"
+    elif result["skip_reason"] == "max_retries_exceeded":
+        return f"记忆形成失败（已重试{result['attempts_used']}次）：{result['last_error']}"
+    else:
+        return f"记忆形成跳过：{result['skip_reason']}"
 
 
 def handle_tool_calls_sync(

@@ -34,87 +34,55 @@ class TestUserProfileIntegration:
     @pytest.mark.asyncio
     async def test_form_memory_trigger_and_save(self):
         """
-        测试 form_memory 的完整流程：触发 -> 生成 -> 储存
+        测试 form_memory 的完整流程：触发 -> 委托 MemoryManager -> 储存
 
-        1. 模拟用户对话（>=5轮后自动触发）
-        2. 验证 LLM 生成结构化画像
-        3. 验证保存到数据库
+        验证 tools 路径通过 MemoryManager 统一入口生成并保存记忆。
         """
         from src.chat.handlers import handle_form_memory
-        from src.db.memory import MemoryDB
         from unittest.mock import MagicMock
 
         uid_a = make_uuid("test_user_123")
 
-        # 1. Mock LLM 响应（结构化标签格式）
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = """### <必须满足>
-- 目标地域：北京
-- 学历要求：专硕
-- 英语水平：六级550分
+        fake_result = {
+            "saved": True,
+            "attempts_used": 1,
+            "last_error": "",
+            "skip_reason": "",
+            "portrait_text": '{"confirmed":{"identity":["专硕学生"],"interests":["内科学消化"],"constraints":["北京"]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":["六级550分"],"pending_queries":["消化内科分数线"]}',
+        }
 
-### <优先考虑>
-- 专业方向：内科学消化方向
+        with patch('src.db.memory.MemoryDB') as MockDB:
+            mock_db = MagicMock()
+            mock_db.get_conversation = AsyncMock(return_value=SAMPLE_CONVERSATION)
+            mock_db.save_profile = AsyncMock()
+            MockDB.return_value = mock_db
 
-### <风险承受>
-- 能接受二战
+            with patch('src.chat.memory_manager.MemoryManager') as MockMM:
+                mock_manager = MagicMock()
+                mock_manager.form_memory = AsyncMock(return_value=fake_result)
+                MockMM.return_value = mock_manager
 
-### <已确认事实>
-- 北京医学院有协和、北医、首医
-
-### <待查询事项>
-- 消化内科具体招生分数线"""
-
-        with patch('openai.OpenAI') as MockOpenAI:
-            mock_client = MagicMock()
-            mock_client.chat.completions.create = MagicMock(return_value=mock_response)
-            MockOpenAI.return_value = mock_client
-
-            # 2. Mock 数据库（在函数内部导入）
-            with patch('src.db.memory.MemoryDB') as MockDB:
-                mock_db = MagicMock()
-                mock_db.get_conversation = AsyncMock(return_value=SAMPLE_CONVERSATION)
-                mock_db.save_profile = AsyncMock()
-                MockDB.return_value = mock_db
-
-                # 3. 调用 form_memory
                 result = await handle_form_memory(
                     reason="用户明确表示这次先到这里",
                     user_id=uid_a,
                     conversation_id="test_conv_456"
                 )
 
-                # 4. 验证 LLM 被调用
-                assert mock_client.chat.completions.create.called, "LLM 应被调用"
+                # 验证委托给 MemoryManager
+                mock_manager.form_memory.assert_awaited_once()
 
-                # 5. 验证数据库保存
-                mock_db.save_profile.assert_called_once()
-                call_args = mock_db.save_profile.call_args
-                saved_user_id = call_args[0][0]
-
-                assert saved_user_id == uid_a, "用户ID应正确保存"
-
-                # 验证画像内容被正确解析
-                portrait_text = call_args[0][1]
-                knowledge_text = call_args[0][2]
-
-                assert "必须满足" in portrait_text or "hard_constraints" in portrait_text.lower(), \
-                    "画像应包含必须满足的信息"
-                assert "优先考虑" in portrait_text or "soft_constraints" in portrait_text.lower(), \
-                    "画像应包含偏好信息"
-
-                # 6. 验证返回结果
-                assert "记忆已形成" in result, "应返回记忆形成消息"
-                assert "用户画像" in result or "portrait" in result.lower(), \
-                    "返回结果应包含画像信息"
+                # 验证返回结果
+                assert "记忆已形成" in result
+                assert "专硕学生" in result
+                assert "北京" in result
 
     @pytest.mark.asyncio
     async def test_auto_trigger_on_5_rounds(self):
         """
         测试自动触发：对话达到5轮时自动调用 form_memory
 
-        验证 ChatClient 在对话轮数 >= 5 时自动触发画像生成
+        验证自动路径通过 MemoryManager 统一入口生成记忆。
         """
         from src.chat.client import ChatClient
         from src.config.settings import Config
@@ -123,43 +91,41 @@ class TestUserProfileIntegration:
         config = Config.load()
         uid_b = make_uuid("test_user_auto")
 
-        # Mock LLM 响应（JSON 格式）
-        # 正确设置 message.content，使其返回真实字符串而非 MagicMock
+        # Mock LLM 响应（v2 JSON 格式）
         mock_message = MagicMock()
-        mock_message.content = '{"hard_constraints": ["北京", "专硕"], "soft_constraints": ["消化内科"], "risk_tolerance": ["二战"], "verified_facts": [], "pending_queries": ["分数线"]}'
+        mock_message.content = '{"confirmed":{"identity":["专硕学生"],"interests":["消化内科"],"constraints":["北京"]},"hypothesized":{"identity":[],"interests":[]},"confirmed_facts":[],"pending_queries":["分数线"]}'
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message = mock_message
 
-        with patch('src.chat.client.get_api_queue') as mock_queue:
+        with patch('src.chat.memory_manager.get_api_queue') as mock_queue:
             mock_queue_instance = MagicMock()
             mock_queue.return_value = mock_queue_instance
 
-            # 模拟提交返回 LLM 响应
             mock_queue_instance.submit = AsyncMock(return_value=mock_response)
 
-            # Mock 数据库（在函数内部导入）
             with patch('src.db.memory.MemoryDB') as MockDB:
                 mock_db = MagicMock()
                 mock_db.get_conversation = AsyncMock(return_value=SAMPLE_CONVERSATION)
                 mock_db.save_profile = AsyncMock()
                 MockDB.return_value = mock_db
 
-                # 创建客户端（直接实例化并设置属性）
                 client = ChatClient(config)
                 client.user_id = uid_b
                 client.skill_system = MagicMock()
-                client.messages = SAMPLE_CONVERSATION[:6]  # 3 轮对话
+                client.messages = SAMPLE_CONVERSATION[:6]
 
-                # 注入 mock_db，使 _memory_manager 使用 mock 而非真实 MemoryDB 单例
                 client._memory_manager._memory_db = mock_db
 
-                # 手动调用 form_memory 验证逻辑
-                # 在实际运行中，这个会在 chat() 方法中自动触发
                 await client.form_memory()
 
                 # 验证 save_profile 被调用
                 mock_db.save_profile.assert_called()
+
+                # 验证保存的是 v2 格式
+                call_args = mock_db.save_profile.call_args
+                portrait_text = call_args[0][1]
+                assert '"confirmed"' in portrait_text, "保存的画像应为 v2 格式"
 
                 # 验证 round_count 被重置
                 assert client.round_count == 0, "触发后应重置轮数"
@@ -215,31 +181,29 @@ class TestUserProfileTriggerConditions:
 
         模拟 AI 在对话中决定调用 form_memory 工具
         """
-        from src.chat.handlers import handle_tool_calls
-        from src.core.skill_system import SkillSystem
+        from src.chat.handlers import handle_form_memory
+        from unittest.mock import AsyncMock, patch, MagicMock
 
         uid_e = make_uuid("test_user_tool")
 
-        # 模拟 form_memory 工具调用
-        tool_calls = [
-            {
-                "id": "call_form_memory_123",
-                "type": "function",
-                "function": {
-                    "name": "form_memory",
-                    "arguments": '{"reason": "用户表示这次先到这里"}'
-                }
-            }
-        ]
+        fake_result = {
+            "saved": True,
+            "attempts_used": 1,
+            "last_error": "",
+            "skip_reason": "",
+            "portrait_text": '{"confirmed":{"identity":[],"interests":[],"constraints":[]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":[],"pending_queries":[]}',
+        }
 
-        with patch('src.chat.handlers.handle_form_memory') as mock_handler:
-            mock_handler = AsyncMock(return_value={"user_id": uid_e, "conversation_id": "test_conv_tool", "message": "记忆已形成"})
+        with patch('src.db.memory.MemoryDB') as MockDB:
+            mock_db = MagicMock()
+            mock_db.get_conversation = AsyncMock(return_value=SAMPLE_CONVERSATION)
+            MockDB.return_value = mock_db
 
-            # 需要 patch handle_form_memory 整个模块路径
-            with patch('src.chat.handlers.handle_form_memory', new=mock_handler):
-                # 由于 handle_tool_calls 会根据 tool_call.name 调用对应处理函数
-                # 这里我们直接测试 handle_form_memory 函数
-                from src.chat.handlers import handle_form_memory
+            with patch('src.chat.memory_manager.MemoryManager') as MockMM:
+                mock_manager = MagicMock()
+                mock_manager.form_memory = AsyncMock(return_value=fake_result)
+                MockMM.return_value = mock_manager
 
                 result = await handle_form_memory(
                     reason="用户表示这次先到这里",
@@ -247,9 +211,7 @@ class TestUserProfileTriggerConditions:
                     conversation_id="test_conv_tool"
                 )
 
-                assert result["user_id"] == uid_e
-                assert result["conversation_id"] == "test_conv_tool"
-                assert "记忆已形成" in result["message"]
+                assert "记忆已形成" in result
 
     def test_trigger_threshold_is_5(self):
         """

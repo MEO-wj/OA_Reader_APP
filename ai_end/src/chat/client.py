@@ -156,25 +156,24 @@ class ChatClient:
             )
             profile_section = f"""## 用户画像 - 决策要素
 
-### <必须满足>
-{sections['hard_constraints']}
-</必须满足>
+### 已确认身份
+{sections['confirmed_identity']}
 
-### <优先考虑>
-{sections['soft_constraints']}
-</优先考虑>
+### 已确认兴趣
+{sections['confirmed_interests']}
 
-### <风险承受>
-{sections['risk_tolerance']}
-</风险承受>
+### 已确认约束
+{sections['confirmed_constraints']}
 
-### <已确认事实>
-{sections['verified_facts']}
-</已确认事实>
+### 推测信息（仅供参考）
+{sections['hypothesized_identity']}
+{sections['hypothesized_interests']}
 
-### <待查询事项>
-{sections['pending_queries']}
-</待查询事项>"""
+### 已确认事实
+{sections['confirmed_facts']}
+
+### 待查询事项
+{sections['pending_queries']}"""
         else:
             profile_section = "## 用户画像 - 决策要素\n\n暂无用户画像信息。"
 
@@ -192,39 +191,51 @@ class ChatClient:
         knowledge: str
     ) -> dict[str, str]:
         """
-        将画像和知识解析为结构化分层。
+        将画像和知识解析为 v2 分层结构。
 
         Args:
-            portrait: 用户画像 JSON（hard_constraints, soft_constraints, risk_tolerance）
-            knowledge: 知识记忆 JSON（verified_facts, pending_queries）
+            portrait: 用户画像 v2 JSON（confirmed/hypothesized）
+            knowledge: 知识记忆 v2 JSON（confirmed_facts/pending_queries）
 
         Returns:
-            包含各分层的字典
+            包含各分层的字典，v1 或非法 JSON 回退为"（暂无）"
         """
         import json
 
         # 解析 portrait JSON
-        portrait_data = {}
+        portrait_data: dict = {}
         if portrait:
             try:
-                portrait_data = json.loads(portrait)
-            except json.JSONDecodeError:
+                data = json.loads(portrait)
+                if isinstance(data, dict) and "confirmed" in data:
+                    portrait_data = data
+            except (json.JSONDecodeError, TypeError):
                 pass
 
         # 解析 knowledge JSON
-        knowledge_data = {}
+        knowledge_data: dict = {}
         if knowledge:
             try:
-                knowledge_data = json.loads(knowledge)
-            except json.JSONDecodeError:
+                data = json.loads(knowledge)
+                if isinstance(data, dict):
+                    knowledge_data = data
+            except (json.JSONDecodeError, TypeError):
                 pass
 
+        confirmed = portrait_data.get("confirmed", {})
+        hypothesized = portrait_data.get("hypothesized", {})
+
+        def _fmt(items):
+            return "\n".join(f"- {item}" for item in items) if items else "（暂无）"
+
         return {
-            "hard_constraints": "\n".join(f"- {item}" for item in portrait_data.get("hard_constraints", [])) or "（暂无）",
-            "soft_constraints": "\n".join(f"- {item}" for item in portrait_data.get("soft_constraints", [])) or "（暂无）",
-            "risk_tolerance": "\n".join(f"- {item}" for item in portrait_data.get("risk_tolerance", [])) or "（暂无）",
-            "verified_facts": "\n".join(f"- {item}" for item in knowledge_data.get("verified_facts", [])) or "（暂无）",
-            "pending_queries": "\n".join(f"- {item}" for item in knowledge_data.get("pending_queries", [])) or "（暂无）",
+            "confirmed_identity": _fmt(confirmed.get("identity", [])),
+            "confirmed_interests": _fmt(confirmed.get("interests", [])),
+            "confirmed_constraints": _fmt(confirmed.get("constraints", [])),
+            "hypothesized_identity": _fmt(hypothesized.get("identity", [])),
+            "hypothesized_interests": _fmt(hypothesized.get("interests", [])),
+            "confirmed_facts": _fmt(knowledge_data.get("confirmed_facts", [])),
+            "pending_queries": _fmt(knowledge_data.get("pending_queries", [])),
         }
 
     @staticmethod

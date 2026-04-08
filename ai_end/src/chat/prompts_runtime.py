@@ -33,6 +33,11 @@ SYSTEM_PROMPT_TEMPLATE = """你是一个通用 AI Agent 助手。
 - 信息不足时先说明不确定性，再给合理的建议方案
 - 禁用承诺性表述
 
+## 用户画像分层约束
+
+- 用户画像分为 confirmed（已确认）和 hypothesized（推测）两层，hypothesized 内容仅供参考，不可当作已确认事实
+- 禁止将 hypothesized 推测合并写入 confirmed 已确认层
+
 {profile_section}"""
 
 COMPACT_PROMPT_TEMPLATE = """你是对话历史压缩助手。请将以下对话压缩成精华摘要。
@@ -47,6 +52,7 @@ COMPACT_PROMPT_TEMPLATE = """你是对话历史压缩助手。请将以下对话
 4. 保留未解决的待查询事项
 5. 删除冗余探索过程和中间试错
 6. 重要：保留所有 tool_calls 的结果中的关键发现
+7. 分层保护：不可把 hypothesized 合并到 confirmed，必须保持两层独立
 
 【输出格式】
 ## 对话摘要
@@ -64,22 +70,41 @@ COMPACT_PROMPT_TEMPLATE = """你是对话历史压缩助手。请将以下对话
 ...
 
 ## 用户画像
-- 硬性要求：...
-- 优先考虑：...
-- 风险承受：...
+### confirmed（已确认）
+- ...
+
+### hypothesized（推测）
+- ...
 """
 
 # MEMORY_PROMPT_TEMPLATE 和 FORM_MEMORY_PROMPT_TEMPLATE 字段结构相同，仅输出格式不同
 # - MEMORY_PROMPT_TEMPLATE: 输出 JSON 格式，供程序解析
 # - FORM_MEMORY_PROMPT_TEMPLATE: 输出 Markdown 格式，供用户阅读
-MEMORY_PROMPT_TEMPLATE = """请将以下对话浓缩成 JSON 格式，保留关键决策要素：
+#
+# v2 分层：confirmed（已确认）/ hypothesized（假设）/ knowledge（知识）
+MEMORY_PROMPT_TEMPLATE = """请将以下对话浓缩成 JSON 格式，保留关键决策要素。
+
+## 分层规则
+- confirmed: 用户明确陈述或已验证的事实。禁止仅凭 OA 阅读记录写 confirmed.identity，必须有用户亲口说的内容支撑。
+- hypothesized: 从对话中合理推断但未确认的信息，格式为"（来源：...）可能..."。
+- knowledge: 已确认的事实知识和待查询事项。
+
+## 输出 JSON 格式
 
 {{
-    "hard_constraints": ["硬性要求，如目标地点、必要条件、资质要求等"],
-    "soft_constraints": ["偏好，如方向偏好、类型偏好、地域偏好等"],
-    "risk_tolerance": ["风险承受，如可接受的不确定范围、预算范围、调整意愿等"],
-    "verified_facts": ["已确认信息，如已知条件、数据等"],
-    "pending_queries": ["待查询问题"]
+    "confirmed": {{
+        "identity": ["用户明确告知的身份信息，如年级、专业、学校等"],
+        "interests": ["用户明确表达的偏好方向"],
+        "constraints": ["用户明确提出的硬性约束，如地点、条件、资质要求等"]
+    }},
+    "hypothesized": {{
+        "identity": ["（来源：对话中的线索）可能推断出的身份信息"],
+        "interests": ["（来源：对话中的线索）可能推断出的偏好"]
+    }},
+    "knowledge": {{
+        "confirmed_facts": ["已确认的事实信息，如已知条件、数据等"],
+        "pending_queries": ["待查询问题"]
+    }}
 }}
 
 对话内容：
@@ -106,22 +131,22 @@ DOC_SUMMARY_USER_PROMPT_TEMPLATE = """请为以下文档生成一个简短的摘
 
 摘要："""
 
-FORM_MEMORY_PROMPT_TEMPLATE = """请将以下对话浓缩成结构化格式，保留关键决策要素：
+FORM_MEMORY_PROMPT_TEMPLATE = """请将以下对话浓缩成结构化格式，保留关键决策要素。
 
-### <必须满足>
-用户的硬性要求，如目标地点、必须满足的条件、资质要求等
+### <confirmed-已确认>
+用户明确陈述或已验证的信息。禁止仅凭 OA 阅读记录写 confirmed.identity。
+- **identity（身份）**: 用户明确告知的身份信息，如年级、专业、学校等
+- **interests（偏好）**: 用户明确表达的偏好方向
+- **constraints（硬性约束）**: 用户明确提出的硬性约束，如地点、条件、资质要求等
 
-### <优先考虑>
-用户的偏好，如方向偏好、类型偏好、地域偏好等
+### <hypothesized-合理推测>
+从对话中合理推断但未确认的信息，格式为"（来源：...）可能..."
+- **identity（身份）**: （来源：对话中的线索）可能推断出的身份信息
+- **interests（偏好）**: （来源：对话中的线索）可能推断出的偏好
 
-### <风险承受>
-用户的风险承受能力，如可接受的不确定范围、预算范围、调剂意愿等
-
-### <已确认事实>
-用户已经了解并确认的信息，如已知的条件、数据等
-
-### <待查询事项>
-用户还需要查询的问题，如具体政策要求、条件限制等
+### <knowledge-知识>
+- **confirmed_facts（已确认事实）**: 已确认的事实信息，如已知条件、数据等
+- **pending_queries（待查询事项）**: 用户还需要查询的问题
 
 对话内容：
 {conversation_lines}"""

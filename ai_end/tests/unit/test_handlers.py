@@ -9,7 +9,6 @@ import json
 from unittest.mock import Mock, patch, AsyncMock
 
 from src.chat.handlers import handle_tool_calls, handle_tool_calls_sync
-from src.chat.prompts_runtime import FORM_MEMORY_PROMPT_TEMPLATE
 from src.core.skill_parser import SkillInfo
 
 
@@ -590,132 +589,162 @@ class TestContextTruncator:
         assert result["truncated"] is True
 
 
+class TestHandleFormMemoryUnified:
+    """测试 handle_form_memory 通过 MemoryManager 统一入口调用"""
+
+    @pytest.mark.asyncio
+    async def test_handle_form_memory_calls_memory_manager(self):
+        """handle_form_memory 应委托给 MemoryManager.form_memory，不再独立调用 LLM。"""
+        from unittest.mock import AsyncMock, patch, MagicMock
+
+        mock_db = MagicMock()
+        mock_db.get_conversation = AsyncMock(return_value=[
+            {"role": "user", "content": "测试消息"},
+        ])
+
+        fake_result = {
+            "saved": True,
+            "attempts_used": 1,
+            "last_error": "",
+            "skip_reason": "",
+            "portrait_text": '{"confirmed":{"identity":[],"interests":[],"constraints":["北京"]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":["已确认"],"pending_queries":[]}',
+        }
+
+        with patch("src.db.memory.MemoryDB", return_value=mock_db), \
+             patch("src.chat.memory_manager.MemoryManager") as MockMM:
+            mock_manager = MagicMock()
+            mock_manager.form_memory = AsyncMock(return_value=fake_result)
+            MockMM.return_value = mock_manager
+
+            from src.chat.handlers import handle_form_memory
+            result = await handle_form_memory(user_id="u1", conversation_id="c1")
+
+            # 验证委托给 MemoryManager
+            mock_manager.form_memory.assert_awaited_once()
+            assert "记忆已形成" in result
+            assert fake_result["portrait_text"] in result
+
+    @pytest.mark.asyncio
+    async def test_handle_form_memory_returns_success_text(self):
+        """saved=True 时返回包含画像和知识的文本。"""
+        from unittest.mock import AsyncMock, patch, MagicMock
+
+        mock_db = MagicMock()
+        mock_db.get_conversation = AsyncMock(return_value=[
+            {"role": "user", "content": "我想去北京读内科"},
+        ])
+
+        fake_result = {
+            "saved": True,
+            "attempts_used": 1,
+            "last_error": "",
+            "skip_reason": "",
+            "portrait_text": '{"confirmed":{"identity":[],"interests":[],"constraints":["北京"]}}',
+            "knowledge_text": '{"confirmed_facts":[],"pending_queries":["分数线"]}',
+        }
+
+        with patch("src.db.memory.MemoryDB", return_value=mock_db), \
+             patch("src.chat.memory_manager.MemoryManager") as MockMM:
+            mock_manager = MagicMock()
+            mock_manager.form_memory = AsyncMock(return_value=fake_result)
+            MockMM.return_value = mock_manager
+
+            from src.chat.handlers import handle_form_memory
+            result = await handle_form_memory(user_id="u1", conversation_id="c1")
+
+            assert "记忆已形成" in result
+            assert "用户画像" in result
+            assert "知识记忆" in result
+            assert fake_result["portrait_text"] in result
+            assert fake_result["knowledge_text"] in result
+
+    @pytest.mark.asyncio
+    async def test_handle_form_memory_returns_failure_text(self):
+        """saved=False 时返回包含重试次数和错误原因的失败文案。"""
+        from unittest.mock import AsyncMock, patch, MagicMock
+
+        mock_db = MagicMock()
+        mock_db.get_conversation = AsyncMock(return_value=[
+            {"role": "user", "content": "测试"},
+        ])
+
+        fake_result = {
+            "saved": False,
+            "attempts_used": 3,
+            "last_error": "第3次尝试: 无法解析",
+            "skip_reason": "max_retries_exceeded",
+            "portrait_text": "",
+            "knowledge_text": "",
+        }
+
+        with patch("src.db.memory.MemoryDB", return_value=mock_db), \
+             patch("src.chat.memory_manager.MemoryManager") as MockMM:
+            mock_manager = MagicMock()
+            mock_manager.form_memory = AsyncMock(return_value=fake_result)
+            MockMM.return_value = mock_manager
+
+            from src.chat.handlers import handle_form_memory
+            result = await handle_form_memory(user_id="u1", conversation_id="c1")
+
+            assert "记忆形成失败" in result
+            assert "3" in result  # 重试次数
+            assert "无法解析" in result  # 错误原因
+
+    @pytest.mark.asyncio
+    async def test_handle_form_memory_passes_correct_params_to_manager(self):
+        """handle_form_memory 应将 user_id 和 conversation_id 传递给 MemoryManager。"""
+        from unittest.mock import AsyncMock, patch, MagicMock
+
+        mock_db = MagicMock()
+        mock_db.get_conversation = AsyncMock(return_value=[
+            {"role": "user", "content": "测试"},
+        ])
+
+        fake_result = {
+            "saved": True, "attempts_used": 1, "last_error": "",
+            "skip_reason": "", "portrait_text": "{}", "knowledge_text": "{}",
+        }
+
+        with patch("src.db.memory.MemoryDB", return_value=mock_db), \
+             patch("src.chat.memory_manager.MemoryManager") as MockMM:
+            mock_manager = MagicMock()
+            mock_manager.form_memory = AsyncMock(return_value=fake_result)
+            MockMM.return_value = mock_manager
+
+            from src.chat.handlers import handle_form_memory
+            await handle_form_memory(user_id="test_uid", conversation_id="test_cid")
+
+            MockMM.assert_called_once_with(
+                user_id="test_uid",
+                conversation_id="test_cid",
+                memory_db=mock_db,
+            )
+
+
 class TestHandleFormMemory:
-    """测试 handle_form_memory 函数"""
+    """测试 handle_form_memory 函数 — 基础行为"""
 
-    @pytest.mark.asyncio
-    async def test_form_memory_uses_low_temperature(self):
-        """
-        form_memory 应使用低温度（0.0-0.2）生成浓缩记忆，提高准确性和一致性。
-        """
-        from unittest.mock import AsyncMock, patch, MagicMock
-
-        # 模拟 LLM 调用
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = """### <必须满足>
-- 目标地域：河南/郑州
-- 英语：六级550
-
-### <优先考虑>
-- 专业倾向：内镜方向
-
-### <风险承受>
-- 一战，不建议二战
-
-### <已确认事实>
-- 首医英语单科线55-60
-
-### <待查询事项>
-- 郑大一附院招生数据"""
-
-        # 使用 MagicMock 作为 create 方法
-        mock_create = MagicMock(return_value=mock_response)
-
-        with patch('openai.OpenAI') as MockOpenAI:
-            mock_client = MagicMock()
-            mock_client.chat.completions.create = mock_create
-            MockOpenAI.return_value = mock_client
-
-            from src.chat.handlers import handle_form_memory
-
-            # Mock 数据库
-            with patch('src.db.memory.MemoryDB') as MockDB:
-                mock_db = MagicMock()
-                mock_db.get_conversation = AsyncMock(return_value=[
-                    {"role": "user", "content": "我想考郑州的医院"},
-                    {"role": "assistant", "content": "郑州大学第一附属医院是河南龙头"}
-                ])
-                mock_db.save_profile = AsyncMock()
-                MockDB.return_value = mock_db
-
-                # 调用 form_memory
-                result = await handle_form_memory(user_id="test_user", conversation_id="test_conv")
-
-                # 检查 temperature 参数
-                call_args = mock_create.call_args
-                temperature = call_args.kwargs.get('temperature')
-
-                assert temperature is not None, "应设置 temperature 参数"
-                assert temperature <= 0.2, f"温度应 <= 0.2，实际为 {temperature}"
-
-    @pytest.mark.asyncio
-    async def test_form_memory_prompt_uses_runtime_template(self):
-        """handle_form_memory 应使用集中的 FORM_MEMORY_PROMPT_TEMPLATE。"""
-        from unittest.mock import AsyncMock, patch, MagicMock
-
-        # 模拟 LLM 调用，捕获发送给 LLM 的 prompt
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = """### <必须满足>
-- 目标地域：北京
-
-### <优先考虑>
-- 专业方向：计算机
-
-### <风险承受>
-- 可接受调剂
-
-### <已确认事实>
-- 985 院校
-
-### <待查询事项>
-- 导师信息"""
-
-        mock_create = MagicMock(return_value=mock_response)
-
-        with patch('openai.OpenAI') as MockOpenAI:
-            mock_client = MagicMock()
-            mock_client.chat.completions.create = mock_create
-            MockOpenAI.return_value = mock_client
-
-            from src.chat.handlers import handle_form_memory
-
-            # Mock 数据库
-            with patch('src.db.memory.MemoryDB') as MockDB:
-                mock_db = MagicMock()
-                mock_db.get_conversation = AsyncMock(return_value=[
-                    {"role": "user", "content": "我想考研究生"},
-                    {"role": "assistant", "content": "可以看看985院校"}
-                ])
-                mock_db.save_profile = AsyncMock()
-                MockDB.return_value = mock_db
-
-                # 调用 form_memory
-                await handle_form_memory(user_id="test_user", conversation_id="test_conv")
-
-                # 检查发送给 LLM 的 prompt 是否使用了模板
-                call_args = mock_create.call_args
-                prompt_sent = call_args.kwargs.get('messages')[0]['content']
-
-                # 验证模板中的关键结构存在于 prompt 中
-                assert "请将以下对话浓缩成结构化格式" in FORM_MEMORY_PROMPT_TEMPLATE
-                assert "<必须满足>" in prompt_sent
-                assert "<优先考虑>" in prompt_sent
-                assert "<风险承受>" in prompt_sent
-                assert "<已确认事实>" in prompt_sent
-                assert "<待查询事项>" in prompt_sent
-
-    def test_form_memory_uses_runtime_template_via_import_check(self):
-        """验证 handlers.py 源码中导入了 FORM_MEMORY_PROMPT_TEMPLATE。"""
+    def test_form_memory_delegates_to_memory_manager(self):
+        """验证 handlers.py 通过 MemoryManager 统一入口处理记忆，而非独立解析。"""
         import inspect
         from src.chat import handlers
 
-        # 获取源码
-        source = inspect.getsource(handlers)
+        source = inspect.getsource(handlers.handle_form_memory)
 
-        # 验证导入了 FORM_MEMORY_PROMPT_TEMPLATE
-        assert "from src.chat.prompts_runtime import FORM_MEMORY_PROMPT_TEMPLATE" in source, \
-            "handlers.py 应从 prompts_runtime 导入 FORM_MEMORY_PROMPT_TEMPLATE"
-        assert "FORM_MEMORY_PROMPT_TEMPLATE" in source, \
-            "handlers.py 应使用 FORM_MEMORY_PROMPT_TEMPLATE"
+        # 验证使用了 MemoryManager
+        assert "MemoryManager" in source, \
+            "handle_form_memory 应使用 MemoryManager 统一入口"
+
+        # 验证不再直接导入 openai 或使用 FORM_MEMORY_PROMPT_TEMPLATE
+        assert "OpenAI" not in source, \
+            "handle_form_memory 不应直接创建 OpenAI 客户端"
+        assert "FORM_MEMORY_PROMPT_TEMPLATE" not in source, \
+            "handle_form_memory 不应直接使用 FORM_MEMORY_PROMPT_TEMPLATE"
+
+    @pytest.mark.asyncio
+    async def test_form_memory_no_user_returns_error(self):
+        """无 user_id 时应返回错误提示。"""
+        from src.chat.handlers import handle_form_memory
+        result = await handle_form_memory(user_id=None)
+        assert "用户ID" in result

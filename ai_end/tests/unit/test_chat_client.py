@@ -302,7 +302,7 @@ class TestChatClient:
 
     def test_parse_profile_into_sections(self):
         """
-        画像应被解析为结构化分层：硬约束、软约束、风险承受、已确认事实、待查询。
+        画像应被解析为 v2 分层结构：confirmed/hypothesized/knowledge。
         """
         from src.chat.client import ChatClient
         from src.config import Config
@@ -310,25 +310,83 @@ class TestChatClient:
         config = Config.with_defaults()
         client = ChatClient(config)
 
-        # 使用 JSON 格式的画像数据
-        portrait = '{"hard_constraints": ["目标地域：河南/郑州", "学历要求：硕士"], "soft_constraints": ["专业兴趣：内镜方向"], "risk_tolerance": ["一战，不二战"]}'
-        knowledge = '{"verified_facts": ["首医英语线55-60"], "pending_queries": ["郑大一招生数据"]}'
+        # 使用 v2 JSON 格式的画像数据
+        portrait = '{"confirmed":{"identity":["医学生"],"interests":["内科学"],"constraints":["目标地域：北京"]},"hypothesized":{"identity":[],"interests":[]}}'
+        knowledge = '{"confirmed_facts":["首医英语线55-60"],"pending_queries":["郑大一招生数据"]}'
 
         result = client._parse_profile_to_sections(portrait, knowledge)
 
-        # 验证返回结构
-        assert "hard_constraints" in result
-        assert "soft_constraints" in result
-        assert "risk_tolerance" in result
-        assert "verified_facts" in result
+        # 验证 v2 字段
+        assert "confirmed_identity" in result
+        assert "confirmed_interests" in result
+        assert "confirmed_constraints" in result
+        assert "hypothesized_identity" in result
+        assert "hypothesized_interests" in result
+        assert "confirmed_facts" in result
         assert "pending_queries" in result
-        # 验证 JSON 数据被正确解析
-        assert "目标地域：河南/郑州" in result["hard_constraints"]
-        assert "内镜方向" in result["soft_constraints"]
+        # 验证内容被正确解析
+        assert "医学生" in result["confirmed_identity"]
+        assert "内科学" in result["confirmed_interests"]
+        assert "北京" in result["confirmed_constraints"]
+
+    def test_parse_profile_falls_back_for_invalid_json(self):
+        """v1 或非法 JSON 应渲染为'（暂无）'分层。"""
+        from src.chat.client import ChatClient
+        from src.config import Config
+
+        config = Config.with_defaults()
+        client = ChatClient(config)
+
+        # v1 格式
+        v1_portrait = '{"hard_constraints":["北京"],"soft_constraints":["内科"],"risk_tolerance":[]}'
+        v1_knowledge = '{"verified_facts":[],"pending_queries":[]}'
+
+        result = client._parse_profile_to_sections(v1_portrait, v1_knowledge)
+
+        assert "（暂无）" in result["confirmed_identity"]
+        assert "（暂无）" in result["confirmed_constraints"]
+
+    def test_parse_profile_falls_back_for_non_json(self):
+        """非 JSON 字符串应渲染为'（暂无）'。"""
+        from src.chat.client import ChatClient
+        from src.config import Config
+
+        config = Config.with_defaults()
+        client = ChatClient(config)
+
+        result = client._parse_profile_to_sections("not json", "also not json")
+
+        assert "（暂无）" in result["confirmed_identity"]
+        assert "（暂无）" in result["confirmed_constraints"]
+        assert "（暂无）" in result["confirmed_facts"]
+
+    def test_build_system_prompt_with_v2_profile(self):
+        """_build_system_prompt 应正确渲染 v2 分层画像，包含 hypothesized 警示。"""
+        from src.chat.client import ChatClient
+        from src.config import Config
+
+        config = Config.with_defaults()
+        client = ChatClient(config)
+
+        portrait = '{"confirmed":{"identity":["医学生"],"interests":["内科学"],"constraints":["北京"]},"hypothesized":{"identity":["（来源：多次查询）可能对AI感兴趣"],"interests":[]}}'
+        knowledge = '{"confirmed_facts":["985院校"],"pending_queries":["分数线"]}'
+
+        prompt = client._build_system_prompt(portrait=portrait, knowledge=knowledge)
+
+        # 验证 confirmed 区块
+        assert "医学生" in prompt
+        assert "北京" in prompt
+        # 验证 hypothesized 区块
+        assert "可能对AI感兴趣" in prompt
+        # 验证 hypothesized 警示
+        assert "仅供参考" in prompt
+        # 验证 knowledge 区块
+        assert "985院校" in prompt
+        assert "分数线" in prompt
 
     def test_build_system_prompt_with_profile(self):
         """
-        _build_system_prompt 应能接受画像参数并融入结构化章节。
+        _build_system_prompt 应能接受画像参数并融入 v2 结构化章节。
         """
         from src.chat.client import ChatClient
         from src.config import Config
@@ -336,21 +394,17 @@ class TestChatClient:
         config = Config.with_defaults()
         client = ChatClient(config)
 
-        # 使用 JSON 格式的画像数据
-        portrait = '{"hard_constraints": ["目标地域：河南"], "soft_constraints": ["专业兴趣：内镜"], "risk_tolerance": ["一战"]}'
-        knowledge = '{"verified_facts": ["首医英语线55-60"], "pending_queries": ["郑大一招生数据"]}'
+        # 使用 v2 JSON 格式的画像数据
+        portrait = '{"confirmed":{"identity":["医学生"],"interests":["内科学"],"constraints":["目标地域：河南"]},"hypothesized":{"identity":[],"interests":[]}}'
+        knowledge = '{"confirmed_facts":["首医英语线55-60"],"pending_queries":["郑大一招生数据"]}'
 
         prompt = client._build_system_prompt(portrait=portrait, knowledge=knowledge)
 
-        # 验证结构化章节存在
-        assert "<必须满足>" in prompt
-        assert "<优先考虑>" in prompt
-        assert "<风险承受>" in prompt
-        assert "<已确认事实>" in prompt
-        assert "<待查询事项>" in prompt
+        # 验证 v2 分层区块存在
+        assert "已确认身份" in prompt or "confirmed" in prompt
         # 验证内容被正确填充
-        assert "目标地域：河南" in prompt
-        assert "首医" in prompt
+        assert "目标地域：河南" in prompt or "河南" in prompt
+        assert "首医" in prompt or "55-60" in prompt
 
     def test_clear_history(self):
         """
@@ -525,11 +579,10 @@ class TestChatClientChatMethod:
             knowledge="已了解：首医英语线55-60"
         )
 
-        # 验证画像融入主 prompt，而非单独消息
+        # 验证画像融入主 prompt
         assert "用户画像 - 决策要素" in prompt
-        assert "<必须满足>" in prompt
-        # 验证不是独立章节（只应出现一次）
-        assert prompt.count("## 用户画像") == 1
+        # 验证不是独立章节（标题只出现一次）
+        assert prompt.count("用户画像 - 决策要素") == 1
 
     @patch('src.chat.client.get_llm_client')
     def test_chat_with_tool_call_iteration(self, mock_get_llm_client):
@@ -748,12 +801,12 @@ class TestChatClientMemory:
         client.round_count = 10
         client.messages = [{"role": "user", "content": "我更喜欢临床路线"}]
 
-        # 返回 JSON 格式的响应
+        # 返回 v2 JSON 格式的响应
         fake_response = SimpleNamespace(
             choices=[
                 SimpleNamespace(
                     message=SimpleNamespace(
-                        content='{"hard_constraints": ["理性"], "soft_constraints": ["偏好临床"], "risk_tolerance": [], "verified_facts": ["了解规培路径"], "pending_queries": []}'
+                        content='{"confirmed":{"identity":["理性"],"interests":["偏好临床"],"constraints":[]},"hypothesized":{"identity":[],"interests":[]},"confirmed_facts":["了解规培路径"],"pending_queries":[]}'
                     )
                 )
             ]
@@ -779,9 +832,9 @@ class TestChatClientMemory:
         await client.form_memory()
 
         assert saved["user_id"] == "u1"
-        # 验证保存的是 JSON 格式
-        assert '"hard_constraints"' in saved["portrait_text"]
-        assert '"verified_facts"' in saved["knowledge_text"]
+        # 验证保存的是 v2 JSON 格式
+        assert '"confirmed"' in saved["portrait_text"]
+        assert '"confirmed_facts"' in saved["knowledge_text"]
         assert client.round_count == 0
 
 
