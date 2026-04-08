@@ -84,8 +84,8 @@ class MemoryDB:
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO conversation_sessions (user_id, conversation_id, title, updated_at)
-                VALUES ($1, $2, $3, NOW())
+                INSERT INTO conversation_sessions (user_id, conversation_id, title, created_at, updated_at)
+                VALUES ($1, $2, $3, NOW(), NOW())
                 ON CONFLICT (user_id, conversation_id) DO UPDATE SET
                     title = EXCLUDED.title,
                     updated_at = NOW()
@@ -152,8 +152,10 @@ class MemoryDB:
                 """
                 SELECT user_id, conversation_id, title, created_at, updated_at
                 FROM conversation_sessions
-                WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
-                ORDER BY created_at DESC
+                WHERE user_id = $1
+                  AND COALESCE(created_at, updated_at) >= $2
+                  AND COALESCE(created_at, updated_at) < $3
+                ORDER BY COALESCE(created_at, updated_at) DESC
                 LIMIT 1
                 """,
                 user_id,
@@ -183,8 +185,10 @@ class MemoryDB:
                 FROM conversation_sessions cs
                 LEFT JOIN conversations c
                     ON c.user_id = cs.user_id AND c.conversation_id = cs.conversation_id
-                WHERE cs.user_id = $1 AND cs.created_at >= $2 AND cs.created_at < $3
-                ORDER BY cs.created_at DESC
+                WHERE cs.user_id = $1
+                  AND COALESCE(cs.created_at, cs.updated_at) >= $2
+                  AND COALESCE(cs.created_at, cs.updated_at) < $3
+                ORDER BY COALESCE(cs.created_at, cs.updated_at) DESC
                 LIMIT 1
                 """,
                 user_id,
@@ -299,8 +303,8 @@ class MemoryDB:
             )
             await conn.execute(
                 """
-                INSERT INTO conversation_sessions (user_id, conversation_id, title, updated_at)
-                VALUES ($1, $2, '新会话', NOW())
+                INSERT INTO conversation_sessions (user_id, conversation_id, title, created_at, updated_at)
+                VALUES ($1, $2, '新会话', NOW(), NOW())
                 ON CONFLICT (user_id, conversation_id) DO UPDATE SET
                     updated_at = NOW()
                 """,
@@ -403,3 +407,15 @@ class MemoryDB:
                 """,
                 user_id,
             )
+
+    async def get_db_timezone(self) -> str | None:
+        """查询 PostgreSQL 会话时区名称。"""
+        pool = await get_pool()
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("SHOW TIMEZONE")
+                if row:
+                    return str(row["TimeZone"] if "TimeZone" in row else row[0])
+        except Exception:
+            return None
+        return None

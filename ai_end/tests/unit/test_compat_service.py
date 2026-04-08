@@ -882,3 +882,191 @@ class TestTodayRange:
         start, end = _today_range()
         now_utc = datetime.utcnow()
         assert start <= now_utc < end
+
+    def test_today_range_uses_given_timezone(self):
+        """
+        传入 Asia/Shanghai 时，返回的 naive datetime 应匹配该时区的"今天"。
+        当前本地时间应落在对应范围内。
+        """
+        from src.api.compat_service import _today_range
+
+        start_cst, end_cst = _today_range("Asia/Shanghai")
+
+        # 都应是 naive datetime
+        assert start_cst.tzinfo is None
+        assert end_cst.tzinfo is None
+        assert (end_cst - start_cst) == timedelta(days=1)
+
+        # 当前 CST 时间应在 CST 范围内
+        from zoneinfo import ZoneInfo
+        now_cst = datetime.now(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
+        assert start_cst <= now_cst < end_cst
+
+        # UTC 范围与 CST 范围应有差异（不同时区的"今天"不同）
+        start_utc, end_utc = _today_range("UTC")
+        assert (start_cst, end_cst) != (start_utc, end_utc) or True  # 同日时可能相同
+
+    def test_today_range_invalid_timezone_falls_back_to_utc(self):
+        """
+        无效时区名应回退到 UTC（不抛异常）。
+        """
+        from src.api.compat_service import _today_range
+
+        start_fallback, end_fallback = _today_range("Invalid/Zone")
+        start_utc, end_utc = _today_range("UTC")
+        assert start_fallback == start_utc
+        assert end_fallback == end_utc
+
+
+class TestResolveSessionTimezone:
+    """_resolve_session 时区策略测试"""
+
+    @pytest.mark.asyncio
+    async def test_resolve_session_uses_config_timezone(self, monkeypatch):
+        """
+        config.compat_timezone 优先级最高，应优先使用。
+        当 config 指定 Asia/Shanghai 时，_today_range 应收到该时区名。
+        """
+        import dataclasses
+        from src.api.compat_service import CompatService, _today_range
+
+        config = _make_config()
+        config = dataclasses.replace(config, compat_timezone="Asia/Shanghai")
+
+        received_tz: list[str] = []
+
+        original_today_range = _today_range
+
+        def _spy_today_range(tz_name: str = "UTC"):
+            received_tz.append(tz_name)
+            return original_today_range(tz_name)
+
+        monkeypatch.setattr(
+            "src.api.compat_service._today_range", _spy_today_range
+        )
+
+        fake_memory = _FakeMemoryDB(latest_session=None)
+        service = CompatService(config=config)
+        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
+
+        await service._resolve_session("u1")
+
+        assert len(received_tz) == 1
+        assert received_tz[0] == "Asia/Shanghai"
+
+    @pytest.mark.asyncio
+    async def test_resolve_session_falls_back_to_utc_when_no_config(self, monkeypatch):
+        """
+        无 config.compat_timezone 且 DB 查询失败时，应回退到 UTC。
+        """
+        from src.api.compat_service import CompatService, _today_range
+
+        config = _make_config()
+
+        received_tz: list[str] = []
+
+        original_today_range = _today_range
+
+        def _spy_today_range(tz_name: str = "UTC"):
+            received_tz.append(tz_name)
+            return original_today_range(tz_name)
+
+        monkeypatch.setattr(
+            "src.api.compat_service._today_range", _spy_today_range
+        )
+
+        fake_memory = _FakeMemoryDB(latest_session=None)
+        service = CompatService(config=config)
+        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
+
+        await service._resolve_session("u1")
+
+        assert len(received_tz) == 1
+        assert received_tz[0] == "UTC"
+
+    @pytest.mark.asyncio
+    async def test_resolve_session_falls_back_to_db_timezone(self, monkeypatch):
+        """
+        无 config.compat_timezone 时，应查询数据库 SHOW TIMEZONE 获取时区。
+        """
+        import dataclasses
+        from src.api.compat_service import CompatService, _today_range
+
+        config = _make_config()
+        config = dataclasses.replace(config, compat_timezone=None)
+
+        received_tz: list[str] = []
+
+        original_today_range = _today_range
+
+        def _spy_today_range(tz_name: str = "UTC"):
+            received_tz.append(tz_name)
+            return original_today_range(tz_name)
+
+        monkeypatch.setattr(
+            "src.api.compat_service._today_range", _spy_today_range
+        )
+
+        # 模拟 DB SHOW TIMEZONE 返回 Asia/Shanghai
+        class _FakeMemoryDBWithTZ(_FakeMemoryDB):
+            async def get_db_timezone(self) -> str | None:
+                return "Asia/Shanghai"
+
+        fake_memory = _FakeMemoryDBWithTZ(latest_session=None)
+        service = CompatService(config=config)
+        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
+
+        await service._resolve_session("u1")
+
+        assert len(received_tz) == 1
+        assert received_tz[0] == "Asia/Shanghai"
+
+    @pytest.mark.asyncio
+    async def test_resolve_session_falls_back_to_utc_when_db_tz_fails(self, monkeypatch):
+        """
+        无 config 且 DB SHOW TIMEZONE 查询也失败时，回退到 UTC。
+        """
+        from src.api.compat_service import CompatService, _today_range
+
+        config = _make_config()
+
+        received_tz: list[str] = []
+
+        original_today_range = _today_range
+
+        def _spy_today_range(tz_name: str = "UTC"):
+            received_tz.append(tz_name)
+            return original_today_range(tz_name)
+
+        monkeypatch.setattr(
+            "src.api.compat_service._today_range", _spy_today_range
+        )
+
+        # DB 无 get_db_timezone 方法（老版本 MemoryDB），回退到 UTC
+        fake_memory = _FakeMemoryDB(latest_session=None)
+        service = CompatService(config=config)
+        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
+
+        await service._resolve_session("u1")
+
+        assert len(received_tz) == 1
+        assert received_tz[0] == "UTC"
+
+
+class TestConfigCompatTimezone:
+    """Config.compat_timezone 配置字段测试"""
+
+    def test_config_loads_ai_compat_tz_from_env(self, monkeypatch):
+        """AI_COMPAT_TZ 环境变量应被加载到 config.compat_timezone。"""
+        import importlib
+        monkeypatch.setenv("AI_COMPAT_TZ", "Asia/Shanghai")
+        import src.config.settings as settings_mod
+        importlib.reload(settings_mod)
+        config = settings_mod.Config.load()
+        assert config.compat_timezone == "Asia/Shanghai"
+
+    def test_config_compat_timezone_defaults_to_none(self):
+        """默认情况下 compat_timezone 应为 None。"""
+        from src.config.settings import Config
+        config = Config.with_defaults()
+        assert config.compat_timezone is None

@@ -60,7 +60,8 @@ class TestGetLatestSessionInRange:
         assert result["user_id"] == _UID_USER1
         # 验证 SQL 排序和参数
         sql = conn.fetchrow.call_args[0][0]
-        assert "ORDER BY created_at DESC" in sql
+        assert "ORDER BY" in sql
+        assert "DESC" in sql
         assert "LIMIT 1" in sql
 
     @pytest.mark.asyncio
@@ -126,3 +127,72 @@ class TestGetLatestSessionInRange:
         assert call_args[1] == _UID_USER42
         assert call_args[2] == start
         assert call_args[3] == end
+
+
+class TestCreateSessionSetsCreatedAt:
+    """验证 create_session 显式设置 created_at"""
+
+    @pytest.mark.asyncio
+    async def test_create_session_includes_created_at_in_sql(self, monkeypatch):
+        """
+        create_session 的 INSERT 语句应显式包含 created_at 列，
+        而非依赖 DEFAULT，防止 DEFAULT 缺失导致 NULL。
+        """
+        db = MemoryDB()
+
+        conn = AsyncMock()
+        conn.execute.return_value = None
+
+        class _AcquireCtx:
+            async def __aenter__(self_inner):
+                return conn
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        pool = Mock()
+        pool.acquire.return_value = _AcquireCtx()
+        monkeypatch.setattr("src.db.memory.get_pool", AsyncMock(return_value=pool))
+
+        await db.create_session(_UID_USER1, "conv-1", "测试会话")
+
+        # 第一个 execute 是 INSERT INTO conversation_sessions
+        sql = conn.execute.call_args_list[0][0][0]
+        assert "created_at" in sql, (
+            "create_session 应显式设置 created_at 列，防止 DEFAULT 不可靠导致 NULL"
+        )
+
+
+class TestGetLatestSessionHandlesNullCreatedAt:
+    """验证查询兼容 NULL created_at 的现有数据"""
+
+    @pytest.mark.asyncio
+    async def test_query_uses_coalesce_for_null_created_at(self, monkeypatch):
+        """
+        get_latest_session_in_utc_range 应使用 COALESCE(created_at, updated_at)，
+        防止 created_at 为 NULL 时查询不到任何行。
+        """
+        db = MemoryDB()
+
+        conn = AsyncMock()
+        conn.fetchrow.return_value = None
+
+        class _AcquireCtx:
+            async def __aenter__(self_inner):
+                return conn
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        pool = Mock()
+        pool.acquire.return_value = _AcquireCtx()
+        monkeypatch.setattr("src.db.memory.get_pool", AsyncMock(return_value=pool))
+
+        start = datetime(2025, 6, 1, 0, 0)
+        end = datetime(2025, 6, 2, 0, 0)
+        await db.get_latest_session_in_utc_range(_UID_USER1, start, end)
+
+        sql = conn.fetchrow.call_args[0][0]
+        assert "COALESCE" in sql, (
+            "查询应使用 COALESCE(created_at, updated_at) 兼容 NULL created_at"
+        )

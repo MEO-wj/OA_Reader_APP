@@ -23,16 +23,26 @@ logger = logging.getLogger(__name__)
 # 工具函数
 # ---------------------------------------------------------------------------
 
-def _today_range() -> tuple[datetime, datetime]:
-    """返回"今天"的 UTC 时间范围 [start, end)（naive datetime）。
+def _today_range(tz_name: str = "UTC") -> tuple[datetime, datetime]:
+    """按指定时区计算"今天"的 naive datetime 范围 [start, end)。
+
+    Args:
+        tz_name: IANA 时区名（如 "Asia/Shanghai"），默认 "UTC"。
 
     Returns:
-        (start, end) — 均为 naive datetime，UTC+0。
+        (start, end) — 均为 naive datetime，值与该时区的本地时间一致。
     """
-    now = datetime.utcnow()
+    from zoneinfo import ZoneInfo
+
+    try:
+        tz = ZoneInfo(tz_name)
+    except (KeyError, Exception):
+        tz = ZoneInfo("UTC")
+
+    now = datetime.now(tz)
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
-    return start, end
+    return start.replace(tzinfo=None), end.replace(tzinfo=None)
 
 
 def build_runtime_hints(
@@ -101,6 +111,18 @@ class CompatService:
 
     # -- 会话解析 --
 
+    async def _resolve_timezone(self) -> str:
+        """解析有效时区：config > DB SHOW TIMEZONE > UTC。"""
+        tz = getattr(self.config, "compat_timezone", None)
+        if tz:
+            return tz
+        db = self._create_memory_db()
+        if hasattr(db, "get_db_timezone"):
+            db_tz = await db.get_db_timezone()
+            if db_tz:
+                return db_tz
+        return "UTC"
+
     async def _resolve_session(
         self,
         user_id: str,
@@ -112,8 +134,8 @@ class CompatService:
         """
         db = self._create_memory_db()
 
-        # 用 config 中的时区计算"今天"的 UTC 范围
-        start_utc, end_utc = _today_range()
+        tz_name = await self._resolve_timezone()
+        start_utc, end_utc = _today_range(tz_name)
 
         session = await db.get_latest_session_in_utc_range(
             user_id, start_utc, end_utc,
@@ -395,11 +417,12 @@ class CompatService:
             raise ValueError("clear_memory requires a user_id")
 
         db = self._create_memory_db()
-        start_utc, end_utc = _today_range()
+        tz_name = await self._resolve_timezone()
+        start_utc, end_utc = _today_range(tz_name)
 
         logger.info(
-            "clear_memory debug: user_id=%s, range=[%s, %s)",
-            user_id, start_utc.isoformat(), end_utc.isoformat(),
+            "clear_memory debug: user_id=%s, range=[%s, %s), tz=%s",
+            user_id, start_utc.isoformat(), end_utc.isoformat(), tz_name,
         )
 
         session = await db.get_latest_session_with_messages(
