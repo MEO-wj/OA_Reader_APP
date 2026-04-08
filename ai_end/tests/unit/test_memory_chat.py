@@ -189,8 +189,8 @@ async def test_new_session_loads_profile_as_second_system_message():
     user_id = _uid("new_session_1")
     await db.save_profile(
         user_id,
-        '{"hard_constraints": ["内向"], "soft_constraints": ["喜欢科研"], "risk_tolerance": []}',
-        '{"verified_facts": ["了解学硕政策"], "pending_queries": []}',
+        '{"confirmed": {"identity": [], "interests": ["喜欢科研"], "constraints": ["内向"]}, "hypothesized": {"identity": [], "interests": []}}',
+        '{"confirmed_facts": ["了解学硕政策"], "pending_queries": []}',
     )
 
     client = ChatClient(config)
@@ -203,7 +203,7 @@ async def test_new_session_loads_profile_as_second_system_message():
     # 验证画像融入主 system prompt（索引0）
     assert client.messages[0]["role"] == "system"
     # 验证画像结构化章节被正确注入
-    assert "<必须满足>" in client.messages[0]["content"]
+    assert "已确认约束" in client.messages[0]["content"]
     assert "内向" in client.messages[0]["content"]
 
 
@@ -215,8 +215,8 @@ async def test_new_session_emits_memory_injection_debug_event():
     user_id = _uid("new_session_2")
     await db.save_profile(
         user_id,
-        '{"hard_constraints": ["理性执行"], "soft_constraints": [], "risk_tolerance": []}',
-        '{"verified_facts": ["了解调剂规则"], "pending_queries": []}',
+        '{"confirmed": {"identity": [], "interests": [], "constraints": ["理性执行"]}, "hypothesized": {"identity": [], "interests": []}}',
+        '{"confirmed_facts": ["了解调剂规则"], "pending_queries": []}',
     )
 
     client = ChatClient(config)
@@ -239,9 +239,9 @@ async def test_new_session_emits_memory_injection_debug_event():
     assert details.get("profile_injected") is True
     message = debug_events[0].get("message", "")
     assert "SYSTEM_PROMPT_FULL" in message
-    assert "hard_constraints" in message
+    assert "confirmed" in message
     assert "你是一个通用 AI Agent 助手。" in details.get("system_prompt_full", "")
-    assert "必须满足" in details.get("system_prompt_full", "")
+    assert "已确认约束" in details.get("system_prompt_full", "")
 
 
 @pytest.mark.asyncio
@@ -252,8 +252,8 @@ async def test_new_session_memory_prompt_sanitizes_think_and_noise():
     user_id = _uid("new_session_3")
     await db.save_profile(
         user_id,
-        '<think>internal notes</think>{"hard_constraints": ["执行强"], "soft_constraints": [], "risk_tolerance": []}',
-        '{"verified_facts": ["已了解政策"], "pending_queries": []}',
+        '<think>internal notes</think>{"confirmed": {"identity": [], "interests": [], "constraints": ["执行强"]}, "hypothesized": {"identity": [], "interests": []}}',
+        '{"confirmed_facts": ["已了解政策"], "pending_queries": []}',
     )
 
     client = ChatClient(config)
@@ -265,7 +265,7 @@ async def test_new_session_memory_prompt_sanitizes_think_and_noise():
 
     # 验证画像融入主 system prompt
     memory_prompt = client.messages[0]["content"]
-    assert "<必须满足>" in memory_prompt
+    assert "已确认约束" in memory_prompt
     assert "执行强" in memory_prompt
     assert "<think>" not in memory_prompt
 
