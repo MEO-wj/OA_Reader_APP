@@ -255,7 +255,7 @@ jobs:
         run: |
           set -euo pipefail
           GITEA_HOST="git.unself.cn"
-          REPO="${GITHUB_REPOSITORY}"
+          REPO="Handy_Wote/OA-Reader"
           API="https://${GITEA_HOST}/api/v1/repos/${REPO}"
           AUTH="Authorization: token ${GITEA_TOKEN}"
           APK_NAME="oa-reader-${TAG}.apk"
