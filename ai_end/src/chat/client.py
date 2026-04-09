@@ -521,7 +521,7 @@ class ChatClient:
                         skill_name = args_dict.get("skill_name", "")
                         file_path = args_dict.get("file_path", "")
                         read_reference_calls.append((skill_name, file_path))
-                    except:
+                    except (json.JSONDecodeError, TypeError):
                         read_reference_calls.append(("", arguments or ""))
                 else:
                     # 二级工具调用 - 查找所属技能
@@ -955,7 +955,7 @@ class ChatClient:
 
                 # 获取 AI 回复内容
                 response = assistant_message.get("content", "")
-                print(f"[DEBUG] user_id={self.user_id}, response={response[:50]}...")
+                logger.debug("回合结束: user_id=%s, response=%s...", self.user_id, response[:50])
 
                 # 保存对话历史
                 if self.user_id:
