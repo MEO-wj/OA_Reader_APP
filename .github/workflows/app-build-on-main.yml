@@ -91,13 +91,6 @@ jobs:
           echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
           echo "build_page_url=$BUILD_PAGE_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Upload build metadata
-        uses: actions/upload-artifact@v4
-        with:
-          name: eas-build-meta-main
-          path: /tmp/eas-meta/eas-build-meta.json
-          retention-days: 7
-
       - name: Build summary
         run: |
           set -euo pipefail
@@ -106,4 +99,4 @@ jobs:
           echo "- Build ID: \`${{ steps.eas_build.outputs.build_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Details: ${{ steps.eas_build.outputs.build_page_url }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Note**: EAS build takes 10-20 minutes. After it completes, manually trigger \`Collect Build (Main)\` workflow to download APK and create release." >> "$GITHUB_STEP_SUMMARY"
+          echo "**Next**: After build completes, run \`Collect Build (Main)\` workflow with the build ID above to download APK and create release." >> "$GITHUB_STEP_SUMMARY"

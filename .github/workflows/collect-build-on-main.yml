@@ -1,39 +1,32 @@
 name: Collect Build (Main)
 
 on:
-  workflow_run:
-    workflows:
-      - APP EAS Build (Main)
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       build_id:
-        description: EAS Build ID (required for manual trigger)
-        required: false
+        description: "EAS Build ID"
+        required: true
         type: string
       tag:
-        description: Release Tag (default: v-manual-<run_id>)
+        description: "Release Tag (e.g. v1.2.3)"
         required: false
         type: string
       timeout_minutes:
-        description: Max wait minutes (default: 90)
+        description: "Max wait minutes"
         required: false
         default: "90"
         type: string
       poll_interval_seconds:
-        description: Poll interval seconds (default: 30)
+        description: "Poll interval seconds"
         required: false
         default: "30"
         type: string
 
 permissions:
-  actions: read
   contents: write
 
 jobs:
   collect-build:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -58,40 +51,18 @@ jobs:
           set -euo pipefail
           npm ci
 
-      - name: Download build metadata from trigger run
-        if: ${{ github.event_name == 'workflow_run' }}
-        uses: actions/download-artifact@v4
-        with:
-          name: eas-build-meta-main
-          path: /tmp/eas-meta
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Resolve collect parameters
         id: resolve
         run: |
           set -euo pipefail
 
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            BUILD_ID="${{ inputs.build_id }}"
-            TAG="${{ inputs.tag }}"
-            TIMEOUT_MINUTES="${{ inputs.timeout_minutes }}"
-            POLL_INTERVAL_SECONDS="${{ inputs.poll_interval_seconds }}"
-          else
-            META_FILE="/tmp/eas-meta/eas-build-meta.json"
-            if [ ! -f "$META_FILE" ]; then
-              echo "Missing build metadata artifact: $META_FILE"
-              exit 1
-            fi
-
-            BUILD_ID="$(jq -r '.build_id // empty' "$META_FILE")"
-            TAG="$(jq -r '.tag // empty' "$META_FILE")"
-            TIMEOUT_MINUTES="90"
-            POLL_INTERVAL_SECONDS="30"
-          fi
+          BUILD_ID="${{ inputs.build_id }}"
+          TAG="${{ inputs.tag }}"
+          TIMEOUT_MINUTES="${{ inputs.timeout_minutes }}"
+          POLL_INTERVAL_SECONDS="${{ inputs.poll_interval_seconds }}"
 
           if [ -z "$BUILD_ID" ]; then
-            echo "build_id is required. For manual run, please provide workflow input build_id."
+            echo "build_id is required. Please provide workflow input build_id."
             exit 1
           fi
           BUILD_ID="$(echo "$BUILD_ID" | tr -d '\r\n\t ')"
