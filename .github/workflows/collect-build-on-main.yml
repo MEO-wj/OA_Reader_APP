@@ -247,13 +247,6 @@ jobs:
             echo "- Generated at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> release_notes.txt
           fi
 
-      - name: Upload APK as artifact (debug)
-        uses: actions/upload-artifact@v4
-        with:
-          name: oa-reader-apk-main
-          path: ${{ steps.download.outputs.apk_file }}
-          retention-days: 7
-
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
