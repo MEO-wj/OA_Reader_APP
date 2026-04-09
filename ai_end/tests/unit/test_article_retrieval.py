@@ -486,6 +486,85 @@ async def test_search_articles_returns_content_snippet(mock_rerank, mock_generat
     assert result["results"][0]["content_snippet"] == "这是文章正文前80个字符的截取内容用于展示在搜索结果列表中"
 
 
+# ========== article_id 正确性测试 ==========
+
+
+@pytest.mark.asyncio
+@patch('src.core.article_retrieval.get_pool')
+@patch('src.core.article_retrieval.generate_embedding')
+@patch('src.core.article_retrieval._rerank_documents')
+async def test_vector_search_uses_article_id_not_vector_id(mock_rerank, mock_generate_embedding, mock_get_pool):
+    """_vector_search 的 SQL 应 SELECT a.id（articles 主键）而非 v.id（vectors 主键）。
+
+    vectors 表有自己的 BIGSERIAL 主键 id，通过 article_id 外键关联 articles。
+    前端需要 articles.id 来调用 /api/articles/:id 获取详情。
+    """
+    from src.core.article_retrieval import ArticleRetriever
+
+    mock_generate_embedding.return_value = [0.1] * 1024
+
+    # 模拟数据库返回：row["id"] 应该是 article id (500)，而非 vector id (1)
+    row = MagicMock()
+    row.__getitem__ = lambda self, key: {
+        "id": 500,
+        "title": "测试文章",
+        "unit": "测试单位",
+        "published_on": "2026-03-20",
+        "summary": "测试摘要",
+        "content_snippet": "正文片段",
+        "similarity": 0.9,
+    }[key]
+
+    mock_conn = AsyncMock()
+    captured_sql = []
+
+    async def capture_fetch(sql, *args):
+        captured_sql.append(sql)
+        return [row]
+
+    mock_conn.fetch = capture_fetch
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    mock_rerank.return_value = [
+        {
+            "id": 500,
+            "title": "测试文章",
+            "unit": "测试单位",
+            "published_on": "2026-03-20",
+            "summary": "测试摘要",
+            "content_snippet": "正文片段",
+            "ebd_similarity": 0.9,
+            "keyword_similarity": None,
+            "rerank_score": 0.85,
+        }
+    ]
+
+    retriever = ArticleRetriever()
+    await retriever.search_articles("测试查询", top_k=1)
+
+    # 验证 SQL 的 SELECT 子句使用 a.id 而非 v.id 作为 id 列
+    assert len(captured_sql) >= 1
+    vector_sql = captured_sql[0]
+    # 提取 SELECT 行来精确检查列名
+    select_line = ""
+    for line in vector_sql.split("\n"):
+        stripped = line.strip()
+        if stripped.upper().startswith("SELECT"):
+            select_line = stripped
+            break
+    assert select_line, f"未找到 SELECT 子句，SQL: {vector_sql[:200]}"
+    # SELECT 子句中不应包含 "v.id"（vectors 表主键）
+    assert "v.id" not in select_line, (
+        f"SELECT 子句使用了 v.id (vectors 主键) 而非 a.id (articles 主键)。"
+        f" SELECT: {select_line}"
+    )
+    # SELECT 子句中应包含 "a.id"（articles 表主键）
+    assert "a.id" in select_line, (
+        f"SELECT 子句应包含 a.id (articles 主键)。"
+        f" SELECT: {select_line}"
+    )
+
+
 # ========== content_snippet 字段测试 ==========
 
 

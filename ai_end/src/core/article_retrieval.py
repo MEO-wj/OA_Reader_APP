@@ -154,7 +154,7 @@ class ArticleRetriever(BaseRetriever):
     def __init__(self):
         super().__init__(
             table_name="vectors",
-            select_columns=["v.id", "a.title", "a.unit", "a.published_on", "a.summary"],
+            select_columns=["a.id", "a.title", "a.unit", "a.published_on", "a.summary"],
             embedding_column="embedding",
             get_pool_fn=get_pool,
             rerank_fn=_rerank_documents,
@@ -196,7 +196,7 @@ class ArticleRetriever(BaseRetriever):
         limit_idx = len(params)
 
         sql = f"""
-            SELECT v.id, a.title, a.unit, a.published_on, a.summary,
+            SELECT a.id, a.title, a.unit, a.published_on, a.summary,
                    LEFT(a.content, 80) as content_snippet,
                    1 - (v.embedding <=> $1::vector) as similarity
             FROM vectors v
