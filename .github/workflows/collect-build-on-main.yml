@@ -247,24 +247,40 @@ jobs:
             echo "- Generated at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> release_notes.txt
           fi
 
-      - name: Create or update GitHub Release
+      - name: Create or update Gitea Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.resolve.outputs.tag }}
           APK_FILE: ${{ steps.download.outputs.apk_file }}
         run: |
           set -euo pipefail
+          GITEA_HOST="git.unself.cn"
+          REPO="${GITHUB_REPOSITORY}"
+          API="https://${GITEA_HOST}/api/v1/repos/${REPO}"
+          AUTH="Authorization: token ${GITEA_TOKEN}"
+          APK_NAME="oa-reader-${TAG}.apk"
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$APK_FILE#oa-reader-${TAG}.apk" --clobber
-            gh release edit "$TAG" --notes-file release_notes.txt
+          RELEASE_ID=$(curl -sf "${API}/releases/tags/${TAG}" \
+            -H "${AUTH}" | jq -r '.id // empty')
+
+          if [ -n "$RELEASE_ID" ]; then
+            curl -sf -X PATCH "${API}/releases/${RELEASE_ID}" \
+              -H "${AUTH}" -H "Content-Type: application/json" \
+              -d "$(jq -n --rawfile notes release_notes.txt '{body: $notes}')"
+            EXISTING=$(curl -sf "${API}/releases/${RELEASE_ID}/assets" \
+              -H "${AUTH}" | jq -r ".[] | select(.name==\"${APK_NAME}\") | .id // empty")
+            [ -n "$EXISTING" ] && curl -sf -X DELETE "${API}/releases/assets/${EXISTING}" -H "${AUTH}"
+            curl -sf -X POST "${API}/releases/${RELEASE_ID}/assets?name=${APK_NAME}" \
+              -H "${AUTH}" -F "attachment=@${APK_FILE}"
           else
-            gh release create "$TAG" "$APK_FILE#oa-reader-${TAG}.apk" \
-              --title "OA Reader $TAG (Main)" \
-              --notes-file release_notes.txt
+            RELEASE_ID=$(curl -sf -X POST "${API}/releases" \
+              -H "${AUTH}" -H "Content-Type: application/json" \
+              -d "$(jq -n --arg tag "$TAG" --arg name "OA Reader $TAG (Main)" --rawfile notes release_notes.txt \
+                '{tag_name: $tag, name: $name, body: $notes}')" | jq -r '.id')
+            curl -sf -X POST "${API}/releases/${RELEASE_ID}/assets?name=${APK_NAME}" \
+              -H "${AUTH}" -F "attachment=@${APK_FILE}"
           fi
-
-          echo "GitHub release published: $TAG"
+          echo "Gitea release published: $TAG"
 
       - name: Collect summary
         run: |
