@@ -47,21 +47,16 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
       - name: Install EAS CLI
         run: |
           set -euo pipefail
-          npm install -g eas-cli@18.3.0
+          npm install -g eas-cli@latest
 
       - name: Install app dependencies
-        working-directory: app_end
+        working-directory: OAP-app
         run: |
           set -euo pipefail
-          bun install --frozen-lockfile
+          npm ci
 
       - name: Download build metadata from trigger run
         if: ${{ github.event_name == 'workflow_run' }}
@@ -140,7 +135,7 @@ jobs:
             echo "EXPO_TOKEN is required"
             exit 1
           fi
-          cd app_end
+          cd OAP-app
           echo "PWD=$(pwd)"
 
           {
@@ -154,7 +149,7 @@ jobs:
             echo "eas=$(eas --version)"
           } | tee /tmp/eas-diag/runtime.txt
 
-          ls -la > /tmp/eas-diag/ls_app_end.txt || true
+          ls -la > /tmp/eas-diag/ls_oap-app.txt || true
           sed -n '1,200p' app.json > /tmp/eas-diag/app.json.head.txt || true
           sed -n '1,200p' eas.json > /tmp/eas-diag/eas.json.head.txt || true
 

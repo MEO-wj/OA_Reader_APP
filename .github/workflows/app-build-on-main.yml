@@ -3,7 +3,6 @@ name: APP EAS Build (Main)
 on:
   push:
     tags: ['v*.*.*']
-    branches: [main]
 
 permissions:
   contents: read
@@ -28,7 +27,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
 
       - name: Install EAS CLI
         run: |
@@ -51,13 +50,6 @@ jobs:
             exit 1
           fi
           eas whoami
-
-      - name: Preflight Expo config
-        working-directory: ${{ env.APP_PATH }}
-        run: |
-          set -euo pipefail
-          bunx expo config --json > /tmp/expo-config.json
-          test -s /tmp/expo-config.json
 
       - name: Trigger EAS build (non-blocking)
         id: eas_build
