@@ -139,10 +139,7 @@ class MemoryManager:
         existing_profile = await self._load_existing_profile()
         profile_section = ""
         if existing_profile:
-            profile_section = (
-                "\n## 已有用户画像（仅供参考，请基于当前对话更新，冲突以当前对话为准）\n"
-                + existing_profile
-            )
+            profile_section = existing_profile
         return MEMORY_PROMPT_TEMPLATE.format(
             conversation=conversation,
             existing_profile=profile_section,
