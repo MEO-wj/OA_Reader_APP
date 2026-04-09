@@ -66,17 +66,19 @@ def _today() -> date:
 def _normalize_date_range(
     start_date: str | None,
     end_date: str | None,
+    today: date | None = None,
 ) -> tuple[date | None, date | None]:
     """规范化日期范围：解析、交换逆序、补全单边界。
 
     返回 (start, end)，解析失败的边界设为 None。
+    today 参数由调用方传入，避免内部重复读取配置。
     """
     sd = _parse_date(start_date) if start_date else None
     ed = _parse_date(end_date) if end_date else None
 
     # 仅 start_date 时，end_date 默认今天
     if sd is not None and ed is None:
-        ed = _today()
+        ed = today if today is not None else _today()
     # 仅 end_date 时，不设下界（sd 保持 None）
 
     # 两者都有但逆序时自动交换
@@ -107,14 +109,16 @@ def _build_date_sql_and_params(
 
 def _apply_recency_weighting(
     candidates: list[dict[str, Any]],
+    today: date | None = None,
 ) -> list[dict[str, Any]]:
     """为候选结果添加时效性加权 final_score。
 
     公式：final_score = similarity + 0.1 * exp(-days_old / 30)
     days_old 越小（越新），exp 项越大，final_score 越高。
     仅当有有效 published_on 时才计算 final_score。
+    today 参数由调用方传入，避免内部重复读取配置。
     """
-    today = _today()
+    ref_today = today if today is not None else _today()
     for doc in candidates:
         published_str = doc.get("published_on", "")
         if not published_str:
@@ -123,7 +127,7 @@ def _apply_recency_weighting(
         if published is None:
             continue
 
-        days_old = max((today - published).days, 0)
+        days_old = max((ref_today - published).days, 0)
 
         # 优先使用 rerank_score，其次 ebd_similarity
         similarity = doc.get("rerank_score") or doc.get("ebd_similarity") or 0.0
@@ -271,6 +275,13 @@ class ArticleRetriever(BaseRetriever):
         end_date: date | None = None,
     ) -> dict[str, Any]:
         """无 query 时直接按发布日期降序获取最新文章。"""
+        # 防御性日志：无日期过滤时全表排序可能有性能问题
+        if start_date is None and end_date is None:
+            logger.warning(
+                "_search_by_time: 纯时间查询无日期过滤，将执行全表排序 (top_k=%d)",
+                top_k,
+            )
+
         where_clauses = []
         params: list[Any] = []
         next_idx = 1
@@ -393,8 +404,9 @@ class ArticleRetriever(BaseRetriever):
         end_date: str | None = None,
     ) -> dict[str, Any]:
         """三层检索策略搜索相关文章。"""
-        # 日期规范化（所有分支共用）
-        norm_start, norm_end = _normalize_date_range(start_date, end_date)
+        # 日期规范化（所有分支共用），today 只计算一次避免重复 Config.load()
+        today = _today()
+        norm_start, norm_end = _normalize_date_range(start_date, end_date, today=today)
 
         # 空 query 分支：跳过向量/关键词搜索，直接按时间排序
         if not query or not query.strip():
@@ -469,7 +481,7 @@ class ArticleRetriever(BaseRetriever):
         reranked_results = await self._rerank(query, candidates, top_k)
 
         # 时效性加权排序
-        reranked_results = _apply_recency_weighting(reranked_results)
+        reranked_results = _apply_recency_weighting(reranked_results, today=today)
 
         formatted_results = []
         for doc in reranked_results[:top_k]:

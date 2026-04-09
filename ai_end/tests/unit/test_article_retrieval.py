@@ -1,4 +1,5 @@
 """article_retrieval 单元测试"""
+import logging
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from src.core.article_retrieval import (
@@ -689,7 +690,7 @@ async def test_search_articles_adds_date_range_filter_to_sql(mock_rerank, mock_g
 async def test_search_articles_recency_weighting_newer_higher_score(mock_rerank, mock_generate_embedding, mock_get_pool):
     """相同 similarity 时，更新的文章应有更高的 final_score。
 
-    公式：final_score = similarity - 0.1 * exp(-days_old / 30)
+    公式：final_score = similarity + 0.1 * exp(-days_old / 30)
     """
     mock_generate_embedding.return_value = [0.1] * 1024
 
@@ -875,3 +876,68 @@ async def test_search_articles_keyword_layer_respects_date_range(mock_rerank, mo
     assert "published_on" in kw_sql, (
         f"关键词搜索 SQL 应包含 published_on 日期过滤条件。SQL: {kw_sql[:300]}"
     )
+
+
+# ========== Fix 2: _today() 传参化 ==========
+
+
+def test_normalize_date_range_accepts_today_param():
+    """_normalize_date_range 应接受 today 参数，避免内部调用 Config.load()。"""
+    from src.core.article_retrieval import _normalize_date_range
+    from datetime import date
+    fixed_today = date(2026, 4, 1)
+    sd, ed = _normalize_date_range("2026-03-01", None, today=fixed_today)
+    assert sd == date(2026, 3, 1)
+    assert ed == fixed_today, f"仅传 start_date 时 end 应等于传入的 today({fixed_today})"
+
+
+def test_normalize_date_range_without_today_uses_default():
+    """_normalize_date_range 不传 today 时仍向后兼容。"""
+    from src.core.article_retrieval import _normalize_date_range
+    sd, ed = _normalize_date_range("2026-04-01", "2026-04-09")
+    assert sd is not None
+    assert ed is not None
+
+
+def test_apply_recency_weighting_accepts_today_param():
+    """_apply_recency_weighting 应接受 today 参数，避免内部调用 Config.load()。"""
+    from src.core.article_retrieval import _apply_recency_weighting
+    from datetime import date
+    fixed_today = date(2026, 4, 15)
+    candidates = [
+        {"published_on": "2026-04-10", "rerank_score": 0.8},
+        {"published_on": "2026-04-14", "rerank_score": 0.8},
+    ]
+    result = _apply_recency_weighting(candidates, today=fixed_today)
+    # 排序后 4/14（更新）排在前面
+    assert result[0]["final_score"] > result[1]["final_score"]
+
+
+# ========== Fix 3: 空 query 无日期时防御性日志 ==========
+
+
+@pytest.mark.asyncio
+@patch('src.core.article_retrieval.get_pool')
+async def test_search_by_time_logs_warning_when_no_date_filters(mock_get_pool, caplog):
+    """空 query 且无日期过滤时，应输出 warning 日志提示可能的性能问题。"""
+    from src.core.article_retrieval import ArticleRetriever
+
+    mock_conn = AsyncMock()
+    async def mock_fetch(sql, *args):
+        return [
+            MagicMock(id=1, title="文章A", unit="教务处", published_on="2026-04-09",
+                       summary="摘要A", content_snippet="内容A"),
+        ]
+    mock_conn.fetch = mock_fetch
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    retriever = ArticleRetriever()
+    with caplog.at_level(logging.WARNING, logger="src.core.article_retrieval"):
+        result = await retriever._search_by_time(top_k=3)
+
+    assert "results" in result
+    # 无日期过滤时应有 warning 日志
+    assert any(
+        "无日期过滤" in record.message
+        for record in caplog.records
+    ), f"应输出包含'无日期过滤'的 warning 日志，实际日志: {[r.message for r in caplog.records]}"
