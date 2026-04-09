@@ -34,11 +34,3 @@ SYSTEM_PROMPT_V2_CONSTRAINTS = [
     "禁止将 hypothesized 推测合并写入 confirmed 已确认层",
 ]
 
-# FORM_MEMORY_PROMPT_TEMPLATE 必须包含的 v2 语义层标签
-FORM_MEMORY_V2_REQUIRED_FIELDS = [
-    "confirmed",
-    "hypothesized",
-    "knowledge",
-    "confirmed_facts",
-    "pending_queries",
-]

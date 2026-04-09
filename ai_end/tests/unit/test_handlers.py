@@ -736,11 +736,9 @@ class TestHandleFormMemory:
         assert "MemoryManager" in source, \
             "handle_form_memory 应使用 MemoryManager 统一入口"
 
-        # 验证不再直接导入 openai 或使用 FORM_MEMORY_PROMPT_TEMPLATE
+        # 验证不再直接导入 openai
         assert "OpenAI" not in source, \
             "handle_form_memory 不应直接创建 OpenAI 客户端"
-        assert "FORM_MEMORY_PROMPT_TEMPLATE" not in source, \
-            "handle_form_memory 不应直接使用 FORM_MEMORY_PROMPT_TEMPLATE"
 
     @pytest.mark.asyncio
     async def test_form_memory_no_user_returns_error(self):

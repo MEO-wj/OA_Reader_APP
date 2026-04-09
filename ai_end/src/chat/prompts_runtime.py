@@ -77,10 +77,7 @@ COMPACT_PROMPT_TEMPLATE = """你是对话历史压缩助手。请将以下对话
 - ...
 """
 
-# MEMORY_PROMPT_TEMPLATE 和 FORM_MEMORY_PROMPT_TEMPLATE 字段结构相同，仅输出格式不同
-# - MEMORY_PROMPT_TEMPLATE: 输出 JSON 格式，供程序解析
-# - FORM_MEMORY_PROMPT_TEMPLATE: 输出 Markdown 格式，供用户阅读
-#
+# MEMORY_PROMPT_TEMPLATE 输出 JSON 格式，供程序解析
 # v2 分层：confirmed（已确认）/ hypothesized（假设）/ knowledge（知识）
 MEMORY_PROMPT_TEMPLATE = """请将以下对话浓缩成 JSON 格式，保留关键决策要素。
 
@@ -132,25 +129,4 @@ DOC_SUMMARY_USER_PROMPT_TEMPLATE = """请为以下文档生成一个简短的摘
 3. 适用场景/用途
 
 摘要："""
-
-FORM_MEMORY_PROMPT_TEMPLATE = """请将以下对话浓缩成结构化格式，保留关键决策要素。
-
-### <confirmed-已确认>
-用户明确陈述或已验证的信息。禁止仅凭 OA 阅读记录写 confirmed.identity。
-- **identity（身份）**: 用户明确告知的身份信息，如年级、专业、学校等
-- **interests（偏好）**: 用户明确表达的偏好方向
-- **constraints（硬性约束）**: 用户明确提出的硬性约束，如地点、条件、资质要求等
-
-### <hypothesized-合理推测>
-从对话中合理推断但未确认的信息，格式为"（来源：...）可能..."
-- **identity（身份）**: （来源：对话中的线索）可能推断出的身份信息
-- **interests（偏好）**: （来源：对话中的线索）可能推断出的偏好
-
-### <knowledge-知识>
-- **confirmed_facts（已确认事实）**: 已确认的事实信息，如已知条件、数据等
-- **pending_queries（待查询事项）**: 用户还需要查询的问题
-
-对话内容：
-{conversation_lines}"""
-
 READ_REFERENCE_TOOL_DESCRIPTION = "【重要】只有在调用技能后才能使用！读取技能目录下的 references 文件内容。使用流程：1) 先调用相关技能获取 SKILL.md；2) 查看 SKILL.md 中提到的 references 文件路径；3) 使用此工具读取具体文件。不要直接使用此工具而不先调用技能。"

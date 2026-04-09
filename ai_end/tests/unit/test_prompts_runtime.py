@@ -6,7 +6,6 @@ from tests.prompts_test_constants import (
     MEMORY_V2_REQUIRED_CONSTRAINTS,
     COMPACT_V2_NO_MERGE_CONSTRAINTS,
     SYSTEM_PROMPT_V2_CONSTRAINTS,
-    FORM_MEMORY_V2_REQUIRED_FIELDS,
 )
 
 
@@ -18,7 +17,6 @@ def test_runtime_prompt_constants_exist():
         "TITLE_PROMPT_TEMPLATE",
         "DOC_SUMMARY_SYSTEM_PROMPT",
         "DOC_SUMMARY_USER_PROMPT_TEMPLATE",
-        "FORM_MEMORY_PROMPT_TEMPLATE",
         "READ_REFERENCE_TOOL_DESCRIPTION",
     ]
     for name in required:
@@ -80,14 +78,6 @@ def test_compact_prompt_contains_no_merge_constraint():
     for phrase in COMPACT_V2_NO_MERGE_CONSTRAINTS:
         assert phrase in p.COMPACT_PROMPT_TEMPLATE, (
             f"COMPACT_PROMPT_TEMPLATE 缺少 v2 分层约束: {phrase}"
-        )
-
-
-def test_form_memory_prompt_contains_v2_fields():
-    """验证 FORM_MEMORY_PROMPT_TEMPLATE 对齐 v2 语义层字段"""
-    for field in FORM_MEMORY_V2_REQUIRED_FIELDS:
-        assert field in p.FORM_MEMORY_PROMPT_TEMPLATE, (
-            f"FORM_MEMORY_PROMPT_TEMPLATE 缺少 v2 字段: {field}"
         )
 
 
