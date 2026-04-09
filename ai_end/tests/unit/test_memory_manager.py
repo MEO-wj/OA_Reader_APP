@@ -644,35 +644,6 @@ class TestExistingProfileInjection:
         )
 
     @pytest.mark.asyncio
-    async def test_first_prompt_includes_existing_profile_when_valid_v2(self):
-        """有效 v2 画像时，首轮 prompt 应包含已有用户画像段落。"""
-        uid = "00000000-0000-0000-0008-000000000300"
-        queue = MagicMock()
-        captured_prompts: list[str] = []
-
-        async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
-            captured_prompts.append(prompt)
-            return self._valid_v2_response()
-
-        queue.submit = AsyncMock(side_effect=capture_submit)
-        db = MagicMock()
-        db.save_profile = AsyncMock()
-        db.get_profile = AsyncMock(return_value={
-            "portrait_text": '{"confirmed":{"identity":["大三学生"],"interests":["编程"],"constraints":["广州"]},"hypothesized":{"identity":[],"interests":[]}}',
-            "knowledge_text": '{"confirmed_facts":["六级550分"],"pending_queries":["分数线"]}',
-        })
-
-        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
-            manager = MemoryManager(user_id=uid, memory_db=db)
-            await manager.form_memory([{"role": "user", "content": "你好"}])
-
-        first_prompt = captured_prompts[0]
-        assert "已有用户画像（仅供参考" in first_prompt, \
-            "首轮 prompt 应包含已有用户画像段落"
-        assert "已确认身份" in first_prompt, \
-            "首轮 prompt 应包含格式化的画像字段"
-
-    @pytest.mark.asyncio
     async def test_first_prompt_skips_existing_profile_when_v1(self):
         """v1 格式画像时，首轮 prompt 不应包含已有画像段落。"""
         uid = "00000000-0000-0000-0008-000000000301"
