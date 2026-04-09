@@ -746,3 +746,124 @@ class TestHandleFormMemory:
         from src.chat.handlers import handle_form_memory
         result = await handle_form_memory(user_id=None)
         assert "用户ID" in result
+
+
+class TestFormMemoryDeferredExecution:
+    """测试 form_memory tool_call 延迟到回合末执行（触发层与执行层分离）"""
+
+    @pytest.mark.asyncio
+    async def test_form_memory_tool_only_registers_after_turn_flag(self):
+        """form_memory 被调用时应只通过回调登记，不直接调用 handle_form_memory。"""
+        marked = {"value": False}
+
+        def mark():
+            marked["value"] = True
+
+        # 构造 form_memory tool_call
+        mock_tool_call = Mock()
+        mock_tool_call.function.name = "form_memory"
+        mock_tool_call.function.arguments = '{"reason": "用户提到了偏好"}'
+        mock_tool_call.id = "call_fm_1"
+
+        mock_skill_system = Mock()
+        mock_skill_system.available_skills = {}
+
+        with patch("src.chat.handlers.handle_form_memory") as mock_handle_fm:
+            result = await handle_tool_calls(
+                [mock_tool_call],
+                mock_skill_system,
+                activated_skills=set(),
+                mark_form_memory_after_turn=mark,
+            )
+
+        # 断言：回调被调用
+        assert marked["value"] is True
+        # 断言：handle_form_memory 未被调用（不直接执行）
+        mock_handle_fm.assert_not_called()
+        # 断言：返回登记成功文案
+        assert "登记" in result[0]["content"] or "回合末" in result[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_form_memory_without_callback_falls_back_to_direct_execution(self):
+        """不传 mark_form_memory_after_turn 回调时，仍走原有直接执行路径。"""
+        mock_tool_call = Mock()
+        mock_tool_call.function.name = "form_memory"
+        mock_tool_call.function.arguments = '{"reason": "测试"}'
+        mock_tool_call.id = "call_fm_2"
+
+        mock_skill_system = Mock()
+        mock_skill_system.available_skills = {}
+
+        with patch("src.chat.handlers.handle_form_memory", new_callable=AsyncMock, return_value="记忆已形成") as mock_handle_fm:
+            result = await handle_tool_calls(
+                [mock_tool_call],
+                mock_skill_system,
+                activated_skills=set(),
+            )
+
+        # 断言：handle_form_memory 被直接调用
+        mock_handle_fm.assert_called_once()
+        assert result[0]["content"] == "记忆已形成"
+
+    @pytest.mark.asyncio
+    async def test_form_memory_callback_receives_no_arguments(self):
+        """回调应为无参 Callable[[], None]，不需要接收 reason 等参数。"""
+        call_log = []
+
+        def mark():
+            call_log.append("called")
+
+        mock_tool_call = Mock()
+        mock_tool_call.function.name = "form_memory"
+        mock_tool_call.function.arguments = '{"reason": "用户说喜欢北京"}'
+        mock_tool_call.id = "call_fm_3"
+
+        mock_skill_system = Mock()
+        mock_skill_system.available_skills = {}
+
+        with patch("src.chat.handlers.handle_form_memory"):
+            result = await handle_tool_calls(
+                [mock_tool_call],
+                mock_skill_system,
+                activated_skills=set(),
+                mark_form_memory_after_turn=mark,
+            )
+
+        # 断言：回调恰好被调用一次
+        assert call_log == ["called"]
+
+    def test_sync_wrapper_passes_through_mark_form_memory_callback(self):
+        """handle_tool_calls_sync 应透传 mark_form_memory_after_turn 参数。"""
+        marked = {"value": False}
+
+        def mark():
+            marked["value"] = True
+
+        mock_tool_call = Mock()
+        mock_tool_call.function.name = "form_memory"
+        mock_tool_call.function.arguments = '{"reason": "测试同步透传"}'
+        mock_tool_call.id = "call_fm_sync_1"
+
+        mock_skill_system = Mock()
+        mock_skill_system.available_skills = {}
+
+        expected = [{"role": "tool", "tool_call_id": "call_fm_sync_1", "content": "已登记，将在回合末执行记忆形成。"}]
+        fake_loop = Mock()
+
+        def _fake_submit(coro, _loop):
+            coro.close()
+            fake_future = Mock()
+            fake_future.result.return_value = expected
+            return fake_future
+
+        with patch("src.chat.handlers._get_tool_loop", return_value=fake_loop), \
+             patch("src.chat.handlers.asyncio.run_coroutine_threadsafe", side_effect=_fake_submit) as mock_submit:
+            result = handle_tool_calls_sync(
+                [mock_tool_call],
+                mock_skill_system,
+                mark_form_memory_after_turn=mark,
+            )
+
+        # 验证 run_coroutine_threadsafe 被调用
+        mock_submit.assert_called_once()
+        assert result == expected

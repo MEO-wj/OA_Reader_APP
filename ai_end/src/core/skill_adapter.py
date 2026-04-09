@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 from enum import Enum
 from typing import Any
 
@@ -52,9 +54,13 @@ class SkillAdapter:
         return self._backend.get_skill_info(skill_name)
 
     def build_tools_definition(
-        self, activated_skills: set[str] | None = None
+        self, activated_skills: set[str] | None = None, *, user_id: str | None = None
     ) -> list[dict[str, Any]]:
-        return self._backend.build_tools_definition(activated_skills)
+        build_fn = self._backend.build_tools_definition
+        sig = inspect.signature(build_fn)
+        if "user_id" in sig.parameters:
+            return build_fn(activated_skills, user_id=user_id)
+        return build_fn(activated_skills)
 
     async def read_reference(
         self, skill_name: str, file_path: str, lines: str = ""

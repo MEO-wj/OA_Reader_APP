@@ -6,7 +6,7 @@ import importlib
 import json
 import logging
 import threading
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,7 @@ async def handle_tool_calls(
     activated_skills: set | None = None,
     user_id: str | None = None,
     conversation_id: str | None = None,
+    mark_form_memory_after_turn: Callable[[], None] | None = None,
 ) -> list[dict[str, Any]]:
     """
     处理 OpenAI 返回的 tool_calls
@@ -147,6 +148,9 @@ async def handle_tool_calls(
         tool_calls: OpenAI 响应中的 tool_calls 列表
         skill_system: 技能系统实例
         activated_skills: 已激活的技能集合
+        user_id: 用户ID
+        conversation_id: 会话ID
+        mark_form_memory_after_turn: 回合末执行标记回调，若提供则 form_memory 仅登记不直接执行
 
     Returns:
         工具调用结果消息列表，每个消息包含 role="tool" 和对应的 content
@@ -180,8 +184,14 @@ async def handle_tool_calls(
                 content = truncate_tool_output("read_reference", function_name, content)["content"]
         elif function_name == "form_memory":
             # 处理 form_memory 工具调用
-            reason = function_args.get("reason", "")
-            content = await handle_form_memory(reason, user_id, conversation_id)
+            if mark_form_memory_after_turn is not None:
+                # 触发层与执行层分离：仅登记，不直接执行
+                mark_form_memory_after_turn()
+                content = "已登记，将在回合末执行记忆形成。"
+            else:
+                # 兼容旧路径：无回调时直接执行
+                reason = function_args.get("reason", "")
+                content = await handle_form_memory(reason, user_id, conversation_id)
         else:
             # 去除 call_skill_ 前缀（如果有）
             skill_name = function_name.replace("call_skill_", "") if function_name.startswith("call_skill_") else function_name
@@ -295,7 +305,8 @@ async def handle_form_memory(
 def handle_tool_calls_sync(
     tool_calls: list[Any],
     skill_system: SkillSystem,
-    activated_skills: set | None = None
+    activated_skills: set | None = None,
+    mark_form_memory_after_turn: Callable[[], None] | None = None,
 ) -> list[dict[str, Any]]:
     """
     同步包装器，用于兼容现有代码
@@ -304,13 +315,14 @@ def handle_tool_calls_sync(
         tool_calls: OpenAI 响应中的 tool_calls 列表
         skill_system: 技能系统实例
         activated_skills: 已激活的技能集合
+        mark_form_memory_after_turn: 回合末执行标记回调，透传给 handle_tool_calls
 
     Returns:
         工具调用结果消息列表
     """
     loop = _get_tool_loop()
     future = asyncio.run_coroutine_threadsafe(
-        handle_tool_calls(tool_calls, skill_system, activated_skills),
+        handle_tool_calls(tool_calls, skill_system, activated_skills, mark_form_memory_after_turn=mark_form_memory_after_turn),
         loop,
     )
     return future.result()

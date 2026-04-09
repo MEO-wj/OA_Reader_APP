@@ -240,6 +240,36 @@ class TestDbSkillSystem:
             assert secondary_tool is not None
             assert secondary_tool["function"]["description"] == "二级工具示例"
 
+    async def test_build_tools_definition_has_form_memory_with_user_id(self, mock_db_rows):
+        """
+        测试当提供 user_id 时，build_tools_definition 包含 form_memory 工具
+        Given: 已加载技能的 DbSkillSystem 实例
+        When: 调用 build_tools_definition 并传入 user_id
+        Then: 返回的工具列表中包含 form_memory
+        """
+        with patch("src.core.db_skill_system.get_pool") as mock_get_pool:
+            mock_get_pool.return_value = create_mock_pool(mock_db_rows)
+            system = await DbSkillSystem.create()
+
+            tools = system.build_tools_definition(activated_skills=set(), user_id="u1")
+            names = [t["function"]["name"] for t in tools]
+            assert "form_memory" in names
+
+    async def test_build_tools_definition_hides_form_memory_without_user_id(self, mock_db_rows):
+        """
+        测试当不提供 user_id 时，build_tools_definition 不包含 form_memory 工具
+        Given: 已加载技能的 DbSkillSystem 实例
+        When: 调用 build_tools_definition 且 user_id 为 None
+        Then: 返回的工具列表中不包含 form_memory
+        """
+        with patch("src.core.db_skill_system.get_pool") as mock_get_pool:
+            mock_get_pool.return_value = create_mock_pool(mock_db_rows)
+            system = await DbSkillSystem.create()
+
+            tools = system.build_tools_definition(activated_skills=set(), user_id=None)
+            names = [t["function"]["name"] for t in tools]
+            assert "form_memory" not in names
+
     async def test_read_reference_success(self, mock_db_rows, mock_reference_rows):
         """
         测试成功读取参考资料

@@ -84,3 +84,29 @@ def test_compact_prompt_contains_no_merge_constraint():
 def test_memory_prompt_contains_existing_profile_placeholder():
     """验证 MEMORY_PROMPT_TEMPLATE 支持 existing_profile 占位符。"""
     assert "{existing_profile}" in p.MEMORY_PROMPT_TEMPLATE
+
+
+# ─── Task 5: 提示词约束回归 ──────────────────────────────────
+
+
+def test_system_prompt_contains_aggressive_trigger_semantic():
+    """SYSTEM_PROMPT 应包含激进触发语义：出现画像线索时优先触发 form_memory。"""
+    assert "form_memory" in p.SYSTEM_PROMPT_TEMPLATE
+    assert ("线索" in p.SYSTEM_PROMPT_TEMPLATE or "画像" in p.SYSTEM_PROMPT_TEMPLATE)
+
+
+def test_memory_prompt_contains_merge_and_conflict_rules():
+    """MEMORY_PROMPT 应包含合并策略和冲突解决规则。"""
+    assert "已有" in p.MEMORY_PROMPT_TEMPLATE or "existing" in p.MEMORY_PROMPT_TEMPLATE.lower()
+    assert "合并" in p.MEMORY_PROMPT_TEMPLATE or "merge" in p.MEMORY_PROMPT_TEMPLATE.lower()
+    # 或更具体的文案
+    assert ("冲突" in p.MEMORY_PROMPT_TEMPLATE or "新信息优先" in p.MEMORY_PROMPT_TEMPLATE
+            or "冲突时新优先" in p.MEMORY_PROMPT_TEMPLATE)
+
+
+def test_memory_prompt_contains_confirmed_interests_threshold():
+    """MEMORY_PROMPT 应包含 confirmed.interests 门槛约束：提问不直接进入 confirmed。"""
+    assert "提问" in p.MEMORY_PROMPT_TEMPLATE
+    # 验证提问与 confirmed.interests 的关系是负面的
+    assert ("不等于" in p.MEMORY_PROMPT_TEMPLATE or "不代表" in p.MEMORY_PROMPT_TEMPLATE
+            or "不直接" in p.MEMORY_PROMPT_TEMPLATE)

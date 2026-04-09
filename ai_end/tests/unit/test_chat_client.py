@@ -1184,7 +1184,7 @@ class TestChatClientAsyncStreaming:
             data_source = "database"
             available_skills = {}
 
-            def build_tools_definition(self, _activated_skills):
+            def build_tools_definition(self, _activated_skills, **kwargs):
                 return []
 
         client.skill_system = _FakeDbSkillSystem()
@@ -1310,7 +1310,7 @@ class TestChatClientDbObservability:
             data_source = "database"
             available_skills = {}
 
-            def build_tools_definition(self, _activated_skills):
+            def build_tools_definition(self, _activated_skills, **kwargs):
                 return []
 
             def get_skill_content(self, _skill_name):

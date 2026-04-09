@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -269,3 +270,262 @@ async def test_new_session_memory_prompt_sanitizes_think_and_noise():
     assert "执行强" in memory_prompt
     assert "<think>" not in memory_prompt
 
+
+@pytest.mark.asyncio
+async def test_chat_stream_passes_user_id_to_build_tools_definition(monkeypatch):
+    config = Config.load()
+    client = ChatClient(config)
+    client.user_id = _uid("tools_pass")
+
+    captured = {}
+    original = client.skill_system.build_tools_definition
+
+    def wrapped(*args, **kwargs):
+        captured.update(kwargs)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(client.skill_system, "build_tools_definition", wrapped)
+
+    # Mock API stream to avoid network dependency
+    async def _fake_stream(messages, tools):
+        yield type("Chunk", (), {"usage": None, "choices": [type("Choice", (), {"delta": type("Delta", (), {"content": "hi", "tool_calls": None})()})()]})()
+
+    monkeypatch.setattr(client, "_create_completion_stream_async", _fake_stream)
+
+    async for event in client.chat_stream_async("hello"):
+        if event.get("type") == "done":
+            break
+
+    assert captured.get("user_id") == _uid("tools_pass")
+
+
+# ──────────────────────────────────────────────────────
+# Task 4: force_memory_after_turn — 回合末强制裁决与状态清理
+# ──────────────────────────────────────────────────────
+
+def _make_chunk(content="hi", tool_calls=None, usage=None):
+    """快速构建一个 LLM stream chunk 对象。"""
+    delta = type("Delta", (), {"content": content, "tool_calls": tool_calls})()
+    choice = type("Choice", (), {"delta": delta})()
+    return type("Chunk", (), {"usage": usage, "choices": [choice]})()
+
+
+def _make_tool_call_chunk(call_id, func_name, arguments, index=0):
+    """构建一个增量式 tool_call delta chunk。"""
+    fn = type("Fn", (), {"name": func_name, "arguments": arguments})()
+    tc = type("TC", (), {"index": index, "id": call_id, "function": fn})()
+    delta = type("Delta", (), {"content": None, "tool_calls": [tc]})()
+    choice = type("Choice", (), {"delta": delta})()
+    return type("Chunk", (), {"usage": None, "choices": [choice]})()
+
+
+def _patch_client_for_stream_test(monkeypatch, client):
+    """为 chat_stream_async 测试统一 mock 数据库依赖。"""
+    # 避免 _history_manager.append 触发真实 DB 写入
+    monkeypatch.setattr(
+        client._history_manager, "append",
+        AsyncMock(return_value=None),
+    )
+    # 避免 load_context 触发真实 DB 读取
+    monkeypatch.setattr(
+        client, "load_context",
+        AsyncMock(return_value=[]),
+    )
+
+
+@pytest.mark.asyncio
+async def test_force_memory_after_turn_bypasses_threshold(monkeypatch):
+    """force_memory_after_turn=True 时，即使未达 5 条门槛也执行 form_memory。"""
+    config = Config.load()
+    user_id = _uid("force_bypass")
+
+    client = ChatClient(config)
+    client.user_id = user_id
+    client.conversation_id = "c_force"
+    # 只有一条 user（远低于 5 条门槛）
+    client.messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hello"},
+    ]
+
+    # 手动置位强制标记，模拟 tool call 中 form_memory 已触发
+    client._force_memory_after_turn = True
+
+    _patch_client_for_stream_test(monkeypatch, client)
+
+    form_memory_called = False
+
+    async def _fake_form_memory():
+        nonlocal form_memory_called
+        form_memory_called = True
+
+    monkeypatch.setattr(client, "form_memory", _fake_form_memory)
+
+    # Mock stream: AI 直接回复，无 tool_calls
+    async def _fake_stream(messages, tools):
+        yield _make_chunk(content="reply")
+
+    monkeypatch.setattr(client, "_create_completion_stream_async", _fake_stream)
+
+    async for _ in client.chat_stream_async("test"):
+        pass
+
+    assert form_memory_called is True, "force_memory_after_turn=True 应绕过门槛执行 form_memory"
+
+
+@pytest.mark.asyncio
+async def test_force_memory_only_once_despite_multiple_form_memory_calls(monkeypatch):
+    """同一回合多次 form_memory tool_call 仍仅执行一次 form_memory。"""
+    config = Config.load()
+    user_id = _uid("force_once")
+
+    client = ChatClient(config)
+    client.user_id = user_id
+    client.conversation_id = "c_once"
+    client.messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hello"},
+    ]
+
+    _patch_client_for_stream_test(monkeypatch, client)
+
+    form_memory_call_count = 0
+
+    async def _fake_form_memory():
+        nonlocal form_memory_call_count
+        form_memory_call_count += 1
+
+    monkeypatch.setattr(client, "form_memory", _fake_form_memory)
+
+    # Mock handle_tool_calls: 模拟两个 form_memory tool_call 都触发了 mark callback
+    async def _fake_handle_tool_calls(tool_calls):
+        # 模拟两次 form_memory 调用都触发了 mark callback（幂等）
+        client._force_memory_after_turn = True
+        client._force_memory_after_turn = True
+        return [{"role": "tool", "tool_call_id": "tc1", "content": "ok"}]
+
+    monkeypatch.setattr(client, "_handle_tool_calls_async", _fake_handle_tool_calls)
+
+    # 第一轮返回 tool_calls（用增量式 chunk），第二轮直接回复
+    call_count = 0
+
+    async def _fake_stream(messages, tools):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # 用增量式 tool_call chunk 模拟真实 LLM 流式返回
+            yield _make_tool_call_chunk("tc1", "form_memory", '{"reason":"test"}', index=0)
+        else:
+            yield _make_chunk(content="final reply")
+
+    monkeypatch.setattr(client, "_create_completion_stream_async", _fake_stream)
+
+    async for _ in client.chat_stream_async("test"):
+        pass
+
+    assert form_memory_call_count == 1, "多次 form_memory tool_call 应只执行一次 form_memory"
+
+
+@pytest.mark.asyncio
+async def test_force_memory_flag_cleared_after_turn(monkeypatch):
+    """成功/失败后标记都会清零。"""
+    config = Config.load()
+    user_id = _uid("force_clear")
+
+    client = ChatClient(config)
+    client.user_id = user_id
+    client.conversation_id = "c_clear"
+    client.messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hello"},
+    ]
+
+    client._force_memory_after_turn = True
+
+    _patch_client_for_stream_test(monkeypatch, client)
+
+    async def _fake_form_memory():
+        pass  # 成功执行
+
+    monkeypatch.setattr(client, "form_memory", _fake_form_memory)
+
+    async def _fake_stream(messages, tools):
+        yield _make_chunk(content="reply")
+
+    monkeypatch.setattr(client, "_create_completion_stream_async", _fake_stream)
+
+    async for _ in client.chat_stream_async("test"):
+        pass
+
+    assert client._force_memory_after_turn is False, "回合结束后标记应清零"
+
+
+@pytest.mark.asyncio
+async def test_force_memory_flag_cleared_even_on_form_memory_failure(monkeypatch):
+    """form_memory 抛异常后标记也应清零。"""
+    config = Config.load()
+    user_id = _uid("force_clear_err")
+
+    client = ChatClient(config)
+    client.user_id = user_id
+    client.conversation_id = "c_clear_err"
+    client.messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hello"},
+    ]
+
+    client._force_memory_after_turn = True
+
+    _patch_client_for_stream_test(monkeypatch, client)
+
+    async def _fake_form_memory():
+        raise RuntimeError("form_memory failed!")
+
+    monkeypatch.setattr(client, "form_memory", _fake_form_memory)
+
+    async def _fake_stream(messages, tools):
+        yield _make_chunk(content="reply")
+
+    monkeypatch.setattr(client, "_create_completion_stream_async", _fake_stream)
+
+    with pytest.raises(RuntimeError, match="form_memory failed!"):
+        async for _ in client.chat_stream_async("test"):
+            pass
+
+    assert client._force_memory_after_turn is False, "即使 form_memory 失败，标记也应清零"
+
+
+@pytest.mark.asyncio
+async def test_no_force_memory_retains_threshold_behavior(monkeypatch):
+    """未置位 _force_memory_after_turn 时仍保留 5 条门槛行为。"""
+    config = Config.load()
+    user_id = _uid("no_force")
+
+    client = ChatClient(config)
+    client.user_id = user_id
+    client.conversation_id = "c_no_force"
+    # 消息数很少（低于 5 条门槛）
+    client.messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hello"},
+    ]
+
+    _patch_client_for_stream_test(monkeypatch, client)
+
+    form_memory_called = False
+
+    async def _fake_form_memory():
+        nonlocal form_memory_called
+        form_memory_called = True
+
+    monkeypatch.setattr(client, "form_memory", _fake_form_memory)
+
+    async def _fake_stream(messages, tools):
+        yield _make_chunk(content="reply")
+
+    monkeypatch.setattr(client, "_create_completion_stream_async", _fake_stream)
+
+    async for _ in client.chat_stream_async("test"):
+        pass
+
+    assert form_memory_called is False, "未置位且未达门槛时不应执行 form_memory"

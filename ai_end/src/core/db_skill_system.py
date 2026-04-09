@@ -220,13 +220,14 @@ class DbSkillSystem:
             return f"错误：读取参考资料失败 - {e}"
 
     def build_tools_definition(
-        self, activated_skills: set[str] | None = None
+        self, activated_skills: set[str] | None = None, user_id: str | None = None
     ) -> list[dict[str, Any]]:
         """
         构建 OpenAI tools 定义
 
         Args:
             activated_skills: 已激活的技能集合，只有这些技能的二级工具会被包含
+            user_id: 用户ID，存在时注入 form_memory 工具
 
         Returns:
             符合 OpenAI tools 格式的函数定义列表
@@ -292,5 +293,24 @@ class DbSkillSystem:
                             "parameters": tool_def["parameters"],
                         },
                     })
+
+        # 仅当 user_id 存在时注入 form_memory 工具
+        if user_id is not None:
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": "form_memory",
+                    "description": "当对话完成一个话题时，总结本次对话中关于用户的重要信息并形成用户记忆。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "reason": {
+                                "type": "string",
+                                "description": "形成记忆的原因，简要说明从对话中提取了哪些关键信息",
+                            },
+                        },
+                    },
+                },
+            })
 
         return tools

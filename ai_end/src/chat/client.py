@@ -88,6 +88,7 @@ class ChatClient:
         )
         self._propagate_manager_context()
         self.round_count = 0  # 对话轮数计数
+        self._force_memory_after_turn = False  # 回合末强制记忆裁决标记
         self.usage_totals = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -441,7 +442,7 @@ class ChatClient:
                 "llm",
                 self._create_completion_sync,
                 self.messages,
-                self.skill_system.build_tools_definition(self.activated_skills),
+                self.skill_system.build_tools_definition(self.activated_skills, user_id=self.user_id),
             )
 
             # 记录 token 用量（如果 API 返回 usage）
@@ -718,6 +719,7 @@ class ChatClient:
             self.activated_skills,
             self.user_id,
             self.conversation_id,
+            mark_form_memory_after_turn=lambda: setattr(self, '_force_memory_after_turn', True),
         )
         self.messages.extend(tool_messages)
         return tool_messages
@@ -806,7 +808,7 @@ class ChatClient:
         while True:
             iteration += 1
             queue = get_api_queue()
-            tools = self.skill_system.build_tools_definition(self.activated_skills)
+            tools = self.skill_system.build_tools_definition(self.activated_skills, user_id=self.user_id)
             if hasattr(queue, "submit_async"):
                 response_stream = await queue.submit_async(
                     "llm",
@@ -935,11 +937,18 @@ class ChatClient:
                         ],
                     )
 
-                # 检查是否触发记忆形成（基于数据库消息数量）
-                if self.user_id and (synced_history_count + 2) >= 5:
-                    # synced_history_count 为当前轮开始前已同步的 user/assistant 条数，
-                    # 本轮会新增 user + assistant 两条。
-                    await self.form_memory()
+                # 回合末记忆裁决：强制标记优先，否则走门槛
+                should_form_memory = False
+                if self._force_memory_after_turn:
+                    should_form_memory = True
+                elif self.user_id and (synced_history_count + 2) >= 5:
+                    should_form_memory = True
+
+                try:
+                    if should_form_memory:
+                        await self.form_memory()
+                finally:
+                    self._force_memory_after_turn = False
 
                 logger.info(
     f"Chat stream completed: iteration={iteration}, "
