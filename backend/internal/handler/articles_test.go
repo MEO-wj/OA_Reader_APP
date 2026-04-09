@@ -13,9 +13,11 @@ import (
 )
 
 type fakeArticleRepo struct {
-	today    []model.Article
-	page     []model.Article
-	hasOlder bool
+	today          []model.Article
+	page           []model.Article
+	hasOlder       bool
+	findByIDResult *model.Article
+	findByIDErr    error
 }
 
 func (f *fakeArticleRepo) FindToday() ([]model.Article, error) { return f.today, nil }
@@ -25,8 +27,8 @@ func (f *fakeArticleRepo) FindPage(beforeDate string, beforeID, limit int) ([]mo
 func (f *fakeArticleRepo) FindPageByID(beforeID, limit int) ([]model.Article, error) {
 	return f.page, nil
 }
-func (f *fakeArticleRepo) Count() (int64, error)                      { return 0, nil }
-func (f *fakeArticleRepo) FindByID(id uint64) (*model.Article, error) { return nil, nil }
+func (f *fakeArticleRepo) Count() (int64, error)                       { return 0, nil }
+func (f *fakeArticleRepo) FindByID(id uint64) (*model.Article, error) { return f.findByIDResult, f.findByIDErr }
 func (f *fakeArticleRepo) HasOlderThan(publishedOn time.Time, id int64) (bool, error) {
 	return f.hasOlder, nil
 }
@@ -70,6 +72,56 @@ func TestGetPage_V2RejectsInvalidBeforeDate(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid before_date, got %d", rec.Code)
+	}
+}
+
+func TestGetByID_ReturnsSnakeCaseJSONKeys(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &fakeArticleRepo{}
+	svc := service.NewArticleServiceWithRepo(repo)
+	h := NewArticleHandler(svc)
+
+	// Override FindByID to return a real article
+	article := &model.Article{
+		ID:          42,
+		Title:       "测试标题",
+		Unit:        "测试单位",
+		Link:        "https://example.com",
+		PublishedOn: time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC),
+		Content:     "正文内容",
+		Summary:     "AI摘要",
+	}
+	repo.findByIDResult = article
+
+	r := gin.New()
+	r.GET("/api/articles/:id", h.GetByID)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/articles/42", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	// Verify snake_case keys exist (frontend expects these)
+	for _, key := range []string{"id", "title", "unit", "link", "published_on", "content", "summary"} {
+		if _, ok := payload[key]; !ok {
+			t.Errorf("missing snake_case key %q in response: %v", key, payload)
+		}
+	}
+
+	// Verify PascalCase keys do NOT exist
+	for _, key := range []string{"ID", "Title", "Unit", "Link", "PublishedOn", "Content", "Summary"} {
+		if _, ok := payload[key]; ok {
+			t.Errorf("unexpected PascalCase key %q in response (should be snake_case)", key)
+		}
 	}
 }
 
