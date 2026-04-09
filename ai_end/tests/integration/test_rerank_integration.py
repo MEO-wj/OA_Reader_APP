@@ -115,28 +115,25 @@ async def test_rerank_with_custom_base_url():
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_rerank_empty_query():
-    """测试空查询时的错误处理
+    """测试空查询时的行为：走时间排序分支返回最新文章
 
     Given: 任何配置状态
     When: 传入空查询字符串
-    Then: 正确抛出 ValueError
+    Then: 返回 results 列表（按时间排序），不抛异常
     """
     # 重置客户端
     api_clients.close_clients()
 
     try:
-        # === When & Then: 验证空查询抛出异常 ===
-        with pytest.raises(ValueError, match="查询文本不能为空"):
-            await article_retrieval.search_articles(
-                query="",
-                top_k=5
-            )
+        # === When & Then: 空 query 应走 _search_by_time 分支 ===
+        result = await article_retrieval.search_articles(query="", top_k=5)
+        assert "results" in result
+        assert isinstance(result["results"], list)
 
-        with pytest.raises(ValueError, match="查询文本不能为空"):
-            await article_retrieval.search_articles(
-                query="   ",  # 仅空格
-                top_k=5
-            )
+        # 仅空格同理
+        result_spaces = await article_retrieval.search_articles(query="   ", top_k=5)
+        assert "results" in result_spaces
+        assert isinstance(result_spaces["results"], list)
 
     finally:
         api_clients.close_clients()
