@@ -4,10 +4,12 @@
 TDD GREEN 阶段：实现通过测试的代码
 """
 import asyncio
+import datetime
 import inspect
 import logging
 import re
 from typing import Any, AsyncGenerator
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,14 @@ from src.core.db import close_pool
 from src.core.article_retrieval import close_resources
 from src.di.providers import get_history_manager, get_memory_manager, get_skill_system
 from src.chat.prompts_runtime import SYSTEM_PROMPT_TEMPLATE
+
+# 中文星期映射
+_WEEKDAY_CN = {0: "星期一", 1: "星期二", 2: "星期三", 3: "星期四", 4: "星期五", 5: "星期六", 6: "星期日"}
+
+
+def _get_now(tz: ZoneInfo | None = None) -> datetime.datetime:
+    """获取当前时间（可测试的辅助函数）。"""
+    return datetime.datetime.now(tz=tz)
 
 
 class ChatClient:
@@ -180,7 +190,16 @@ class ChatClient:
             profile_section = "## 用户画像 - 决策要素\n\n暂无用户画像信息。"
 
         # 构建系统提示词
+        # 注入当前日期与星期
+        tz_name = getattr(self.config, "compat_timezone", None)
+        tz = ZoneInfo(tz_name) if tz_name else None
+        now = _get_now(tz=tz)
+        current_date = now.strftime("%Y-%m-%d")
+        weekday = _WEEKDAY_CN.get(now.weekday(), "未知")
+
         system_prompt = self.DEFAULT_SYSTEM_PROMPT.format(
+            current_date=current_date,
+            weekday=weekday,
             skills_list=skills_text if skills_text else "暂无可用技能",
             profile_section=profile_section
         )

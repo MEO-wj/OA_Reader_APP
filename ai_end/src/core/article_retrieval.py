@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import re
+import math
 import logging
+from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from openai import BaseModel
 
@@ -37,6 +40,99 @@ def _is_transient_db_error(error: Exception) -> bool:
         "connection is closed",
     )
     return any(marker in message for marker in markers)
+
+
+def _parse_date(value: str) -> date | None:
+    """尝试将字符串解析为日期，失败返回 None。"""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _today() -> date:
+    """获取当前日期（考虑 compat_timezone 配置）。"""
+    config = Config.load()
+    tz_name = config.compat_timezone
+    if tz_name:
+        try:
+            tz = ZoneInfo(tz_name)
+            return datetime.now(tz).date()
+        except Exception:
+            pass
+    return date.today()
+
+
+def _normalize_date_range(
+    start_date: str | None,
+    end_date: str | None,
+) -> tuple[date | None, date | None]:
+    """规范化日期范围：解析、交换逆序、补全单边界。
+
+    返回 (start, end)，解析失败的边界设为 None。
+    """
+    sd = _parse_date(start_date) if start_date else None
+    ed = _parse_date(end_date) if end_date else None
+
+    # 仅 start_date 时，end_date 默认今天
+    if sd is not None and ed is None:
+        ed = _today()
+    # 仅 end_date 时，不设下界（sd 保持 None）
+
+    # 两者都有但逆序时自动交换
+    if sd is not None and ed is not None and sd > ed:
+        sd, ed = ed, sd
+
+    return sd, ed
+
+
+def _build_date_sql_and_params(
+    start: date | None,
+    end: date | None,
+    param_idx: int,
+    column: str = "a.published_on",
+) -> tuple[list[str], list[Any]]:
+    """构建日期过滤 SQL 片段和参数列表。"""
+    clauses: list[str] = []
+    params: list[Any] = []
+    if start is not None:
+        clauses.append(f"{column} >= ${param_idx}")
+        params.append(start)
+        param_idx += 1
+    if end is not None:
+        clauses.append(f"{column} <= ${param_idx}")
+        params.append(end)
+    return clauses, params
+
+
+def _apply_recency_weighting(
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """为候选结果添加时效性加权 final_score。
+
+    公式：final_score = similarity + 0.1 * exp(-days_old / 30)
+    days_old 越小（越新），exp 项越大，final_score 越高。
+    仅当有有效 published_on 时才计算 final_score。
+    """
+    today = _today()
+    for doc in candidates:
+        published_str = doc.get("published_on", "")
+        if not published_str:
+            continue
+        published = _parse_date(str(published_str))
+        if published is None:
+            continue
+
+        days_old = max((today - published).days, 0)
+
+        # 优先使用 rerank_score，其次 ebd_similarity
+        similarity = doc.get("rerank_score") or doc.get("ebd_similarity") or 0.0
+        final_score = similarity + 0.1 * math.exp(-days_old / 30)
+        doc["final_score"] = final_score
+
+    # 按 final_score 降序排列（有 final_score 的排前面）
+    candidates.sort(key=lambda d: d.get("final_score", float("-inf")), reverse=True)
+    return candidates
 
 
 def _get_embedding_client():
@@ -168,12 +264,66 @@ class ArticleRetriever(BaseRetriever):
     ) -> tuple[str, list[Any]]:
         return "", []
 
+    async def _search_by_time(
+        self,
+        top_k: int = 10,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> dict[str, Any]:
+        """无 query 时直接按发布日期降序获取最新文章。"""
+        where_clauses = []
+        params: list[Any] = []
+        next_idx = 1
+
+        date_clauses, date_params = _build_date_sql_and_params(start_date, end_date, next_idx, column="published_on")
+        where_clauses.extend(date_clauses)
+        params.extend(date_params)
+
+        params.append(top_k)
+        limit_idx = len(params)
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        sql = f"""
+            SELECT id, title, unit, published_on, summary,
+                   LEFT(content, 80) as content_snippet
+            FROM articles
+            {where_sql}
+            ORDER BY published_on DESC
+            LIMIT ${limit_idx}
+        """
+
+        try:
+            pool = await self._get_pool_fn()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(sql, *params)
+        except Exception as exc:
+            logger.warning("_search_by_time failed: %s", exc)
+            return {"error": f"搜索失败: {str(exc)}", "results": []}
+
+        results = []
+        for row in rows:
+            results.append({
+                "id": _row_value(row, "id"),
+                "title": _row_value(row, "title"),
+                "unit": _row_value(row, "unit"),
+                "published_on": str(_row_value(row, "published_on", "")),
+                "summary": _row_value(row, "summary"),
+                "content_snippet": _row_value(row, "content_snippet"),
+                "ebd_similarity": None,
+                "keyword_similarity": None,
+                "rerank_score": None,
+            })
+        return {"results": results}
+
     async def _vector_search(
         self,
         query_embedding_str: str,
         limit: int = 20,
         threshold: float = 0.5,
         metadata_filters: dict[str, Any] | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> list[dict[str, Any]]:
         """覆写基类：使用 JOIN 查询 vectors + articles。"""
         import asyncio
@@ -191,6 +341,12 @@ class ArticleRetriever(BaseRetriever):
             if filter_clause:
                 where_clauses.append(f"({filter_clause})")
                 params.extend(filter_params)
+
+        # 日期过滤
+        next_idx = len(params) + 1
+        date_clauses, date_params = _build_date_sql_and_params(start_date, end_date, next_idx)
+        where_clauses.extend(date_clauses)
+        params.extend(date_params)
 
         params.append(limit)
         limit_idx = len(params)
@@ -229,14 +385,20 @@ class ArticleRetriever(BaseRetriever):
 
     async def search_articles(
         self,
-        query: str,
+        query: str = "",
         keywords: str | None = None,
         top_k: int = 10,
         threshold: float = 0.5,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, Any]:
         """三层检索策略搜索相关文章。"""
+        # 日期规范化（所有分支共用）
+        norm_start, norm_end = _normalize_date_range(start_date, end_date)
+
+        # 空 query 分支：跳过向量/关键词搜索，直接按时间排序
         if not query or not query.strip():
-            raise ValueError("查询文本不能为空")
+            return await self._search_by_time(top_k=top_k, start_date=norm_start, end_date=norm_end)
 
         try:
             query_embedding = await generate_embedding(query)
@@ -249,6 +411,8 @@ class ArticleRetriever(BaseRetriever):
                 query_embedding_str=query_embedding_str,
                 limit=20,
                 threshold=threshold,
+                start_date=norm_start,
+                end_date=norm_end,
             )
         except RuntimeError as exc:
             if str(exc) == "TRANSIENT_DB_ERROR":
@@ -276,7 +440,10 @@ class ArticleRetriever(BaseRetriever):
             logger.info("search_articles keywords: %s", keywords)
             try:
                 pool = await get_pool()
-                kw_rows = await _search_by_keywords(keywords, pool, limit=20)
+                kw_rows = await _search_by_keywords(
+                    keywords, pool, limit=20,
+                    start_date=norm_start, end_date=norm_end,
+                )
                 for row in kw_rows:
                     doc_id = row["id"]
                     if doc_id in keyword_results:
@@ -301,9 +468,12 @@ class ArticleRetriever(BaseRetriever):
         candidates = _merge_results(ebd_results, keyword_results)
         reranked_results = await self._rerank(query, candidates, top_k)
 
+        # 时效性加权排序
+        reranked_results = _apply_recency_weighting(reranked_results)
+
         formatted_results = []
         for doc in reranked_results[:top_k]:
-            formatted_results.append({
+            item = {
                 "id": doc["id"],
                 "title": doc["title"],
                 "unit": doc.get("unit"),
@@ -313,7 +483,10 @@ class ArticleRetriever(BaseRetriever):
                 "ebd_similarity": doc.get("ebd_similarity"),
                 "keyword_similarity": doc.get("keyword_similarity"),
                 "rerank_score": doc.get("rerank_score"),
-            })
+            }
+            if "final_score" in doc:
+                item["final_score"] = doc["final_score"]
+            formatted_results.append(item)
         return {"results": formatted_results}
 
 
@@ -321,6 +494,8 @@ async def _search_by_keywords(
     keywords: str,
     pool,
     limit: int = 20,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> list[dict[str, Any]]:
     """使用 pg_trgm 进行关键词模糊搜索（查 articles 表）。"""
     keyword_list = [k.strip() for k in keywords.split(",") if k.strip()]
@@ -328,12 +503,24 @@ async def _search_by_keywords(
         logger.info("_search_by_keywords: no keywords after split, keywords=%r", keywords)
         return []
 
+    # 构建日期过滤 SQL 片段
+    # 参数索引：$1=limit, $2=keyword，日期从 $3 开始
+    date_clauses, date_params = _build_date_sql_and_params(
+        start_date, end_date, param_idx=3, column="published_on",
+    )
+    date_where = ""
+    if date_clauses:
+        date_where = " AND " + " AND ".join(date_clauses)
+
     results = []
     async with pool.acquire() as conn:
         # pg_trgm 默认 threshold=0.3 会过滤掉中文等低相似度结果，需降为 0
         await conn.execute("SET pg_trgm.similarity_threshold = 0")
         for keyword in keyword_list:
-            rows = await conn.fetch("""
+            params: list[Any] = [limit, keyword]
+            params.extend(date_params)
+
+            rows = await conn.fetch(f"""
                 SELECT id, title, unit, published_on, summary,
                        LEFT(content, 80) as content_snippet,
                        GREATEST(
@@ -342,9 +529,10 @@ async def _search_by_keywords(
                        ) as similarity
                 FROM articles
                 WHERE title % $2 OR content % $2
+                {date_where}
                 ORDER BY similarity DESC
                 LIMIT $1
-            """, limit, keyword)
+            """, *params)
 
             logger.info("_search_by_keywords keyword=%r rows=%d", keyword, len(rows))
             for row in rows:
@@ -594,10 +782,12 @@ async def grep_articles(
 
 
 async def search_articles(
-    query: str,
+    query: str = "",
     keywords: str | None = None,
     top_k: int = 10,
     threshold: float = 0.5,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict[str, Any]:
     """兼容旧接口：转发到 ArticleRetriever。"""
     retriever = ArticleRetriever()
@@ -606,6 +796,8 @@ async def search_articles(
         keywords=keywords,
         top_k=top_k,
         threshold=threshold,
+        start_date=start_date,
+        end_date=end_date,
     )
 
 

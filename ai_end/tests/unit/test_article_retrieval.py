@@ -139,10 +139,35 @@ async def test_search_articles_with_threshold(mock_generate_embedding, mock_get_
 
 
 @pytest.mark.asyncio
-async def test_search_articles_empty_query():
-    """测试空查询字符串抛出异常"""
-    with pytest.raises(ValueError, match="查询文本不能为空"):
-        await search_articles("", top_k=3, threshold=0.7)
+@patch('src.core.article_retrieval.get_pool')
+async def test_search_articles_empty_query(mock_get_pool):
+    """空查询不再抛异常，走时间排序分支返回最新文章。"""
+    mock_conn = AsyncMock()
+    captured_sql = []
+
+    rows_data = [
+        {"id": 3, "title": "文章C", "unit": "学工处", "published_on": "2026-04-09", "summary": "最新", "content_snippet": "内容C"},
+        {"id": 2, "title": "文章B", "unit": "教务处", "published_on": "2026-04-08", "summary": "中等", "content_snippet": "内容B"},
+        {"id": 1, "title": "文章A", "unit": "人事处", "published_on": "2026-04-07", "summary": "最早", "content_snippet": "内容A"},
+    ]
+
+    def make_row(data):
+        row = MagicMock()
+        row.__getitem__ = lambda self, key, d=data: d[key]
+        return row
+
+    async def capture_fetch(sql, *args):
+        captured_sql.append(sql)
+        return [make_row(d) for d in rows_data]
+
+    mock_conn.fetch = capture_fetch
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    result = await search_articles(query="", top_k=3)
+
+    assert "results" in result
+    assert len(result["results"]) == 3
+    assert result["results"][0]["id"] == 3  # newest first
 
 
 # ========== grep_article 测试 ==========
@@ -615,3 +640,238 @@ async def test_search_articles_returns_content_snippet(mock_rerank, mock_generat
     assert len(result["results"]) == 1
     assert "content_snippet" in result["results"][0]
     assert result["results"][0]["content_snippet"] == "这是文章正文前80个字符的截取内容用于展示在搜索结果列表中"
+
+
+# ========== Task 4: 检索层日期过滤（有 query 分支）==========
+
+
+@pytest.mark.asyncio
+@patch('src.core.article_retrieval.get_pool')
+@patch('src.core.article_retrieval.generate_embedding')
+@patch('src.core.article_retrieval._rerank_documents')
+async def test_search_articles_adds_date_range_filter_to_sql(mock_rerank, mock_generate_embedding, mock_get_pool):
+    """当 query + start_date + end_date 都传入时，SQL 应包含 published_on 过滤条件。"""
+    mock_generate_embedding.return_value = [0.1] * 1024
+
+    mock_conn = AsyncMock()
+    captured_sql = []
+
+    async def capture_fetch(sql, *args):
+        captured_sql.append(sql)
+        return [
+            MagicMock(id=1, title="奖学金通知", unit="学工处", published_on="2026-04-05", summary="摘要", similarity=0.9)
+        ]
+
+    mock_conn.fetch = capture_fetch
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    mock_rerank.return_value = [
+        {
+            "id": 1, "title": "奖学金通知", "unit": "学工处", "published_on": "2026-04-05",
+            "summary": "摘要", "ebd_similarity": 0.9, "keyword_similarity": None, "rerank_score": 0.95,
+        }
+    ]
+
+    await search_articles("奖学金", start_date="2026-04-01", end_date="2026-04-09")
+
+    assert len(captured_sql) >= 1
+    vector_sql = captured_sql[0]
+    assert "published_on" in vector_sql, f"SQL 中应包含 published_on 过滤条件。SQL: {vector_sql[:300]}"
+
+
+# ========== Task 6: 时效性加权排序 ==========
+
+
+@pytest.mark.asyncio
+@patch('src.core.article_retrieval.get_pool')
+@patch('src.core.article_retrieval.generate_embedding')
+@patch('src.core.article_retrieval._rerank_documents')
+async def test_search_articles_recency_weighting_newer_higher_score(mock_rerank, mock_generate_embedding, mock_get_pool):
+    """相同 similarity 时，更新的文章应有更高的 final_score。
+
+    公式：final_score = similarity - 0.1 * exp(-days_old / 30)
+    """
+    mock_generate_embedding.return_value = [0.1] * 1024
+
+    # 两个结果 similarity 相同，但日期不同
+    row_old = MagicMock()
+    row_old.__getitem__ = lambda self, key: {
+        "id": 1, "title": "旧文章", "unit": "教务处",
+        "published_on": "2026-03-10", "summary": "旧摘要",
+        "content_snippet": "旧内容", "similarity": 0.8,
+    }[key]
+
+    row_new = MagicMock()
+    row_new.__getitem__ = lambda self, key: {
+        "id": 2, "title": "新文章", "unit": "教务处",
+        "published_on": "2026-04-08", "summary": "新摘要",
+        "content_snippet": "新内容", "similarity": 0.8,
+    }[key]
+
+    mock_conn = AsyncMock()
+
+    async def mock_fetch(query, *args):
+        return [row_old, row_new]
+
+    mock_conn.fetch = mock_fetch
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    # rerank 保持原始顺序（不做实际 rerank）
+    mock_rerank.side_effect = lambda query, candidates, top_k: candidates
+
+    result = await search_articles("测试")
+
+    assert "results" in result
+    # 新文章的 final_score 应高于旧文章
+    old_item = next(r for r in result["results"] if r["id"] == 1)
+    new_item = next(r for r in result["results"] if r["id"] == 2)
+
+    assert "final_score" in new_item, "结果应包含 final_score 字段"
+    assert "final_score" in old_item, "结果应包含 final_score 字段"
+    assert new_item["final_score"] > old_item["final_score"], (
+        f"新文章 final_score({new_item['final_score']}) 应高于旧文章({old_item['final_score']})"
+    )
+
+
+# ========== Task 7: 日期边界与容错行为 ==========
+
+
+def test_normalize_date_range_swapped():
+    """start_date > end_date 时自动交换。"""
+    from src.core.article_retrieval import _normalize_date_range
+    sd, ed = _normalize_date_range("2026-04-09", "2026-04-01")
+    assert sd is not None and ed is not None
+    assert sd <= ed, f"交换后 start({sd}) 应 <= end({ed})"
+
+
+def test_normalize_date_range_invalid_ignored():
+    """无效日期格式被忽略，对应边界为 None。"""
+    from src.core.article_retrieval import _normalize_date_range
+    sd, ed = _normalize_date_range("not-a-date", "2026-04-09")
+    assert sd is None, f"无效 start_date 应被忽略，但得到 {sd}"
+    assert ed is not None
+
+
+def test_normalize_date_range_single_start_defaults_end_to_today():
+    """仅传 start_date 时，end_date 默认为今天。"""
+    from src.core.article_retrieval import _normalize_date_range
+    from datetime import date
+    sd, ed = _normalize_date_range("2026-04-01", None)
+    assert sd == date(2026, 4, 1)
+    assert ed is not None  # 默认今天
+
+
+def test_normalize_date_range_single_end_no_lower_bound():
+    """仅传 end_date 时，不设置下界（start=None）。"""
+    from src.core.article_retrieval import _normalize_date_range
+    sd, ed = _normalize_date_range(None, "2026-04-09")
+    assert sd is None, f"仅传 end_date 时 start 应为 None，但得到 {sd}"
+    assert ed is not None
+
+
+def test_normalize_date_range_both_none():
+    """两个都为 None 时不做任何过滤。"""
+    from src.core.article_retrieval import _normalize_date_range
+    sd, ed = _normalize_date_range(None, None)
+    assert sd is None
+    assert ed is None
+
+
+@pytest.mark.asyncio
+@patch('src.core.article_retrieval.get_pool')
+@patch('src.core.article_retrieval.generate_embedding')
+@patch('src.core.article_retrieval._rerank_documents')
+async def test_search_articles_with_swapped_dates_still_works(mock_rerank, mock_generate_embedding, mock_get_pool):
+    """start_date > end_date 自动交换后仍然正常搜索。"""
+    mock_generate_embedding.return_value = [0.1] * 1024
+
+    mock_conn = AsyncMock()
+
+    async def mock_fetch(sql, *args):
+        return [
+            MagicMock(id=1, title="文章A", unit="教务处", published_on="2026-04-05", summary="摘要A", similarity=0.9)
+        ]
+
+    mock_conn.fetch = mock_fetch
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    mock_rerank.return_value = [
+        {
+            "id": 1, "title": "文章A", "unit": "教务处", "published_on": "2026-04-05",
+            "summary": "摘要A", "ebd_similarity": 0.9, "keyword_similarity": None, "rerank_score": 0.9,
+        }
+    ]
+
+    result = await search_articles("测试", start_date="2026-04-09", end_date="2026-04-01")
+    assert "results" in result
+    assert len(result["results"]) == 1
+
+
+@pytest.mark.asyncio
+@patch('src.core.article_retrieval.get_pool')
+@patch('src.core.article_retrieval.generate_embedding')
+@patch('src.core.article_retrieval._rerank_documents')
+async def test_search_articles_with_invalid_date_degrades_gracefully(mock_rerank, mock_generate_embedding, mock_get_pool):
+    """无效日期格式被忽略，搜索降级为无日期过滤。"""
+    mock_generate_embedding.return_value = [0.1] * 1024
+
+    mock_conn = AsyncMock()
+    captured_sql = []
+
+    async def capture_fetch(sql, *args):
+        captured_sql.append(sql)
+        return [
+            MagicMock(id=1, title="文章A", unit="教务处", published_on="2026-04-05", summary="摘要A", similarity=0.9)
+        ]
+
+    mock_conn.fetch = capture_fetch
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    mock_rerank.return_value = [
+        {
+            "id": 1, "title": "文章A", "unit": "教务处", "published_on": "2026-04-05",
+            "summary": "摘要A", "ebd_similarity": 0.9, "keyword_similarity": None, "rerank_score": 0.9,
+        }
+    ]
+
+    result = await search_articles("测试", start_date="invalid-date", end_date="2026-04-09")
+    assert "results" in result
+    # 无效 start_date 被忽略，end_date 仍有效 -> SQL 仍应有 published_on 过滤
+    assert len(captured_sql) >= 1
+
+
+# ========== Layer 2 关键词搜索日期过滤测试 ==========
+
+
+@pytest.mark.asyncio
+@patch('src.core.article_retrieval.get_pool')
+@patch('src.core.article_retrieval.generate_embedding')
+@patch('src.core.article_retrieval._rerank_documents')
+async def test_search_articles_keyword_layer_respects_date_range(mock_rerank, mock_generate_embedding, mock_get_pool):
+    """关键词搜索（Layer 2）的 SQL 应包含日期过滤条件。"""
+    mock_generate_embedding.return_value = [0.1] * 1024
+
+    mock_conn = AsyncMock()
+    captured_sqls = []
+
+    async def capture_fetch(sql, *args):
+        captured_sqls.append(sql)
+        return []
+
+    mock_conn.fetch = capture_fetch
+    mock_conn.execute = AsyncMock()
+    mock_get_pool.return_value = MockPool(mock_conn)
+
+    mock_rerank.return_value = []
+
+    await search_articles("培训", keywords="培训", start_date="2026-04-01", end_date="2026-04-09")
+
+    # 第二条 SQL 应为关键词搜索（包含 pg_trgm 的 similarity 函数）
+    keyword_sqls = [s for s in captured_sqls if "similarity" in s.lower() and "articles" in s.lower()]
+    assert len(keyword_sqls) >= 1, (
+        f"应有关键词搜索 SQL，但捕获的 SQL 为: {[s[:100] for s in captured_sqls]}"
+    )
+    kw_sql = keyword_sqls[0]
+    assert "published_on" in kw_sql, (
+        f"关键词搜索 SQL 应包含 published_on 日期过滤条件。SQL: {kw_sql[:300]}"
+    )

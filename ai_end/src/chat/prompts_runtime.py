@@ -1,6 +1,7 @@
 # 运行时提示词常量集中管理模块
 
 SYSTEM_PROMPT_TEMPLATE = """你是一个通用 AI Agent 助手。
+当前日期：{current_date}（{weekday}）
 
 【角色】
 你是一位智能助手，善于理解用户需求并提供帮助。

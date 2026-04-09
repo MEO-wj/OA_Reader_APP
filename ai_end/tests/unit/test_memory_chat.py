@@ -300,6 +300,46 @@ async def test_chat_stream_passes_user_id_to_build_tools_definition(monkeypatch)
 
 
 # ──────────────────────────────────────────────────────
+# Task 1: 系统提示词日期占位符
+# ──────────────────────────────────────────────────────
+
+
+def test_system_prompt_template_contains_date_placeholders():
+    """系统提示词模板应包含 {current_date} 和 {weekday} 占位符。"""
+    from src.chat.prompts_runtime import SYSTEM_PROMPT_TEMPLATE
+
+    assert "当前日期：{current_date}（{weekday}）" in SYSTEM_PROMPT_TEMPLATE
+
+
+# ──────────────────────────────────────────────────────
+# Task 2: ChatClient 注入当前日期
+# ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_build_system_prompt_injects_current_date_and_weekday(monkeypatch):
+    """_build_system_prompt() 应注入正确的当前日期和中文星期。"""
+    import dataclasses
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    base_config = Config.load()
+    config = dataclasses.replace(base_config, compat_timezone="Asia/Shanghai")
+
+    client = ChatClient(config)
+
+    # Mock _get_now via monkeypatch: client.py uses a helper that we can patch
+    fixed_dt = datetime(2026, 4, 9, 12, 0, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    import src.chat.client as client_mod
+    monkeypatch.setattr(client_mod, "_get_now", lambda tz=None: fixed_dt)
+
+    prompt = client._build_system_prompt()
+
+    assert "当前日期：2026-04-09（星期四）" in prompt
+
+
+# ──────────────────────────────────────────────────────
 # Task 4: force_memory_after_turn — 回合末强制裁决与状态清理
 # ──────────────────────────────────────────────────────
 
