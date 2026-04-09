@@ -82,6 +82,14 @@ def init_db(conn: psycopg.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_vectors_article ON vectors(article_id);",  #-- 文章ID唯一索引
     ]
     
+    # 确保 created_at / updated_at 列有 DEFAULT NOW()
+    # GORM AutoMigrate 创建列时不含 DEFAULT，会导致非 GORM 写入路径丢失时间戳
+    for tbl in ("articles", "vectors"):
+        for col in ("created_at", "updated_at"):
+            conn.execute(
+                f"ALTER TABLE {tbl} ALTER COLUMN {col} SET DEFAULT NOW()"
+            )
+
     with conn.cursor() as cur:
         for stmt in statements:
             cur.execute(stmt)
