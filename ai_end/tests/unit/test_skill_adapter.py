@@ -67,3 +67,32 @@ class TestSkillAdapter:
         mock_read.assert_called_once_with("demo", "references/a.md", "")
         assert content == "reference content"
 
+    def test_build_tools_passes_user_id_via_kwargs(self):
+        """build_tools_definition 应通过 kwargs 透传 user_id，不依赖 inspect.signature。"""
+        from src.core.skill_adapter import SkillAdapter, SkillBackend
+
+        mock_backend = MagicMock()
+        mock_backend.build_tools_definition.return_value = [{"type": "function", "function": {"name": "test"}}]
+
+        with patch("src.core.skill_adapter.DbSkillSystem", return_value=mock_backend):
+            adapter = SkillAdapter.create(SkillBackend.DATABASE)
+            result = adapter.build_tools_definition(activated_skills=None, user_id="u1")
+
+        mock_backend.build_tools_definition.assert_called_once()
+        call_kwargs = mock_backend.build_tools_definition.call_args
+        # user_id 应通过 kwargs 透传
+        assert call_kwargs.kwargs.get("user_id") == "u1"
+        assert result == [{"type": "function", "function": {"name": "test"}}]
+
+    def test_build_tools_with_filesystem_backend_ignores_user_id(self, tmp_path):
+        """文件系统后端不支持 user_id 时，透传不应报错。"""
+        from src.core.skill_adapter import SkillAdapter, SkillBackend
+
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+
+        adapter = SkillAdapter.create(SkillBackend.FILESYSTEM, skills_dir=str(skills_dir))
+        # 文件系统后端不报错即可
+        result = adapter.build_tools_definition(activated_skills=None, user_id="u_ignored")
+        assert isinstance(result, list)
+

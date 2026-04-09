@@ -309,6 +309,7 @@ class DbSkillSystem:
                                 "description": "形成记忆的原因，简要说明从对话中提取了哪些关键信息",
                             },
                         },
+                        "required": [],
                     },
                 },
             })

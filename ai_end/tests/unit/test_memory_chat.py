@@ -462,7 +462,7 @@ async def test_force_memory_flag_cleared_after_turn(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_force_memory_flag_cleared_even_on_form_memory_failure(monkeypatch):
-    """form_memory 抛异常后标记也应清零。"""
+    """form_memory 抛异常后标记清零且不中断对话，done 事件正常发送。"""
     config = Config.load()
     user_id = _uid("force_clear_err")
 
@@ -488,11 +488,14 @@ async def test_force_memory_flag_cleared_even_on_form_memory_failure(monkeypatch
 
     monkeypatch.setattr(client, "_create_completion_stream_async", _fake_stream)
 
-    with pytest.raises(RuntimeError, match="form_memory failed!"):
-        async for _ in client.chat_stream_async("test"):
-            pass
+    events = []
+    async for event in client.chat_stream_async("test"):
+        events.append(event)
 
-    assert client._force_memory_after_turn is False, "即使 form_memory 失败，标记也应清零"
+    # 标记已清零
+    assert client._force_memory_after_turn is False
+    # done 事件正常发送，异常不中断对话
+    assert any(e.get("type") == "done" for e in events)
 
 
 @pytest.mark.asyncio

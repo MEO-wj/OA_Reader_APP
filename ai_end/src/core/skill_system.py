@@ -108,7 +108,7 @@ class SkillSystem:
             tools = self.parse_tools(skill_name)
             self.available_skills[skill_name].secondary_tools = tools
 
-    def build_tools_definition(self, activated_skills: set[str] | None = None) -> list[dict[str, Any]]:
+    def build_tools_definition(self, activated_skills: set[str] | None = None, **kwargs: Any) -> list[dict[str, Any]]:
         """
         构建 OpenAI tools 定义，支持动态二级工具加载
 

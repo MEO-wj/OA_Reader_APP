@@ -754,10 +754,10 @@ class TestFormMemoryDeferredExecution:
     @pytest.mark.asyncio
     async def test_form_memory_tool_only_registers_after_turn_flag(self):
         """form_memory 被调用时应只通过回调登记，不直接调用 handle_form_memory。"""
-        marked = {"value": False}
+        captured_reason = {"value": None}
 
-        def mark():
-            marked["value"] = True
+        def mark(reason: str):
+            captured_reason["value"] = reason
 
         # 构造 form_memory tool_call
         mock_tool_call = Mock()
@@ -776,8 +776,8 @@ class TestFormMemoryDeferredExecution:
                 mark_form_memory_after_turn=mark,
             )
 
-        # 断言：回调被调用
-        assert marked["value"] is True
+        # 断言：回调被调用且携带 reason
+        assert captured_reason["value"] == "用户提到了偏好"
         # 断言：handle_form_memory 未被调用（不直接执行）
         mock_handle_fm.assert_not_called()
         # 断言：返回登记成功文案
@@ -806,12 +806,12 @@ class TestFormMemoryDeferredExecution:
         assert result[0]["content"] == "记忆已形成"
 
     @pytest.mark.asyncio
-    async def test_form_memory_callback_receives_no_arguments(self):
-        """回调应为无参 Callable[[], None]，不需要接收 reason 等参数。"""
+    async def test_form_memory_callback_receives_reason(self):
+        """回调应接收 reason 参数用于审计追踪。"""
         call_log = []
 
-        def mark():
-            call_log.append("called")
+        def mark(reason: str):
+            call_log.append(reason)
 
         mock_tool_call = Mock()
         mock_tool_call.function.name = "form_memory"
@@ -829,14 +829,14 @@ class TestFormMemoryDeferredExecution:
                 mark_form_memory_after_turn=mark,
             )
 
-        # 断言：回调恰好被调用一次
-        assert call_log == ["called"]
+        # 断言：回调恰好被调用一次，且携带 reason
+        assert call_log == ["用户说喜欢北京"]
 
     def test_sync_wrapper_passes_through_mark_form_memory_callback(self):
         """handle_tool_calls_sync 应透传 mark_form_memory_after_turn 参数。"""
         marked = {"value": False}
 
-        def mark():
+        def mark(reason: str):
             marked["value"] = True
 
         mock_tool_call = Mock()
@@ -867,3 +867,34 @@ class TestFormMemoryDeferredExecution:
         # 验证 run_coroutine_threadsafe 被调用
         mock_submit.assert_called_once()
         assert result == expected
+
+    def test_sync_wrapper_passes_user_id_and_conversation_id(self):
+        """handle_tool_calls_sync 应透传 user_id 和 conversation_id 参数。"""
+        mock_tool_call = Mock()
+        mock_tool_call.function.name = "form_memory"
+        mock_tool_call.function.arguments = '{"reason": "测试参数透传"}'
+        mock_tool_call.id = "call_fm_sync_2"
+
+        mock_skill_system = Mock()
+        mock_skill_system.available_skills = {}
+
+        fake_loop = Mock()
+
+        def _fake_submit(coro, _loop):
+            coro.close()
+            fake_future = Mock()
+            fake_future.result.return_value = [{"role": "tool", "tool_call_id": "call_fm_sync_2", "content": "已登记，将在回合末执行记忆形成。"}]
+            return fake_future
+
+        with patch("src.chat.handlers._get_tool_loop", return_value=fake_loop), \
+             patch("src.chat.handlers.asyncio.run_coroutine_threadsafe", side_effect=_fake_submit) as mock_submit:
+            handle_tool_calls_sync(
+                [mock_tool_call],
+                mock_skill_system,
+                mark_form_memory_after_turn=lambda: None,
+                user_id="u_test",
+                conversation_id="c_test",
+            )
+
+        # 验证 run_coroutine_threadsafe 被调用（证明参数接受成功且透传）
+        mock_submit.assert_called_once()

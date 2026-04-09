@@ -89,6 +89,7 @@ class ChatClient:
         self._propagate_manager_context()
         self.round_count = 0  # 对话轮数计数
         self._force_memory_after_turn = False  # 回合末强制记忆裁决标记
+        self._form_memory_reason: str | None = None  # 记忆触发原因（审计用）
         self.usage_totals = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -565,7 +566,13 @@ class ChatClient:
             tool_messages = handle_tool_calls_sync(
                 assistant_message.tool_calls,
                 self.skill_system,
-                self.activated_skills
+                self.activated_skills,
+                self.user_id,
+                self.conversation_id,
+                mark_form_memory_after_turn=lambda reason: (
+                    setattr(self, '_force_memory_after_turn', True),
+                    setattr(self, '_form_memory_reason', reason),
+                ),
             )
 
             # 显示工具响应摘要
@@ -719,7 +726,10 @@ class ChatClient:
             self.activated_skills,
             self.user_id,
             self.conversation_id,
-            mark_form_memory_after_turn=lambda: setattr(self, '_force_memory_after_turn', True),
+            mark_form_memory_after_turn=lambda reason: (
+                setattr(self, '_force_memory_after_turn', True),
+                setattr(self, '_form_memory_reason', reason),
+            ),
         )
         self.messages.extend(tool_messages)
         return tool_messages
@@ -946,9 +956,14 @@ class ChatClient:
 
                 try:
                     if should_form_memory:
+                        if self._form_memory_reason:
+                            logger.info("回合末记忆形成（强制触发），reason: %s", self._form_memory_reason)
                         await self.form_memory()
+                except Exception:
+                    logger.exception("回合末记忆形成失败，不影响对话")
                 finally:
                     self._force_memory_after_turn = False
+                    self._form_memory_reason = None
 
                 logger.info(
     f"Chat stream completed: iteration={iteration}, "

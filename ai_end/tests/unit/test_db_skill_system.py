@@ -255,6 +255,10 @@ class TestDbSkillSystem:
             names = [t["function"]["name"] for t in tools]
             assert "form_memory" in names
 
+            # 验证 schema 完整性：包含 required 字段
+            fm_tool = next(t for t in tools if t["function"]["name"] == "form_memory")
+            assert "required" in fm_tool["function"]["parameters"]
+
     async def test_build_tools_definition_hides_form_memory_without_user_id(self, mock_db_rows):
         """
         测试当不提供 user_id 时，build_tools_definition 不包含 form_memory 工具

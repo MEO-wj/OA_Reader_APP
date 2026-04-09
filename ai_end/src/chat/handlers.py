@@ -139,7 +139,7 @@ async def handle_tool_calls(
     activated_skills: set | None = None,
     user_id: str | None = None,
     conversation_id: str | None = None,
-    mark_form_memory_after_turn: Callable[[], None] | None = None,
+    mark_form_memory_after_turn: Callable[[str], None] | None = None,
 ) -> list[dict[str, Any]]:
     """
     处理 OpenAI 返回的 tool_calls
@@ -186,7 +186,8 @@ async def handle_tool_calls(
             # 处理 form_memory 工具调用
             if mark_form_memory_after_turn is not None:
                 # 触发层与执行层分离：仅登记，不直接执行
-                mark_form_memory_after_turn()
+                reason = function_args.get("reason", "")
+                mark_form_memory_after_turn(reason)
                 content = "已登记，将在回合末执行记忆形成。"
             else:
                 # 兼容旧路径：无回调时直接执行
@@ -306,7 +307,9 @@ def handle_tool_calls_sync(
     tool_calls: list[Any],
     skill_system: SkillSystem,
     activated_skills: set | None = None,
-    mark_form_memory_after_turn: Callable[[], None] | None = None,
+    user_id: str | None = None,
+    conversation_id: str | None = None,
+    mark_form_memory_after_turn: Callable[[str], None] | None = None,
 ) -> list[dict[str, Any]]:
     """
     同步包装器，用于兼容现有代码
@@ -315,6 +318,8 @@ def handle_tool_calls_sync(
         tool_calls: OpenAI 响应中的 tool_calls 列表
         skill_system: 技能系统实例
         activated_skills: 已激活的技能集合
+        user_id: 用户ID
+        conversation_id: 会话ID
         mark_form_memory_after_turn: 回合末执行标记回调，透传给 handle_tool_calls
 
     Returns:
@@ -322,7 +327,14 @@ def handle_tool_calls_sync(
     """
     loop = _get_tool_loop()
     future = asyncio.run_coroutine_threadsafe(
-        handle_tool_calls(tool_calls, skill_system, activated_skills, mark_form_memory_after_turn=mark_form_memory_after_turn),
+        handle_tool_calls(
+            tool_calls,
+            skill_system,
+            activated_skills,
+            user_id,
+            conversation_id,
+            mark_form_memory_after_turn=mark_form_memory_after_turn,
+        ),
         loop,
     )
     return future.result()
