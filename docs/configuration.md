@@ -18,24 +18,9 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/oap
 
 ### Redis配置
 
-```bash
-# Redis服务器地址
-REDIS_HOST=localhost
+> **注意**：Redis 已从项目中移除。AI 对话历史现在存储在 PostgreSQL 中。
 
-# Redis端口
-REDIS_PORT=6379
-
-# Redis数据库编号
-REDIS_DB=0
-
-# Redis密码（可选）
-REDIS_PASSWORD=
-```
-
-**说明：**
-- Redis用于缓存API响应和AI对话历史
-- 如果Redis不可用，系统仍可正常运行，但性能会下降
-- 建议生产环境配置密码
+~~本节已废弃，保留作为历史参考。~~
 
 ### JWT认证配置
 
@@ -54,45 +39,76 @@ AUTH_REFRESH_HASH_KEY=your-hash-key-here
 
 ### AI服务配置
 
+> **注意**：ai_end 已重构为 FastAPI + 技能系统架构，环境变量名已变更。以下为当前使用的变量名。
+
 ```bash
 # AI服务基础URL
-AI_BASE_URL=https://api.openai.com/v1
+OPENAI_BASE_URL=https://api.openai.com/v1
 
 # AI模型名称
-AI_MODEL=gpt-4
+OPENAI_MODEL=deepseek-v3.2
 
 # AI服务API密钥
-API_KEY=your-api-key-here
+OPENAI_API_KEY=your-api-key-here
 ```
 
 **说明：**
 - 支持OpenAI兼容的API服务
 - 可使用其他兼容服务（如Azure OpenAI、本地部署的模型）
-- `AI_BASE_URL`应指向`/chat/completions`的上级目录
+- `OPENAI_BASE_URL` 应指向 API 根路径（如 `https://api.openai.com/v1`）
 
 ### 嵌入服务配置
 
 ```bash
-# 嵌入服务基础URL
-EMBED_BASE_URL=https://api.openai.com/v1
-
 # 嵌入模型名称
-EMBED_MODEL=text-embedding-3-small
-
-# 嵌入服务API密钥
-EMBED_API_KEY=your-api-key-here
+EMBEDDING_MODEL=BAAI/bge-m3
 
 # 向量维度
-EMBED_DIM=1024
+EMBEDDING_DIMENSIONS=1024
+
+# 嵌入服务API地址（可选，不设置则继承 OPENAI_BASE_URL）
+# EMBEDDING_BASE_URL=https://api.openai.com/v1
+
+# 嵌入服务API密钥（可选，不设置则继承 OPENAI_API_KEY）
+# EMBEDDING_API_KEY=your-api-key-here
 ```
 
 **说明：**
 - 用于生成文章的向量嵌入
-- `EMBED_DIM`必须与模型输出的维度一致
-- 常见维度：
-  - `text-embedding-3-small`: 1536
-  - `text-embedding-3-large`: 3072
-  - `text-embedding-ada-002`: 1536
+- `EMBEDDING_DIMENSIONS` 必须与模型输出的维度一致
+- 默认使用 BAAI/bge-m3 模型，维度 1024
+
+### Rerank 服务配置
+
+```bash
+# Rerank 模型名称
+RERANK_MODEL=BAAI/bge-reranker-v2-m3
+
+# Rerank 最大候选数
+RERANK_MAX_CANDIDATES=40
+
+# Rerank 超时 (秒)
+RERANK_TIMEOUT=60.0
+
+# Rerank API 地址（可选，不设置则继承 OPENAI_BASE_URL）
+# RERANK_BASE_URL=https://api.openai.com/v1
+```
+
+### LLM 生成参数配置
+
+```bash
+# LLM 请求超时 (秒)
+LLM_TIMEOUT=120.0
+
+# Embedding 请求超时 (秒)
+EMBEDDING_TIMEOUT=30.0
+
+# LLM 最大 token 数
+LLM_MAX_TOKENS=1500
+
+# LLM 温度参数
+LLM_TEMPERATURE=0.1
+```
 
 ### 向量搜索限制配置
 

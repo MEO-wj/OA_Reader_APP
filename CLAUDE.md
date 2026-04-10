@@ -104,19 +104,17 @@ ai_end/
 ├── src/
 │   ├── config/settings.py    # 环境变量配置 (dataclass)
 │   ├── core/                 # 核心业务逻辑
-│   │   ├── skill_parser.py       # 解析 SKILL.md (YAML front matter)
-│   │   ├── skill_system.py       # 文件系统版技能系统
-│   │   ├── db_skill_system.py    # 数据库版技能系统
+│   │   ├── skill_system.py       # 文件系统版技能系统 (已废弃)
+│   │   ├── db_skill_system.py    # 数据库版技能系统 (推荐)
 │   │   ├── base_retrieval.py     # 检索基类 (embedding, 向量搜索)
 │   │   ├── article_retrieval.py  # OA文章检索 (search_articles, grep_article)
 │   │   ├── response_composer.py  # 检索结果编排 (上下文块, 来源引用)
 │   │   ├── document_content.py   # 文章内容获取与匹配
 │   │   ├── api_clients.py        # API 客户端 (LLM, Embedding, Rerank)
-│   │   ├── api_queue.py          # 分层并发队列 (llm/embedding 分 lane)
+│   │   ├── api_queue.py          # 分层并发队列 (llm/embedding/rerank 分 lane)
 │   │   ├── db.py                 # 数据库连接池 (asyncpg)
 │   │   ├── hash_utils.py         # 哈希工具
-│   │   ├── skill_adapter.py      # 技能适配器
-│   │   ├── skill_system.py       # 技能系统核心
+│   │   ├── skill_adapter.py      # 技能适配器 (SkillBackend 枚举)
 │   │   └── tool_activation.py    # 工具激活逻辑
 │   ├── chat/                 # 聊天功能
 │   │   ├── client.py              # ChatClient 主聊天逻辑
@@ -217,9 +215,9 @@ crawler/
 - `read_reference` 工具支持按需读取技能目录下的参考文件
 
 ### 并发治理
-- 分层队列: `llm` 与 `embedding` 分 lane 控制并发
-- LLM 并发: 2, Embedding 并发: 6
-- 关闭顺序: `close_clients → close_resources → close_pool → shutdown_tool_loop`
+- 分层队列: `llm`、`embedding`、`rerank` 分 lane 控制并发
+- LLM 并发: 2, Embedding 并发: 6, Rerank 并发: 2
+- 关闭顺序: `close_clients → close_resources → close_pool → close_api_queue → shutdown_tool_loop`
 
 ### 爬虫运行时段
 - 当天数据：仅在 07:00-24:00 运行
@@ -230,9 +228,11 @@ crawler/
 - `vectors`: 向量表 (article_id, embedding vector(1024), ON DELETE CASCADE)
 - `users`: 用户表 (用户名、密码哈希、显示名、头像)
 - `sessions`: 会话表 (refresh_token_sha, expires_at)
-- `conversations`: 会话记录 (user_id, conversation_id, title, messages JSONB)
-- `user_profiles`: 用户画像 (user_id, preferences, JSON)
-- `skills`: 技能定义 (name, description, content, hash)
+- `conversations`: 会话记录 (user_id UUID, conversation_id, title, messages JSONB)
+- `conversation_sessions`: 会话元信息 (user_id UUID, conversation_id, title, created_at, updated_at)
+- `user_profiles`: 用户画像 (user_id UUID, portrait_text, knowledge_text, preferences JSONB)
+- `skills`: 技能定义 (name, description, verification_token, metadata, content, tools, is_static)
+- `skill_references`: 技能参考资料 (skill_id FK, file_path, content)
 
 ## Environment Configuration
 

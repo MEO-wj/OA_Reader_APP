@@ -13,40 +13,92 @@
 
 ## 项目概述
 
-通用 AI Agent 后端 - 基于技能系统的 CLI 聊天应用，使用 OpenAI Function Calling 技术动态调用技能。
+通用 AI Agent 后端 - 基于技能系统的 AI 服务，提供 CLI 交互和 FastAPI API 两种运行模式，使用 OpenAI Function Calling 技术动态调用技能。
 
 ### 核心特性
 
-- **技能系统**: 从 `skills/` 目录动态加载技能定义 (SKILL.md)
+- **技能系统**: 从数据库或文件系统动态加载技能定义 (SKILL.md)
 - **验证暗号**: 每个技能包含唯一暗号，用于验证 AI 真实使用了技能
-- **可视化输出**: 终端彩色输出，显示技能加载、工具调用等过程
-- **分层架构**: 代码按职责分层 (config/core/ui/chat)
+- **三层检索**: 向量搜索 + 关键词搜索 + Rerank 重排序
+- **记忆系统**: 用户画像 (长期记忆) + 对话历史 (短期记忆)
+- **SSE 流式**: 新 /chat 接口支持 Server-Sent Events 流式输出
+- **旧接口兼容**: /ask、/clear_memory、/embed 兼容旧 AI End 协议
+- **分层架构**: 代码按职责分层 (config/core/chat/api/di/db/ui)
 
 ## 架构
 
 ```
 src/
-├── config/          # 配置管理
-│   └── settings.py       # 从环境变量加载配置，使用 dataclass
-├── core/            # 核心业务逻辑
-│   ├── skill_parser.py   # 解析 SKILL.md (YAML front matter + 内容)
-│   └── skill_system.py   # 扫描技能目录，构建 OpenAI tools 定义
-├── ui/              # 用户界面
-│   └── console.py        # 终端彩色输出和打印函数
-└── chat/            # 聊天功能
-    ├── client.py          # ChatClient 类，主聊天逻辑
-    └── handlers.py        # 工具调用处理函数
+├── config/              # 配置管理
+│   └── settings.py          # 从环境变量加载配置 (dataclass, frozen)
+├── core/                # 核心业务逻辑
+│   ├── skill_parser.py      # 解析 SKILL.md (YAML front matter)
+│   ├── skill_system.py      # 文件系统版技能系统 (已废弃，请用 DbSkillSystem)
+│   ├── db_skill_system.py   # 数据库版技能系统 (推荐)
+│   ├── skill_adapter.py     # 统一技能适配层 (SkillBackend 枚举)
+│   ├── tool_activation.py   # 工具激活策略 (read_reference 等)
+│   ├── base_retrieval.py    # 检索基类 (embedding, 向量搜索)
+│   ├── article_retrieval.py # OA 文章检索 (search_articles, grep_article, grep_articles)
+│   ├── response_composer.py # 检索结果编排 (上下文块, 来源引用)
+│   ├── document_content.py  # 文章内容获取与匹配 (策略模式)
+│   ├── api_clients.py       # API 客户端 (LLM, Embedding, Rerank)
+│   ├── api_queue.py         # 分层并发队列 (llm/embedding/rerank 分 lane)
+│   ├── db.py                # 数据库连接池 (asyncpg)
+│   └── hash_utils.py        # 哈希工具 (SHA256)
+├── chat/                # 聊天功能
+│   ├── client.py            # ChatClient 主聊天逻辑 (同步+异步)
+│   ├── handlers.py          # 工具调用处理 (后台线程事件循环)
+│   ├── context_truncator.py # 工具输出智能截断
+│   ├── context_budget.py    # 上下文预算管理
+│   ├── compact.py           # 对话历史压缩
+│   ├── history_manager.py   # 历史管理 (加载、追加、标题生成)
+│   ├── memory_manager.py    # 记忆管理 (画像形成与保存)
+│   ├── prompts_runtime.py   # 运行时提示词模板
+│   └── utils.py             # 工具函数
+├── api/                 # FastAPI 路由层
+│   ├── main.py              # 应用入口, lifespan, 路由注册
+│   ├── admin.py             # 管理路由 (预留)
+│   ├── chat_service.py      # SSE 流式聊天服务
+│   ├── models.py            # 新版请求/响应模型
+│   ├── compat_service.py    # 旧接口兼容层 (/ask, /clear_memory, /embed)
+│   ├── compat_models.py     # 旧接口数据模型
+│   ├── import_decider.py    # 自动导入决策
+│   └── import_probe.py      # 导入探测
+├── di/                  # 依赖注入
+│   ├── container.py         # DI 容器
+│   └── providers.py         # 服务提供者
+├── db/                  # 数据访问层
+│   └── memory.py            # 记忆系统数据库操作 (会话, 画像, async)
+├── ui/                  # 用户界面
+│   └── console.py           # CLI 终端彩色输出
+├── config/__init__.py    # 导出 Config
+├── chat/__init__.py      # 导出 ChatClient
+└── ui/__init__.py        # 导出 Colors, 打印函数
 
-main.py                 # 入口，使用上述模块
+skills/                   # 技能定义目录 (通过 import_skills.py 导入数据库)
+└── article-retrieval/
+    ├── SKILL.md           # 技能定义 (YAML front matter + 内容)
+    └── TOOLS.md           # 工具定义
+
+scripts/                  # 数据导入脚本
+└── import_skills.py      # 技能文件导入数据库
+
+migrations/               # 数据库迁移
+├── 001_init_generic_backend.sql  # 基线迁移
+├── migrate.py            # 迁移执行器
+└── verify_table.py       # 表结构验证
+
+main.py                   # CLI 交互入口
 ```
 
 ### 技能系统工作流
 
-1. **扫描**: SkillSystem 扫描 `skills/` 下的所有子目录
-2. **解析**: 每个子目录的 `SKILL.md` 由 SkillParser 解析
-3. **工具定义**: 技能信息转换为 OpenAI Function Calling 格式
-4. **调用**: AI 决定调用技能时，返回对应技能内容
-5. **验证**: 检查 AI 回复是否包含技能的验证暗号
+1. **扫描**: DbSkillSystem 从数据库加载技能定义（启动时通过 AUTO_IMPORT 从 skills/ 导入）
+2. **解析**: 每个 SKILL.md 由 SkillParser 解析 YAML front matter + 内容
+3. **适配**: SkillAdapter 统一封装文件系统/数据库两种后端
+4. **工具定义**: 技能信息转换为 OpenAI Function Calling 格式
+5. **激活**: AI 通过 Function Calling 调用技能，动态加载二级工具
+6. **验证**: 检查 AI 回复是否包含技能的验证暗号
 
 ## 常用命令
 
@@ -54,7 +106,7 @@ main.py                 # 入口，使用上述模块
 
 ```bash
 # 安装依赖（使用 uv）
-uv pip install -e ".[dev]"
+uv sync
 
 # 运行所有测试
 uv run pytest tests/ -v
@@ -64,12 +116,18 @@ uv run pytest tests/unit/test_skill_system.py -v
 
 # 测试覆盖率
 uv run pytest tests/ --cov=src --cov-report=term
+
+# 跳过集成测试
+uv run pytest -m "not integration"
 ```
 
 ### 运行程序
 
 ```bash
-# 或使用 uv
+# API 模式 (FastAPI, 默认端口 4421)
+uv run uvicorn src.api.main:app --host 0.0.0.0 --port 4421
+
+# CLI 交互模式
 uv run main.py
 ```
 
@@ -78,6 +136,7 @@ uv run main.py
 - **TDD**: 所有新功能先写测试，再实现代码
 - **分层**: 每个模块职责单一，高内聚低耦合
 - **类型提示**: 使用 Python 3.11+ 类型标注
+- **asyncio_mode = "auto"**: 测试无需手动 `@pytest.mark.asyncio`
 
 ## 添加新技能
 
@@ -96,7 +155,7 @@ verification_token: UNIQUE-TOKEN-123
 详细说明技能的使用场景和指令。
 ```
 
-3. 重启程序，技能会自动被加载
+3. 设置 `AUTO_IMPORT=true` 后重启 API 服务，技能会自动导入数据库
 
 ## 技能 SKILL.md 格式
 
@@ -110,16 +169,55 @@ verification_token: TOKEN-XYZ    # 验证暗号（可选）
 ---
 ```
 
+## API 端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/health` | 健康检查 |
+| GET | `/skills` | 列出可用技能 |
+| POST | `/chat` | SSE 流式聊天 (新接口) |
+| GET | `/chat/history` | 获取聊天历史 |
+| GET | `/chat/sessions` | 列出用户会话 |
+| POST | `/chat/sessions` | 创建新会话 |
+| GET | `/chat/sessions/{id}` | 获取会话详情 |
+| DELETE | `/chat/sessions/{id}` | 删除会话 |
+| GET | `/chat/users` | 列出最近用户 |
+| DELETE | `/chat/history` | 清空用户数据 |
+| POST | `/ask` | 旧兼容问答接口 (JSON) |
+| POST | `/clear_memory` | 旧兼容清除记忆 |
+| POST | `/embed` | 旧兼容文本向量化 |
+
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
 |-------|------|--------|
 | OPENAI_API_KEY | OpenAI API 密钥 | (必需) |
 | OPENAI_BASE_URL | API 基础 URL | https://api.openai.com/v1 |
-| OPENAI_MODEL | 使用的模型 | gpt-4 |
+| OPENAI_MODEL | 使用的模型 | deepseek-v3.2 |
 | SKILLS_DIR | 技能目录 | ./skills |
+| DB_HOST | 数据库主机 | (必需) |
+| DB_PORT | 数据库端口 | (必需) |
+| DB_USER | 数据库用户 | (必需) |
+| DB_PASSWORD | 数据库密码 | (必需) |
+| DB_NAME | 数据库名 | (必需) |
+| EMBEDDING_MODEL | Embedding 模型 | BAAI/bge-m3 |
+| EMBEDDING_DIMENSIONS | 向量维度 | 1024 |
+| EMBEDDING_API_KEY | Embedding API 密钥 | (继承 OPENAI_API_KEY) |
+| EMBEDDING_BASE_URL | Embedding API 地址 | (继承 OPENAI_BASE_URL) |
+| RERANK_MODEL | Rerank 模型 | BAAI/bge-reranker-v2-m3 |
+| RERANK_MAX_CANDIDATES | Rerank 最大候选数 | 40 |
+| RERANK_TIMEOUT | Rerank 超时 (秒) | 60.0 |
+| RERANK_BASE_URL | Rerank API 地址 | (继承 OPENAI_BASE_URL) |
+| RERANK_API_KEY | Rerank API 密钥 | (继承 OPENAI_API_KEY) |
+| LLM_TIMEOUT | LLM 请求超时 (秒) | 120.0 |
+| EMBEDDING_TIMEOUT | Embedding 请求超时 (秒) | 30.0 |
+| LLM_MAX_TOKENS | LLM 最大 token 数 | 1500 |
+| LLM_TEMPERATURE | LLM 温度参数 | 0.1 |
+| AI_COMPAT_TZ | 兼容层时区 | (自动检测) |
+| AUTO_MIGRATE | 启动时自动迁移 | false |
+| AUTO_IMPORT | 启动时自动导入技能 | false |
 
-## 特殊命令
+## 特殊命令 (CLI 模式)
 
 - `skills` 或 `list` - 列出所有可用技能
 - `verify <skill_name>` - 显示特定技能的验证暗号
@@ -131,15 +229,42 @@ verification_token: TOKEN-XYZ    # 验证暗号（可选）
 - **回复请使用中文**
 - **不包含敏感信息** (API keys, tokens) 在代码或提交中
 
+## 检索系统架构（三层策略）
+
+数据模型采用 **articles + vectors 双表结构**：
+- `articles`: 存储 OA 文章元数据（标题、单位、链接、发布日期、内容、摘要、附件）
+- `vectors`: 存储向量嵌入，通过 `article_id` 外键关联 articles（ON DELETE CASCADE）
+
+检索策略：
+1. **Layer 1: EBD 向量搜索** - vectors JOIN articles 语义召回 top-20
+2. **Layer 2: 关键词模糊搜索** - pg_trgm 精确匹配 articles 表，召回 top-20
+3. **Layer 3: Rerank 重排序** - 使用 bge-reranker-v2-m3 模型重排序，返回 top-k
+
+核心模块：
+- `src/core/article_retrieval.py` — ArticleRetriever 继承 BaseRetriever，实现 search_articles、grep_article、grep_articles
+- `src/core/response_composer.py` — ResponseComposer 编排上下文块和来源引用
+- `src/core/base_retrieval.py` — BaseRetriever 提供 embedding 生成、向量搜索基类
+
+## 数据库表
+
+- `articles`: OA 文章表 (id, title, unit, link, published_on, content, summary, attachments, created_at, updated_at)
+- `vectors`: 向量表 (id, article_id FK, embedding vector(1024), published_on, created_at, updated_at)
+- `skills`: 技能定义表 (id, name, description, verification_token, metadata, content, tools, is_static, created_at, updated_at)
+- `skill_references`: 技能参考资料表 (id, skill_id FK, file_path, content, created_at)
+- `conversations`: 对话记录表 (id, user_id UUID, conversation_id, title, messages JSONB, created_at, updated_at)
+- `conversation_sessions`: 会话元信息表 (id, user_id UUID, conversation_id, title, created_at, updated_at)
+- `user_profiles`: 用户画像表 (id, user_id UUID, portrait_text, knowledge_text, preferences JSONB, created_at, updated_at)
+
 ## 并发治理与生命周期
 
-- 采用**分层队列**而非单全局队列：`llm` 与 `embedding` 分 lane 控制并发。
+- 采用**分层队列** (APIQueue) 而非单全局队列：`llm`、`embedding`、`rerank` 分 lane 通过 Semaphore 控制并发。
 - 并发参数（默认）：
   - `LLM 并发`: 2
   - `Embedding 并发`: 6
+  - `Rerank 并发`: 2
   - `搜索重试次数`: 2（总 3 次尝试）
   - `重试退避`: 50ms
-- 关闭顺序：`close_clients` → `close_resources` → `close_pool` → `shutdown_tool_loop`
+- 关闭顺序：`close_clients` → `close_resources` → `close_pool` → `close_api_queue` → `shutdown_tool_loop`
 - 常见排查命令：
   - `uv run pytest tests/integration/test_concurrency_regression.py -v`
   - `uv run pytest tests/unit/test_article_retrieval.py tests/unit/test_chat_client.py tests/unit/test_db.py -v`

@@ -15,6 +15,7 @@ AI Agent 后端 - 文档检索助手
 | **文档检索** | 三层混合检索（向量 + 关键词 + Rerank） |
 | **参考读取** | 按需读取技能参考资料 |
 | **长期记忆** | 用户画像浓缩，跨会话记忆保持 |
+| **SSE 流式** | Server-Sent Events 实时流式输出 |
 
 ---
 
@@ -30,19 +31,13 @@ flowchart TB
 
     subgraph API["API Gateway (FastAPI)"]
         Gateway["API 网关"]
-        QueueMgr["队列管理器"]
+        QueueMgr["分层并发队列"]
     end
 
-    subgraph MQ["消息队列 (Redis Queue)"]
-        LLMQ["LLM 请求队列"]
-        EBDQ["Embedding 请求队列"]
-        RRQ["Rerank 请求队列"]
-    end
-
-    subgraph Workers["Worker Pool"]
-        LLMW["LLM Workers"]
-        EBDW["Embedding Workers"]
-        RRW["Rerank Workers"]
+    subgraph Lanes["APIQueue 分层 Lane"]
+        LLMQ["LLM Lane (并发=2)"]
+        EBDQ["Embedding Lane (并发=6)"]
+        RRQ["Rerank Lane (并发=2)"]
     end
 
     subgraph Core["核心模块"]
@@ -56,10 +51,10 @@ flowchart TB
         Skills["skills"]
         Refs["skill_references"]
         Docs["articles"]
-        Users["users"]
+        Vectors["vectors"]
         Profiles["user_profiles"]
-        Conv["conversations"]
-        Messages["messages"]
+        ConvTable["conversations"]
+        Sessions["conversation_sessions"]
     end
 
     subgraph External["外部服务"]
@@ -74,24 +69,16 @@ flowchart TB
     QueueMgr --> EBDQ
     QueueMgr --> RRQ
 
-    LLMQ --> LLMW
-    EBDQ --> EBDW
-    RRQ --> RRW
-
-    LLMW --> SkillSys
-    LLMW --> Memory
-    LLMW --> Conv
+    LLMQ --> SkillSys
+    LLMQ --> Memory
+    LLMQ --> Conv
 
     SkillSys --> Retrieval
-    Retrieval --> RRW
     Retrieval --> DB
 
-    EBDW --> DB
-    RRW --> DB
-
-    LLMW --> OpenAI
-    EBDW --> EBD
-    RRW --> Rerank
+    LLMQ --> OpenAI
+    EBDQ --> EBD
+    RRQ --> Rerank
 
     Memory --> DB
     Conv --> DB
@@ -102,7 +89,7 @@ flowchart TB
 | 理念 | 描述 |
 |------|------|
 | **渐进式披露** | AI 按需加载 Skill，避免上下文污染 |
-| **队列解耦** | 所有外部请求通过队列分发，应对高并发 |
+| **分层并发** | 所有外部请求通过 APIQueue 分 lane Semaphore 控制 |
 | **Skill 数据库化** | Skill 定义存数据库，支持动态管理 |
 | **记忆浓缩** | 短期对话 + 用户画像 → AI 浓缩 → 更新画像 |
 
@@ -126,39 +113,39 @@ sequenceDiagram
     participant User as 用户
     participant Frontend as 前端
     participant API as FastAPI
-    participant Worker as Worker
+    participant Client as ChatClient
     participant AI as OpenAI API
     participant DB as 数据库
 
     User->>Frontend: 发起对话
     Frontend->>API: POST /chat {user_id, message}
-    API->>Worker: 放入队列
+    API->>Client: ChatService.chat_stream()
 
-    Note over Worker: 初始化对话上下文
-    Worker->>DB: 查询用户画像
-    Worker->>DB: 查询对话历史
+    Note over Client: 初始化对话上下文
+    Client->>DB: 查询用户画像
+    Client->>DB: 查询对话历史
 
-    Worker->>AI: 发送请求<br/>System: Skill列表<br/>Tools: 基础工具（无二级工具）
+    Client->>AI: 发送请求<br/>System: Skill列表<br/>Tools: 基础工具（无二级工具）
 
     AI->>AI: 判断需要调用 article-retrieval 技能
-    AI-->>Worker: 返回: call article-retrieval
+    AI-->>Client: 返回: call article-retrieval
 
-    Note over Worker: Skill 激活
-    Worker->>DB: 加载 SKILL.md
-    Worker->>DB: 加载二级工具定义
+    Note over Client: Skill 激活
+    Client->>DB: 加载 SKILL.md
+    Client->>DB: 加载二级工具定义
 
-    Worker->>AI: 继续对话<br/>新增: Skill内容 + 二级工具
+    Client->>AI: 继续对话<br/>新增: Skill内容 + 二级工具
 
     AI->>AI: 使用 search_articles 工具
-    AI-->>Worker: 返回: call search_articles
+    AI-->>Client: 返回: call search_articles
 
-    Worker->>DB: 执行检索
+    Client->>DB: 执行检索
 
-    Worker->>AI: 返回检索结果
+    Client->>AI: 返回检索结果
 
-    AI-->>Worker: 返回最终回答
+    AI-->>Client: 返回最终回答
 
-    Worker->>API: 通过 SSE 推送响应
+    Client->>API: 通过 SSE 推送响应
     API-->>Frontend: SSE 流式返回
     Frontend-->>User: 显示回答
 ```
@@ -167,10 +154,11 @@ sequenceDiagram
 
 | 组件 | 描述 | 状态 |
 |------|------|------|
-| **Skill 加载** | 从数据库加载 Skill 定义 | ✅ 已实现（文件系统） |
+| **Skill 加载 (文件系统)** | 从 skills/ 目录加载 Skill 定义 | ✅ 已实现（已废弃） |
+| **Skill 加载 (数据库)** | 从数据库加载 Skill 定义 | ✅ 已实现（推荐） |
 | **二级工具** | Skill 专属工具，激活后可用 | ✅ 已实现 |
 | **read_reference** | AI 按需读取 Skill 参考资料 | ✅ 已实现 |
-| **数据库化** | Skill 存数据库而非文件系统 | ⚪ 规划中 |
+| **数据库化** | Skill 存数据库而非文件系统 | ✅ 已实现 |
 
 ### 检索系统
 
@@ -212,9 +200,9 @@ Layer 3: Rerank 重排序 (top-k)
 │  短期记忆                           长期记忆                 │
 │  ┌─────────────────┐               ┌─────────────────┐     │
 │  │ 对话历史        │  浓缩更新     │   用户画像       │     │
-│  │ - 消息内容      │  ──────────►  │   - 偏好         │     │
-│  │ - 对话评分      │    (AI API)   │   - 历史重点     │     │
-│  │ - 时间戳        │               │   - 关键信息     │     │
+│  │ - 消息内容      │  ──────────►  │   - portrait_text│     │
+│  │ - 对话评分      │    (AI API)   │   - knowledge_text│    │
+│  │ - 时间戳        │               │   - preferences  │     │
 │  └─────────────────┘               └─────────────────┘     │
 │         ▲                                  │               │
 │         │                                  ▼               │
@@ -226,13 +214,15 @@ Layer 3: Rerank 重排序 (top-k)
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 队列 + Worker 架构
+### 分层并发队列 (APIQueue)
 
-| 队列 | Worker | 用途 |
+APIQueue 采用 asyncio.Semaphore 分 lane 控制并发：
+
+| Lane | 并发数 | 用途 |
 |------|--------|------|
-| LLM Queue | LLM Workers | 对话请求、AI 调用 |
-| Embedding Queue | Embedding Workers | 向量生成 |
-| Rerank Queue | Rerank Workers | 检索重排序 |
+| `llm` | 2 | 对话请求、AI 调用 |
+| `embedding` | 6 | 向量生成 |
+| `rerank` | 2 | 检索重排序 |
 
 ---
 
@@ -240,85 +230,94 @@ Layer 3: Rerank 重排序 (top-k)
 
 ```mermaid
 erDiagram
-    users ||--o{ user_profiles : "拥有"
-    users ||--o{ conversations : "发起"
-    conversations ||--o{ messages : "包含"
-
+    articles ||--o{ vectors : "拥有"
     skills ||--o{ skill_references : "包含"
-    skills ||--o{ articles : "关联（可选）"
+    user_profiles ||--o{ conversations : "拥有"
+    user_profiles ||--o{ conversation_sessions : "拥有"
+    conversations ||--|| conversation_sessions : "对应"
 
-    users {
-        int id PK
-        string username
-        string email
-        timestamp created_at
-    }
-
-    user_profiles {
-        int id PK
-        int user_id FK
-        text profile_data "JSON: 偏好、历史重点、关键信息"
-        timestamp updated_at
-    }
-
-    conversations {
-        int id PK
-        int user_id FK
-        string title
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    messages {
-        int id PK
-        int conversation_id FK
-        string role "user/assistant/system"
+    articles {
+        bigint id PK
+        text title
+        text unit
+        text link UK
+        date published_on
         text content
-        int score "对话评分，用于浓缩筛选"
-        timestamp created_at
+        text summary
+        jsonb attachments
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    vectors {
+        bigint id PK
+        bigint article_id FK
+        vector embedding "vector(1024)"
+        date published_on
+        timestamptz created_at
+        timestamptz updated_at
     }
 
     skills {
         int id PK
-        string name UK
-        json metadata "name, description, verification_token"
-        text content "SKILL.md 正文"
-        text tools "TOOLS.md 内容"
-        boolean is_static "指导型=true, 可更新型=false"
-        timestamp created_at
-        timestamp updated_at
+        varchar name UK
+        text description
+        varchar verification_token
+        jsonb metadata
+        text content
+        text tools
+        boolean is_static
+        timestamptz created_at
+        timestamptz updated_at
     }
 
     skill_references {
         int id PK
         int skill_id FK
-        string filename
+        varchar file_path
         text content
-        timestamp created_at
+        timestamptz created_at
     }
 
-    articles {
+    user_profiles {
         int id PK
-        string title
-        text content
-        text summary
-        string source_type
-        vector embedding "pgvector"
-        string content_hash UK
-        timestamp created_at
-        timestamp updated_at
+        uuid user_id UK
+        text portrait_text
+        text knowledge_text
+        jsonb preferences
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    conversations {
+        int id PK
+        uuid user_id
+        varchar conversation_id
+        varchar title
+        jsonb messages
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    conversation_sessions {
+        int id PK
+        uuid user_id
+        varchar conversation_id
+        varchar title
+        timestamptz created_at
+        timestamptz updated_at
     }
 ```
 
 | 表名 | 用途 | 更新方式 |
 |------|------|---------|
-| `users` | 用户信息 | CRUD 接口 |
-| `user_profiles` | 用户画像（长期记忆） | AI 浓缩自动更新 |
-| `conversations` | 对话会话 | 自动创建 |
-| `messages` | 对话消息（短期记忆） | 自动创建，带评分 |
+| `articles` | OA 文章元数据和内容 | crawler 爬取导入 |
+| `vectors` | 文章向量嵌入 | crawler 生成导入 |
 | `skills` | 技能定义 | 指导型: migration 初始化<br/>可更新型: CRUD 接口 |
 | `skill_references` | 技能参考资料 | 与 skills 同步 |
-| `articles` | 通用文章 | 上传接口 |
+| `user_profiles` | 用户画像（长期记忆） | AI 浓缩自动更新 |
+| `conversations` | 对话记录（短期记忆） | 自动创建，JSONB 存储 |
+| `conversation_sessions` | 会话元信息 | 自动创建 |
 
 ---
 
@@ -326,19 +325,12 @@ erDiagram
 
 ```mermaid
 flowchart TB
-    subgraph Docker["Docker Compose (AI End)"]
-        subgraph Backend["后端服务"]
-            API["FastAPI<br/>API Gateway"]
-            Worker["Worker Service<br/>多进程"]
-        end
-
-        subgraph Queue["消息队列"]
-            Redis["Redis<br/>队列 + 缓存"]
-        end
+    subgraph Docker["Docker Compose"]
+        API["FastAPI<br/>API Gateway"]
     end
 
     subgraph ExternalDB["外部数据库"]
-        PG["PostgreSQL<br/>+ pgvector<br/>(由 backend 或宿主机管理)"]
+        PG["PostgreSQL<br/>+ pgvector + pg_trgm<br/>(由 Docker Compose postgres 管理)"]
     end
 
     subgraph External["外部服务"]
@@ -347,23 +339,18 @@ flowchart TB
         Rerank["Rerank API"]
     end
 
-    API --> Redis
-    Worker --> Redis
-    Worker --> PG
     API --> PG
-    Worker --> OpenAI
-    Worker --> EBD
-    Worker --> Rerank
+    API --> OpenAI
+    API --> EBD
+    API --> Rerank
 ```
 
-> 注意：PostgreSQL 数据库由外部服务管理（backend 或宿主机部署），AI End 通过 `.env` 配置连接。
+> 注意：PostgreSQL 数据库由 Docker Compose 中的 postgres 容器管理，AI End 通过 `.env` 配置连接。
 
 | 服务 | 技术栈 | 职责 |
 |------|--------|------|
-| **API Gateway** | FastAPI + Uvicorn | 接收请求、SSE 推送、队列管理 |
-| **Worker Service** | Python multiprocessing | 消费队列、调用 AI、执行业务逻辑 |
-| **Redis** | Redis | 消息队列、缓存 |
-| **PostgreSQL** | PostgreSQL + pgvector + pg_trgm | 持久化存储、向量搜索（外部服务） |
+| **API Gateway** | FastAPI + Uvicorn | 接收请求、SSE 推送、分层并发控制 |
+| **PostgreSQL** | PostgreSQL + pgvector + pg_trgm | 持久化存储、向量搜索 |
 
 ---
 
@@ -372,9 +359,9 @@ flowchart TB
 | 类别 | 技术 |
 |------|------|
 | 语言 | Python 3.11+ |
-| 框架 | FastAPI |
-| 数据库 | PostgreSQL + pgvector + pg_trgm |
-| 队列 | Redis (后续可替换为 RabbitMQ/Kafka) |
+| 框架 | FastAPI + Uvicorn |
+| 数据库 | PostgreSQL + pgvector + pg_trgm + asyncpg |
+| 并发 | asyncio.Semaphore (APIQueue) |
 | 部署 | Docker + Docker Compose |
 | LLM | OpenAI API (Function Calling) |
 | Embedding | BAAI/bge-m3 |
@@ -549,7 +536,7 @@ classDiagram
 
 ---
 
-### 5. 通用内容处理工具 (article_content)
+### 5. 通用内容处理工具 (document_content)
 
 ```mermaid
 classDiagram
@@ -604,8 +591,8 @@ classDiagram
 
 | 功能 | 使用工具 |
 |------|----------|
-| `grep_article` | ✅ 复用 Matcher 策略 |
-| `search_articles` | ✅ 统一文章检索入口 |
+| `grep_article` | 复用 Matcher 策略 |
+| `search_articles` | 统一文章检索入口 |
 
 ---
 
@@ -647,7 +634,7 @@ stateDiagram-v2
 flowchart TB
     Start([启动 main.py]) --> LoadConfig[Config.load 从环境变量加载]
     LoadConfig --> CreateClient[创建 ChatClient]
-    CreateClient --> InitSkills[SkillSystem 扫描 skills/ 目录]
+    CreateClient --> InitSkills[DbSkillSystem 从数据库加载技能]
     InitSkills --> ShowBanner[显示欢迎信息]
     ShowBanner --> MainLoop[主循环]
 
@@ -685,18 +672,17 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    Start([运行 import_*.py]) --> ScanDir[扫描文档目录]
-    ScanDir --> FilterFiles[filter_files_not_in_db]
-    FilterFiles --> ComputeHash[计算 content_hash]
+    Start([运行 import_skills.py]) --> ScanDir[扫描 skills/ 目录]
+    ScanDir --> ReadFiles[读取 SKILL.md / TOOLS.md / 参考文件]
+    ReadFiles --> ComputeHash[hash_text 计算内容哈希]
     ComputeHash --> QueryDB{查询数据库}
-    QueryDB --> CheckExists{已存在?}
-    CheckExists -->|是| Skip[跳过该文件]
+    QueryDB --> CheckExists{已存在且无变更?}
+    CheckExists -->|是| Skip[跳过]
     CheckExists -->|否| Import[导入处理]
 
-    Import --> GenSummary[LLM 生成摘要]
-    GenSummary --> GenEmbedding[generate_embedding 生成向量]
-    GenEmbedding --> InsertDB[INSERT ... ON CONFLICT DO UPDATE]
-    InsertDB --> Next{还有文件?}
+    Import --> UpsertSkill[UPSERT skills 表]
+    UpsertSkill --> UpsertRefs[UPSERT skill_references 表]
+    UpsertRefs --> Next{还有文件?}
     Skip --> Next
     Next -->|是| Import
     Next -->|否| PrintStats[打印导入统计]
@@ -704,16 +690,18 @@ flowchart TB
 ```
 
 **支持的导入脚本**：
+- `scripts/import_skills.py` — 技能定义导入（SKILL.md, TOOLS.md, 参考文件）
 
 ---
 
 ## 架构演进
 
-| 方面 | 当前版本（CLI） | 目标版本（API） |
+| 方面 | 旧版本 (Flask) | 当前版本 (FastAPI + 技能系统) |
 |------|----------------|----------------|
-| **交互方式** | 命令行 | Web API + SSE |
+| **框架** | Flask + LangGraph | FastAPI + 技能系统 |
+| **交互方式** | JSON API | SSE 流式 + JSON 兼容 |
+| **Skill 存储** | 文件系统 | 数据库 (DbSkillSystem) |
+| **并发处理** | 同步队列 | asyncio.Semaphore 分 lane |
+| **用户管理** | 无 | 用户系统 + 画像 + 会话 |
+| **记忆管理** | Redis 缓存 | PostgreSQL 短期 + 长期记忆 |
 | **部署方式** | 本地运行 | Docker 容器化 |
-| **Skill 存储** | 文件系统 | 数据库 |
-| **并发处理** | 同步队列 | 消息队列 + Worker Pool |
-| **用户管理** | 无 | 用户系统 + 画像 |
-| **记忆管理** | 无状态 | 短期 + 长期记忆 |

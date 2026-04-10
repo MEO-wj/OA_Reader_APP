@@ -36,7 +36,7 @@ curl -N -X POST http://localhost:8000/chat \
 **响应示例:**
 ```json
 {
-  "status": "healthy",
+  "status": "ok",
   "version": "0.1.0"
 }
 ```
