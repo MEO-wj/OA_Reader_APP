@@ -125,6 +125,80 @@ func TestGetByID_ReturnsSnakeCaseJSONKeys(t *testing.T) {
 	}
 }
 
+func TestGetPage_ReturnsCompleteDTO(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	now := time.Date(2026, 4, 10, 8, 30, 0, 0, time.UTC)
+	repo := &fakeArticleRepo{
+		page: []model.Article{
+			{
+				ID:          1,
+				Title:       "测试文章",
+				Unit:        "测试单位",
+				Link:        "https://example.com/a",
+				PublishedOn: time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC),
+				Content:     "正文",
+				Summary:     "摘要",
+				Attachments: model.JSONArray{{"name": "file.pdf", "url": "https://example.com/f.pdf"}},
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+		},
+		hasOlder: false,
+	}
+	svc := service.NewArticleServiceWithRepo(repo)
+	h := NewArticleHandler(svc)
+
+	r := gin.New()
+	r.GET("/api/articles", h.GetPage)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/articles?v=1&before_id=200&limit=20", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	articles, ok := payload["articles"].([]any)
+	if !ok || len(articles) == 0 {
+		t.Fatalf("expected articles array, got %v", payload["articles"])
+	}
+
+	first := articles[0].(map[string]any)
+
+	// Verify all expected DTO fields exist
+	for _, key := range []string{"id", "title", "unit", "link", "published_on", "summary", "created_at", "updated_at", "attachments"} {
+		if _, ok := first[key]; !ok {
+			t.Errorf("missing key %q in article DTO: %v", key, first)
+		}
+	}
+
+	// Verify content is NOT in list DTO
+	if _, ok := first["content"]; ok {
+		t.Error("content should not be in list DTO")
+	}
+
+	// Verify attachments is non-empty array
+	if attachments, ok := first["attachments"].([]any); !ok || len(attachments) == 0 {
+		t.Errorf("expected non-empty attachments array, got %v", first["attachments"])
+	}
+
+	// Verify created_at is a valid timestamp string
+	if cat, ok := first["created_at"].(string); ok {
+		if _, err := time.Parse(time.RFC3339, cat); err != nil {
+			t.Errorf("created_at is not valid RFC3339: %q, err: %v", cat, err)
+		}
+	} else {
+		t.Errorf("created_at is not a string: %T", first["created_at"])
+	}
+}
+
 func TestGetPage_RejectsUnsupportedVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := newTestArticleHandler()

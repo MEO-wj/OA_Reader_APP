@@ -35,7 +35,9 @@ type ArticleDTO struct {
 	Link        string               `json:"link,omitempty"`
 	PublishedOn string               `json:"published_on,omitempty"`
 	Summary     string               `json:"summary,omitempty"`
-	Attachments *[]map[string]string `json:"attachments,omitempty"`
+	Attachments model.JSONArray       `json:"attachments,omitempty"`
+	CreatedAt   string               `json:"created_at,omitempty"`
+	UpdatedAt   string               `json:"updated_at,omitempty"`
 }
 
 func NewArticleService() *ArticleService {
@@ -111,6 +113,9 @@ func (s *ArticleService) buildResponse(articles []model.Article, hasMore bool) *
 			Link:        a.Link,
 			PublishedOn: a.PublishedOn.Format("2006-01-02"),
 			Summary:     a.Summary,
+			Attachments: a.Attachments,
+			CreatedAt:   a.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:   a.UpdatedAt.Format(time.RFC3339),
 		}
 	}
 
