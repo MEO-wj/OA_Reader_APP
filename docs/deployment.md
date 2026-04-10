@@ -465,7 +465,8 @@ DB_POOL_TIMEOUT=30
 -- 为常用查询添加索引
 CREATE INDEX idx_articles_published_on ON articles(published_on);
 CREATE INDEX idx_articles_created_at ON articles(created_at);
-CREATE INDEX idx_vectors_article_id ON vectors(article_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vectors_article ON vectors(article_id);
+CREATE INDEX IF NOT EXISTS idx_vectors_embedding_hnsw ON vectors USING hnsw (embedding vector_cosine_ops);
 ```
 
 3. **定期维护**

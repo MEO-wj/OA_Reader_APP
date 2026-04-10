@@ -19,7 +19,7 @@ import pytest
 def _load_env():
     env_path = Path(__file__).parent.parent / ".env"
     if env_path.exists():
-        for line in env_path.read_text().splitlines():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 key, _, value = line.partition("=")
@@ -46,6 +46,22 @@ def _get_column_default(conn, table: str, column: str) -> str | None:
     if row is None:
         return None
     return row["column_default"]
+
+
+def _index_exists(conn, index_name: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_indexes
+                WHERE schemaname = 'public' AND indexname = %s
+            ) AS exists
+            """,
+            (index_name,),
+        )
+        row = cur.fetchone()
+    return bool(row["exists"])
 
 
 class TestInitDbTimestampDefaults:
@@ -165,5 +181,15 @@ class TestInitDbTimestampDefaults:
             self.init_db(conn)
             self.init_db(conn)  # 第二次调用
             # 如果没抛异常就算通过
+        finally:
+            conn.close()
+
+    @pytest.mark.skipif(SKIP_DB_TESTS, reason="需要 DATABASE_URL 环境变量")
+    def test_vectors_embedding_hnsw_index_exists_after_init_db(self):
+        """init_db 执行后应创建 vectors.embedding 的 HNSW 索引"""
+        conn = self.get_connection()
+        try:
+            self.init_db(conn)
+            assert _index_exists(conn, "idx_vectors_embedding_hnsw")
         finally:
             conn.close()

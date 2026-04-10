@@ -80,6 +80,7 @@ def init_db(conn: psycopg.Connection) -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_vectors_published_on ON vectors (published_on);",  #-- 发布日期索引
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_vectors_article ON vectors(article_id);",  #-- 文章ID唯一索引
+        "CREATE INDEX IF NOT EXISTS idx_vectors_embedding_hnsw ON vectors USING hnsw (embedding vector_cosine_ops);",
     ]
     
     # 确保 created_at / updated_at 列有 DEFAULT NOW()

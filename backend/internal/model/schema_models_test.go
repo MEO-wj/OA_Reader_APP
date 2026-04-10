@@ -58,3 +58,46 @@ func TestAuthSessionUsesDedicatedUserIndexName(t *testing.T) {
 		t.Fatalf("unexpected Session.UserID tag: %s", tag)
 	}
 }
+
+func TestArticlePublishedOnUsesDateTypeTag(t *testing.T) {
+	field, ok := reflect.TypeOf(Article{}).FieldByName("PublishedOn")
+	if !ok {
+		t.Fatal("Article.PublishedOn not found")
+	}
+	tag := field.Tag.Get("gorm")
+	if !strings.Contains(tag, "type:date") {
+		t.Fatalf("expected type:date in tag, got %s", tag)
+	}
+}
+
+func TestVectorPublishedOnUsesDateTypeAndNotNullTag(t *testing.T) {
+	field, ok := reflect.TypeOf(Vector{}).FieldByName("PublishedOn")
+	if !ok {
+		t.Fatal("Vector.PublishedOn not found")
+	}
+	tag := field.Tag.Get("gorm")
+	if !strings.Contains(tag, "type:date") || !strings.Contains(tag, "not null") {
+		t.Fatalf("unexpected Vector.PublishedOn tag: %s", tag)
+	}
+}
+
+func TestConversationLikeModelsUseUint32PrimaryKey(t *testing.T) {
+	cases := []struct {
+		name string
+		typ  reflect.Type
+	}{
+		{name: "Conversation", typ: reflect.TypeOf(Conversation{})},
+		{name: "ConversationSession", typ: reflect.TypeOf(ConversationSession{})},
+		{name: "UserProfile", typ: reflect.TypeOf(UserProfile{})},
+	}
+
+	for _, tc := range cases {
+		field, ok := tc.typ.FieldByName("ID")
+		if !ok {
+			t.Fatalf("%s.ID not found", tc.name)
+		}
+		if field.Type.Kind() != reflect.Uint32 {
+			t.Fatalf("%s.ID expected uint32, got %s", tc.name, field.Type.Kind())
+		}
+	}
+}

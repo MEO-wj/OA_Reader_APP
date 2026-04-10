@@ -7,7 +7,7 @@ import (
 )
 
 type UserProfile struct {
-	ID            uint64    `gorm:"primaryKey"`
+	ID            uint32    `gorm:"primaryKey"`
 	UserID        uuid.UUID `gorm:"type:uuid;not null;uniqueIndex"`
 	PortraitText  *string   `gorm:"type:text"`
 	KnowledgeText *string   `gorm:"type:text"`

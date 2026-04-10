@@ -12,7 +12,7 @@ type Article struct {
 	Title       string    `gorm:"not null" json:"title"`
 	Unit        string    `json:"unit,omitempty"`
 	Link        string    `gorm:"uniqueIndex;not null" json:"link,omitempty"`
-	PublishedOn time.Time `gorm:"index;not null" json:"published_on"`
+	PublishedOn time.Time `gorm:"type:date;index;not null" json:"published_on"`
 	Content     string    `gorm:"not null" json:"content"`
 	Summary     string    `gorm:"not null" json:"summary"`
 	Attachments JSONArray `gorm:"type:jsonb;default:'[]'" json:"attachments"`

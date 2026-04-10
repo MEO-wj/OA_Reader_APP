@@ -156,3 +156,15 @@ func TestDefaultVersions_ContainsSessionsUserIndexConflictFixMigration(t *testin
 		t.Fatalf("missing migration 2026040703_sessions_user_index_conflict_fix, got: %#v", ids)
 	}
 }
+
+func TestDefaultVersions_ContainsSharedTableFkConstraintsMigration(t *testing.T) {
+	versions := DefaultVersions(nil)
+	ids := make([]string, 0, len(versions))
+	for _, v := range versions {
+		ids = append(ids, v.ID)
+	}
+
+	if !slices.Contains(ids, "2026041001_shared_table_fk_constraints") {
+		t.Fatalf("missing migration 2026041001_shared_table_fk_constraints, got: %#v", ids)
+	}
+}

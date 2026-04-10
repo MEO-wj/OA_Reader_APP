@@ -230,8 +230,7 @@ crawler/
 - `vectors`: 向量表 (article_id, embedding vector(1024), ON DELETE CASCADE)
 - `users`: 用户表 (用户名、密码哈希、显示名、头像)
 - `sessions`: 会话表 (refresh_token_sha, expires_at)
-- `conversations`: 会话记录 (user_id, conversation_id, title)
-- `messages`: 聊天消息 (conversation_id, role, content)
+- `conversations`: 会话记录 (user_id, conversation_id, title, messages JSONB)
 - `user_profiles`: 用户画像 (user_id, preferences, JSON)
 - `skills`: 技能定义 (name, description, content, hash)
 

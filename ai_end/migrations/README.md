@@ -6,7 +6,7 @@
 
 - `001_init_generic_backend.sql` - AI Agent 通用后端基线迁移（create-only）
 - `migrate.py` - 迁移执行脚本（使用 asyncpg）
-- `verify_table.py` - `documents` 表结构验证脚本
+- `verify_table.py` - `articles` 表结构验证脚本
 
 ## 迁移策略：create-only 基线
 
@@ -44,18 +44,18 @@ uv run python migrations/verify_table.py
 
 ## 表结构
 
-### documents（通用文档表）
+### articles（OA 文章表）
 
 | 列名 | 类型 | 约束 | 说明 |
 |------|------|------|------|
-| id | integer | PRIMARY KEY | 自增主键 |
-| title | varchar(500) | NOT NULL | 文档标题 |
-| content | text | NOT NULL | 文档完整内容 |
-| summary | text | | 文档摘要，用于向量检索 |
-| source_type | varchar(50) | DEFAULT 'markdown' | 来源类型 |
-| embedding | vector(1024) | | 摘要的向量表示 |
-| content_hash | varchar(64) | UNIQUE | 内容哈希（SHA256） |
-| metadata | jsonb | DEFAULT '{}' | 扩展元数据 |
+| id | bigint | PRIMARY KEY | 自增主键 |
+| title | text | NOT NULL | 文章标题 |
+| unit | text | | 发布单位 |
+| link | text | UNIQUE NOT NULL | 文章链接 |
+| published_on | date | NOT NULL | 发布日期 |
+| content | text | NOT NULL | 正文 |
+| summary | text | NOT NULL | 摘要 |
+| attachments | jsonb | DEFAULT '[]' | 附件 |
 | created_at | timestamp | DEFAULT NOW() | 创建时间 |
 | updated_at | timestamp | DEFAULT NOW() | 更新时间 |
 
@@ -89,7 +89,7 @@ uv run python migrations/verify_table.py
 | 列名 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | integer | PRIMARY KEY | 自增主键 |
-| user_id | varchar(64) | NOT NULL | 用户 ID |
+| user_id | uuid | NOT NULL | 用户 ID |
 | conversation_id | varchar(64) | NOT NULL | 会话 ID |
 | title | varchar(256) | DEFAULT '新会话' | 会话标题 |
 | messages | jsonb | DEFAULT '[]' | 会话消息数组 |
@@ -101,7 +101,7 @@ uv run python migrations/verify_table.py
 | 列名 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | integer | PRIMARY KEY | 自增主键 |
-| user_id | varchar(64) | NOT NULL | 用户 ID |
+| user_id | uuid | NOT NULL | 用户 ID |
 | conversation_id | varchar(64) | NOT NULL | 会话 ID |
 | title | varchar(256) | DEFAULT '新会话' | 会话标题 |
 | created_at | timestamp | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
@@ -112,7 +112,7 @@ uv run python migrations/verify_table.py
 | 列名 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | integer | PRIMARY KEY | 自增主键 |
-| user_id | varchar(64) | UNIQUE NOT NULL | 用户 ID |
+| user_id | uuid | UNIQUE NOT NULL | 用户 ID |
 | portrait_text | text | | 用户特征描述 |
 | knowledge_text | text | | 用户知识背景 |
 | preferences | jsonb | DEFAULT '{}' | 用户偏好设置 |
@@ -121,10 +121,10 @@ uv run python migrations/verify_table.py
 
 ## 索引
 
-### documents
-- `idx_documents_embedding` - 向量相似度索引（HNSW, cosine distance）
-- `idx_documents_content_hash` - content_hash 索引
-- `idx_documents_title_trgm` - 标题模糊搜索索引（gin + pg_trgm）
+### articles
+- `idx_articles_published_on` - 发布日期索引
+- `idx_articles_title_trgm` - 标题模糊搜索索引（gin + pg_trgm）
+- `idx_articles_content_trgm` - 正文模糊搜索索引（gin + pg_trgm）
 
 ### skills
 - `UNIQUE(name)` 约束索引（PostgreSQL 自动创建）- 技能名称唯一约束

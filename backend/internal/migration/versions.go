@@ -106,6 +106,28 @@ func DefaultVersions(_ *gorm.DB) []Version {
 				`).Error
 			},
 		},
+		{
+			ID: "2026041001_shared_table_fk_constraints",
+			Up: func(tx *gorm.DB) error {
+				return tx.Exec(`
+					DO $$ BEGIN
+						ALTER TABLE vectors
+						  ADD CONSTRAINT fk_vectors_article
+						  FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE;
+					EXCEPTION WHEN duplicate_object THEN NULL;
+					END $$;
+
+					DO $$ BEGIN
+						ALTER TABLE skill_references
+						  ADD CONSTRAINT fk_skill_references_skill
+						  FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE;
+					EXCEPTION WHEN duplicate_object THEN NULL;
+					END $$;
+
+					DROP INDEX IF EXISTS idx_vectors_article_id;
+				`).Error
+			},
+		},
 	}
 }
 
