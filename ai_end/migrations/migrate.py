@@ -15,7 +15,7 @@ load_dotenv()
 SCHEMA_MIGRATIONS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(255) PRIMARY KEY,
-    applied_at TIMESTAMP DEFAULT NOW()
+    applied_at TIMESTAMPTZ DEFAULT NOW()
 );
 """
 
@@ -158,8 +158,8 @@ async def _apply_schema_repair(conn: asyncpg.Connection) -> None:
             content TEXT NOT NULL,
             tools TEXT,
             is_static BOOLEAN DEFAULT true,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
         );
         """,
         """
@@ -188,7 +188,7 @@ async def _apply_schema_repair(conn: asyncpg.Connection) -> None:
             skill_id INTEGER REFERENCES skills(id) ON DELETE CASCADE,
             file_path VARCHAR(500) NOT NULL,
             content TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE(skill_id, file_path)
         );
         """,
@@ -214,8 +214,8 @@ async def _apply_schema_repair(conn: asyncpg.Connection) -> None:
             conversation_id VARCHAR(64) NOT NULL,
             title VARCHAR(256) DEFAULT '新会话',
             messages JSONB DEFAULT '[]',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
         """,
         """
@@ -239,8 +239,8 @@ async def _apply_schema_repair(conn: asyncpg.Connection) -> None:
             user_id UUID NOT NULL,
             conversation_id VARCHAR(64) NOT NULL,
             title VARCHAR(256) DEFAULT '新会话',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
         """,
         """
@@ -265,8 +265,8 @@ async def _apply_schema_repair(conn: asyncpg.Connection) -> None:
             portrait_text TEXT,
             knowledge_text TEXT,
             preferences JSONB DEFAULT '{}',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_user_conv ON conversations(user_id, conversation_id);",

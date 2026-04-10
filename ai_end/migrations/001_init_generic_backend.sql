@@ -51,8 +51,8 @@ CREATE TABLE IF NOT EXISTS skills (
     content TEXT NOT NULL,
     tools TEXT,
     is_static BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 技能参考资料表
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS skill_references (
     skill_id INTEGER REFERENCES skills(id) ON DELETE CASCADE,
     file_path VARCHAR(500) NOT NULL,
     content TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(skill_id, file_path)
 );
 
@@ -72,8 +72,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     conversation_id VARCHAR(64) NOT NULL,
     title VARCHAR(256) DEFAULT '新会话',
     messages JSONB DEFAULT '[]',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 对话索引
@@ -89,8 +89,8 @@ CREATE TABLE IF NOT EXISTS conversation_sessions (
     user_id UUID NOT NULL,
     conversation_id VARCHAR(64) NOT NULL,
     title VARCHAR(256) DEFAULT '新会话',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_user_conv
@@ -105,8 +105,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     portrait_text TEXT,
     knowledge_text TEXT,
     preferences JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id);

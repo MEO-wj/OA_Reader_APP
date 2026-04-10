@@ -56,8 +56,8 @@ uv run python migrations/verify_table.py
 | content | text | NOT NULL | 正文 |
 | summary | text | NOT NULL | 摘要 |
 | attachments | jsonb | DEFAULT '[]' | 附件 |
-| created_at | timestamp | DEFAULT NOW() | 创建时间 |
-| updated_at | timestamp | DEFAULT NOW() | 更新时间 |
+| created_at | timestamptz | DEFAULT NOW() | 创建时间 |
+| updated_at | timestamptz | DEFAULT NOW() | 更新时间 |
 
 ### skills（技能定义表）
 
@@ -71,8 +71,8 @@ uv run python migrations/verify_table.py
 | content | text | NOT NULL | SKILL.md 内容 |
 | tools | text | | TOOLS.md 内容 |
 | is_static | boolean | DEFAULT true | 是否为静态技能 |
-| created_at | timestamp | DEFAULT NOW() | 创建时间 |
-| updated_at | timestamp | DEFAULT NOW() | 更新时间 |
+| created_at | timestamptz | DEFAULT NOW() | 创建时间 |
+| updated_at | timestamptz | DEFAULT NOW() | 更新时间 |
 
 ### skill_references（技能参考资料表）
 
@@ -82,7 +82,7 @@ uv run python migrations/verify_table.py
 | skill_id | integer | REFERENCES skills(id) | 关联技能 ID |
 | file_path | varchar(500) | NOT NULL | 文件路径 |
 | content | text | NOT NULL | 文件内容 |
-| created_at | timestamp | DEFAULT NOW() | 创建时间 |
+| created_at | timestamptz | DEFAULT NOW() | 创建时间 |
 
 ### conversations（对话记录表）
 
@@ -93,8 +93,8 @@ uv run python migrations/verify_table.py
 | conversation_id | varchar(64) | NOT NULL | 会话 ID |
 | title | varchar(256) | DEFAULT '新会话' | 会话标题 |
 | messages | jsonb | DEFAULT '[]' | 会话消息数组 |
-| created_at | timestamp | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-| updated_at | timestamp | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
+| created_at | timestamptz | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+| updated_at | timestamptz | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 
 ### conversation_sessions（会话元信息表）
 
@@ -104,8 +104,8 @@ uv run python migrations/verify_table.py
 | user_id | uuid | NOT NULL | 用户 ID |
 | conversation_id | varchar(64) | NOT NULL | 会话 ID |
 | title | varchar(256) | DEFAULT '新会话' | 会话标题 |
-| created_at | timestamp | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-| updated_at | timestamp | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
+| created_at | timestamptz | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+| updated_at | timestamptz | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 
 ### user_profiles（用户画像表）
 
@@ -116,8 +116,8 @@ uv run python migrations/verify_table.py
 | portrait_text | text | | 用户特征描述 |
 | knowledge_text | text | | 用户知识背景 |
 | preferences | jsonb | DEFAULT '{}' | 用户偏好设置 |
-| created_at | timestamp | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-| updated_at | timestamp | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
+| created_at | timestamptz | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+| updated_at | timestamptz | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 
 ## 索引
 
