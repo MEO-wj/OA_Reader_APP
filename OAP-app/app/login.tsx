@@ -40,10 +40,6 @@ export default function LoginScreen() {
     setError('');
     setIsSubmitting(true);
 
-    console.log('[Login] 开始登录流程');
-    console.log('[Login] API URL:', `${apiBaseUrl}/auth/token`);
-    console.log('[Login] 用户名:', username.trim());
-
     try {
       const resp = await fetch(`${apiBaseUrl}/auth/token`, {
         method: 'POST',
@@ -51,23 +47,16 @@ export default function LoginScreen() {
         body: JSON.stringify({ username: username.trim(), password }),
       });
 
-      console.log('[Login] 响应状态码:', resp.status);
-
       const data = await resp.json();
-      console.log('[Login] 响应数据:', data);
 
       if (!resp.ok) {
         setError(data?.error || '登录失败，请检查账号或密码');
         return;
       }
 
-      console.log('[Login] 登录成功，存储令牌');
-
       await setRefreshToken(data.refresh_token || null);
       await setUserProfileRaw(JSON.stringify(data.user || {}));
       await setAuthToken(data.access_token || null);
-
-      console.log('[Login] 跳转到主页面');
 
       router.replace('/(tabs)');
     } catch (err) {

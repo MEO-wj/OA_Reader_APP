@@ -16,16 +16,16 @@ env:
 
 jobs:
   build-app-eas:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-local
     timeout-minutes: 5
     steps:
       - name: Checkout code
-        uses: https://git.unself.cn/UnSelf/checkout@v4
+        uses: checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: https://git.unself.cn/UnSelf/setup-node@v4
+        uses: setup-node@v4
         with:
           node-version: '20'
 

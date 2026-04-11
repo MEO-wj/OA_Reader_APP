@@ -8,13 +8,13 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://oa-reader.backend.unself.cn/api"
+        "EXPO_PUBLIC_API_BASE_URL": "https://oa-reader-backend.unself.cn/api"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://oa-reader.backend.unself.cn/api"
+        "EXPO_PUBLIC_API_BASE_URL": "https://oa-reader-backend.unself.cn/api"
       }
     },
     "production": {
@@ -23,7 +23,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://oa-reader.backend.unself.cn/api"
+        "EXPO_PUBLIC_API_BASE_URL": "https://oa-reader-backend.unself.cn/api"
       }
     }
   },
