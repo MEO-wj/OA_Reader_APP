@@ -43,7 +43,9 @@ jobs:
       - name: Cache npm
         uses: actions/cache@v4
         with:
-          path: ~/.npm
+          path: |
+            ~/.npm
+            OAP-app/node_modules
           key: npm-eas-${{ hashFiles('OAP-app/package-lock.json') }}
           restore-keys: npm-eas-
 
@@ -51,6 +53,10 @@ jobs:
         run: |
           set -euo pipefail
           npm install -g eas-cli@latest
+
+      - name: Install app dependencies
+        working-directory: OAP-app
+        run: npm ci
 
       - name: Resolve collect parameters
         id: resolve
