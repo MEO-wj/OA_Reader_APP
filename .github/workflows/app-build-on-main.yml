@@ -32,21 +32,13 @@ jobs:
       - name: Cache npm
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.npm
-            ${{ env.APP_PATH }}/node_modules
+          path: ~/.npm
           key: npm-eas-${{ hashFiles('OAP-app/package-lock.json') }}
           restore-keys: npm-eas-
 
       - name: Install EAS CLI
         run: |
           npm install -g eas-cli@latest
-
-      - name: Install app dependencies
-        working-directory: ${{ env.APP_PATH }}
-        run: |
-          set -euo pipefail
-          npm ci
 
       - name: Verify Expo auth
         working-directory: ${{ env.APP_PATH }}
