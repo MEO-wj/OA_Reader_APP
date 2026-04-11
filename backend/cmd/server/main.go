@@ -39,7 +39,7 @@ func main() {
 	// 初始化处理器
 	authHandler := handler.NewAuthHandler(authService)
 	articleHandler := handler.NewArticleHandler(articleService)
-	profileHandler := handler.NewProfileHandlerWithUploadRoot(profileService, cfg.PublicBaseURL, cfg.UploadRootDir)
+	profileHandler := handler.NewProfileHandlerWithUploadRoot(profileService, cfg.UploadRootDir)
 	aiHandler := handler.NewAIHandler(cfg.AIEndURL)
 
 	// Gin 路由

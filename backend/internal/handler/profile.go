@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +22,6 @@ type profileService interface {
 type ProfileHandler struct {
 	profileService profileService
 	uploadRootDir  string
-	publicBaseURL  string
 }
 
 type updateProfileRequest struct {
@@ -34,20 +32,19 @@ type updateProfileRequest struct {
 	ProfileUpdatedAt string   `json:"profile_updated_at"`
 }
 
-func NewProfileHandler(profileService profileService, publicBaseURL string) *ProfileHandler {
+func NewProfileHandler(profileService profileService, uploadRootDir string) *ProfileHandler {
+	dir := strings.TrimSpace(uploadRootDir)
+	if dir == "" {
+		dir = "uploads"
+	}
 	return &ProfileHandler{
 		profileService: profileService,
-		uploadRootDir:  "uploads",
-		publicBaseURL:  strings.TrimRight(publicBaseURL, "/"),
+		uploadRootDir:  dir,
 	}
 }
 
-func NewProfileHandlerWithUploadRoot(profileService profileService, publicBaseURL, uploadRootDir string) *ProfileHandler {
-	handler := NewProfileHandler(profileService, publicBaseURL)
-	if strings.TrimSpace(uploadRootDir) != "" {
-		handler.uploadRootDir = uploadRootDir
-	}
-	return handler
+func NewProfileHandlerWithUploadRoot(profileService profileService, uploadRootDir string) *ProfileHandler {
+	return NewProfileHandler(profileService, uploadRootDir)
 }
 
 func (h *ProfileHandler) GetProfile(c *gin.Context) {
@@ -67,7 +64,6 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	profile.AvatarURL = h.toAbsoluteAvatarURL(c, profile.AvatarURL)
 	c.JSON(http.StatusOK, profile)
 }
 
@@ -112,7 +108,6 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	profile.AvatarURL = h.toAbsoluteAvatarURL(c, profile.AvatarURL)
 	c.JSON(http.StatusOK, profile)
 }
 
@@ -181,7 +176,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 
 	avatarPath := "/" + filepath.ToSlash(filepath.Join("uploads", relativePath))
 	c.JSON(http.StatusOK, gin.H{
-		"avatar_url": h.toAbsoluteAvatarURL(c, avatarPath),
+		"avatar_url": avatarPath,
 	})
 }
 
@@ -212,44 +207,4 @@ func imageExtension(contentType string) string {
 	default:
 		return ".bin"
 	}
-}
-
-func (h *ProfileHandler) toAbsoluteAvatarURL(c *gin.Context, avatarURL string) string {
-	if avatarURL == "" || !strings.HasPrefix(avatarURL, "/uploads/") {
-		return avatarURL
-	}
-
-	baseURL := h.publicBaseURL
-	if baseURL == "" {
-		baseURL = requestBaseURL(c.Request)
-	}
-	if baseURL == "" {
-		return avatarURL
-	}
-	return baseURL + avatarURL
-}
-
-func requestBaseURL(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-
-	scheme := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
-	if scheme == "" {
-		if r.TLS != nil {
-			scheme = "https"
-		} else {
-			scheme = "http"
-		}
-	}
-
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if host == "" {
-		host = strings.TrimSpace(r.Host)
-	}
-	if host == "" {
-		return ""
-	}
-
-	return (&url.URL{Scheme: scheme, Host: host}).String()
 }

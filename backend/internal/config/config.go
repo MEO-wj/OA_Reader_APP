@@ -24,7 +24,6 @@ type Config struct {
 	RateLimitPerHour    int           `mapstructure:"RATE_LIMIT_PER_HOUR"`
 	AIEndURL            string        `mapstructure:"AI_END_URL"`
 	AuthDebug           bool          `mapstructure:"AUTH_DEBUG"`
-	PublicBaseURL       string        `mapstructure:"PUBLIC_BASE_URL"`
 	UploadRootDir       string        `mapstructure:"UPLOAD_ROOT_DIR"`
 }
 
@@ -52,7 +51,6 @@ func Load(path string) (*Config, error) {
 		"RATE_LIMIT_PER_HOUR",
 		"AI_END_URL",
 		"AUTH_DEBUG",
-		"PUBLIC_BASE_URL",
 		"UPLOAD_ROOT_DIR",
 	} {
 		if err := v.BindEnv(key); err != nil {
@@ -73,7 +71,6 @@ func Load(path string) (*Config, error) {
 	if len(cfg.CORSAllowOrigins) == 0 {
 		cfg.CORSAllowOrigins = splitAndTrim(v.GetString("CORS_ALLOW_ORIGINS"))
 	}
-	cfg.PublicBaseURL = strings.TrimRight(cfg.PublicBaseURL, "/")
 	cfg.UploadRootDir = strings.TrimSpace(cfg.UploadRootDir)
 	if cfg.UploadRootDir == "" {
 		cfg.UploadRootDir = "uploads"

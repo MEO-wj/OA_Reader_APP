@@ -64,7 +64,7 @@ func TestGetProfile_ReturnsProfileForUserIDInContext(t *testing.T) {
 	}
 }
 
-func TestGetProfile_ReturnsAbsoluteAvatarURLForRelativeUploadPath(t *testing.T) {
+func TestGetProfile_ReturnsRelativeAvatarURLForUploadPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	userID := uuid.New()
@@ -84,8 +84,6 @@ func TestGetProfile_ReturnsAbsoluteAvatarURLForRelativeUploadPath(t *testing.T) 
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/user/profile", nil)
-	req.Host = "api.example.com"
-	req.Header.Set("X-Forwarded-Proto", "https")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -97,7 +95,7 @@ func TestGetProfile_ReturnsAbsoluteAvatarURLForRelativeUploadPath(t *testing.T) 
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body["avatar_url"] != "https://api.example.com/uploads/avatars/demo/avatar.png" {
+	if body["avatar_url"] != "/uploads/avatars/demo/avatar.png" {
 		t.Fatalf("unexpected avatar_url: %v", body["avatar_url"])
 	}
 }

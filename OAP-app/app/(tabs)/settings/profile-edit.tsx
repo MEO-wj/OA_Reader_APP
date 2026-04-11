@@ -29,6 +29,7 @@ import {
   updateProfile,
   uploadProfileAvatar,
 } from '@/services/profile';
+import { manipulateAvatarToWebP } from '@/services/profile-avatar-manipulate';
 import {
   getDisplayName,
   getProfileAvatarUri,
@@ -249,10 +250,12 @@ export default function ProfileEditScreen() {
         return;
       }
 
-      setAvatarLocalUri(asset.uri);
+      const manipulated = await manipulateAvatarToWebP(asset.uri);
+
+      setAvatarLocalUri(manipulated.uri);
       setAvatarUploadMeta({
-        fileName: asset.fileName,
-        mimeType: asset.mimeType,
+        fileName: 'avatar.webp',
+        mimeType: 'image/webp',
         webFile: asset.file ?? null,
       });
     } catch (error) {

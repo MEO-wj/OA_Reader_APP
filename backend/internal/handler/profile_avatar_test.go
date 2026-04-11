@@ -96,8 +96,6 @@ func TestUploadAvatar_ReturnsAvatarURL(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/user/profile/avatar", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Host = "api.example.com"
-	req.Header.Set("X-Forwarded-Proto", "https")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -113,11 +111,11 @@ func TestUploadAvatar_ReturnsAvatarURL(t *testing.T) {
 	if avatarURL == "" {
 		t.Fatal("expected avatar_url in response")
 	}
-	if got, want := avatarURL[:len("https://api.example.com/")], "https://api.example.com/"; got != want {
-		t.Fatalf("expected absolute avatar_url prefix %q, got %q", want, avatarURL)
+	if got, want := avatarURL[:len("/uploads/")], "/uploads/"; got != want {
+		t.Fatalf("expected relative avatar_url prefix %q, got %q", want, avatarURL)
 	}
 
-	savedPath := filepath.Join(h.uploadRootDir, avatarURL[len("https://api.example.com/uploads/"):])
+	savedPath := filepath.Join(h.uploadRootDir, avatarURL[len("/uploads/"):])
 	if _, err := os.Stat(savedPath); err != nil {
 		t.Fatalf("expected uploaded file to exist: %v", err)
 	}

@@ -1,3 +1,21 @@
+export const AVATAR_TARGET_SIZE = 256;
+export const AVATAR_WEBP_QUALITY = 80;
+
+export type ResizeAction = {
+  resize: { width: number; height: number };
+};
+
+export type SaveAction = {
+  save: { format: string; quality: number };
+};
+
+export function buildResizeActions(): (ResizeAction | SaveAction)[] {
+  return [
+    { resize: { width: AVATAR_TARGET_SIZE, height: AVATAR_TARGET_SIZE } },
+    { save: { format: 'webp', quality: AVATAR_WEBP_QUALITY } },
+  ];
+}
+
 export type AvatarFormValue = File | {
   uri: string;
   name: string;
@@ -21,7 +39,7 @@ export function buildAvatarFormValue(
 
   return {
     uri: payload.uri,
-    name: payload.fileName || 'avatar.jpg',
-    type: payload.mimeType || 'image/jpeg',
+    name: payload.fileName || 'avatar.webp',
+    type: payload.mimeType || 'image/webp',
   };
 }

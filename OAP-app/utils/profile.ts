@@ -1,4 +1,6 @@
 import type { UserProfile } from '@/types/profile';
+import { getApiBaseUrl } from '@/services/api';
+import { resolveStaticUrl } from '@/utils/static-url';
 
 export const PROFILE_LIMITS = {
   nameMinLength: 2,
@@ -79,7 +81,7 @@ export function getProfileAvatarUri(profile: UserProfile | null | undefined) {
 
   const remoteUri = profile?.avatar_url?.trim();
   if (remoteUri) {
-    return remoteUri;
+    return resolveStaticUrl(remoteUri, getApiBaseUrl()) ?? remoteUri;
   }
 
   return null;
