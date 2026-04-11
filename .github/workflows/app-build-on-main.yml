@@ -35,7 +35,7 @@ jobs:
           path: |
             ~/.npm
             ${{ env.APP_PATH }}/node_modules
-          key: npm-eas-${{ hashFiles(env.APP_PATH + '/package-lock.json') }}
+          key: npm-eas-${{ hashFiles('OAP-app/package-lock.json') }}
           restore-keys: npm-eas-
 
       - name: Install EAS CLI
