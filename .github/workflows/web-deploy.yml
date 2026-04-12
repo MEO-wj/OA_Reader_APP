@@ -41,7 +41,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ${{ env.APP_PATH }}
-        run: npm ci
+        run: npm ci --registry https://registry.npmmirror.com
 
       - name: Build web
         working-directory: ${{ env.APP_PATH }}
