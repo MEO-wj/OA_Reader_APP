@@ -97,6 +97,7 @@ async def _dispatch_secondary_tool(tool_name: str, tool_def: dict, function_args
         module_path, func_name = handler_path.rsplit(".", 1)
         module_mappings = {
             "article_retrieval": "src.core.article_retrieval",
+            "todolist_handler": "src.core.todolist_handler",
         }
         module_import_path = module_mappings.get(module_path, f"src.core.{module_path}")
         module = importlib.import_module(module_import_path)
