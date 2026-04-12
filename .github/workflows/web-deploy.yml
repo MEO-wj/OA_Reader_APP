@@ -1,0 +1,72 @@
+name: Web Deploy (OAP-app)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "OAP-app/**"
+      - ".github/workflows/web-deploy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-deploy
+  cancel-in-progress: true
+
+env:
+  APP_PATH: OAP-app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-local
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.APP_PATH }}/node_modules
+          key: npm-web-${{ hashFiles('OAP-app/package-lock.json') }}
+          restore-keys: npm-web-
+
+      - name: Install dependencies
+        working-directory: ${{ env.APP_PATH }}
+        run: npm ci
+
+      - name: Build web
+        working-directory: ${{ env.APP_PATH }}
+        run: npm run build:web
+
+      - name: Deploy to server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PASS: ${{ secrets.DEPLOY_PASS }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          sshpass -p "$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "rm -rf ${DEPLOY_PATH}/*"
+          sshpass -p "$DEPLOY_PASS" scp -o StrictHostKeyChecking=no \
+            -r ${{ env.APP_PATH }}/dist/* \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+          sshpass -p "$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "chown -R 1000:1000 ${DEPLOY_PATH}"
+
+      - name: Deploy summary
+        run: |
+          echo "## Web Deploy Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Branch: \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commit: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
