@@ -47,23 +47,30 @@ jobs:
         working-directory: ${{ env.APP_PATH }}
         run: npm run build:web
 
-      - name: Deploy to server
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PASS: ${{ secrets.DEPLOY_PASS }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-        run: |
-          set -euo pipefail
-          sshpass -p "$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "rm -rf ${DEPLOY_PATH}/*"
-          sshpass -p "$DEPLOY_PASS" scp -o StrictHostKeyChecking=no \
-            -r ${{ env.APP_PATH }}/dist/* \
-            "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
-          sshpass -p "$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "chown -R 1000:1000 ${DEPLOY_PATH}"
+      - name: Clean remote directory
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: rm -rf ${{ secrets.DEPLOY_PATH }}/*
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          source: "OAP-app/dist/*"
+          target: ${{ secrets.DEPLOY_PATH }}/
+
+      - name: Fix permissions
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: chown -R 1000:1000 ${{ secrets.DEPLOY_PATH }}
 
       - name: Deploy summary
         run: |
