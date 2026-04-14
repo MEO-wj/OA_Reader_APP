@@ -175,6 +175,28 @@ class TestCheckStepStep3:
         assert result["success"] is True
 
 
+class TestValidateDoneActionDescription:
+    """测试 _validate_done 的错误信息完全由 REQUIRED_TOOLS 驱动，不依赖外部传入的 action_desc。"""
+
+    @pytest.mark.asyncio
+    async def test_step1_error_contains_tool_name_without_action_desc(self):
+        """步骤1 done 失败时错误信息应包含工具名（form_memory），无需硬编码 action_desc。"""
+        result = await check_step(step=1, status="done", called_tools=[])
+        assert result["success"] is False
+        assert "form_memory" in result["error"]
+        # 错误信息应包含"请先"或类似动作提示，引导 LLM 补救
+        assert "请先" in result["error"] or "请" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_step2_error_contains_tool_names_without_action_desc(self):
+        """步骤2 done 失败时错误信息应包含搜索工具名。"""
+        result = await check_step(step=2, status="done", called_tools=[])
+        assert result["success"] is False
+        # 至少应包含一个搜索工具名
+        assert "search_articles" in result["error"] or "grep_article" in result["error"]
+        assert "请先" in result["error"] or "请" in result["error"]
+
+
 class TestCheckStepEdgeCases:
     """测试边界情况"""
 

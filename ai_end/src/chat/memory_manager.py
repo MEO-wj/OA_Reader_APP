@@ -26,6 +26,14 @@ class MemoryManager:
         memory_db: MemoryDB | None = None,
         completion_sync: Any | None = None,
     ) -> None:
+        """初始化 MemoryManager。
+
+        Args:
+            completion_sync: 外部注入的同步 LLM 调用函数，签名为
+                (prompt: str) -> ChatCompletion。不注入时回退到
+                _create_memory_completion_sync（每次调用创建新 OpenAI 客户端）。
+                注入时复用已有客户端，避免重复创建连接。
+        """
         self.user_id = user_id
         self.conversation_id = conversation_id or "default"
         self._config = config
@@ -319,6 +327,12 @@ class MemoryManager:
         }
 
     def _create_memory_completion_sync(self, prompt: str) -> Any:
+        """内部 fallback：创建新的 OpenAI 客户端并发送同步 LLM 请求。
+
+        当构造函数未通过 completion_sync 注入外部同步函数时，
+        _extract_portrait / _merge_portraits 会回退到本方法。
+        两者接口一致：接收 prompt: str，返回 OpenAI ChatCompletion 对象。
+        """
         client = get_llm_client()
         return client.chat.completions.create(
             model=self.config.model,

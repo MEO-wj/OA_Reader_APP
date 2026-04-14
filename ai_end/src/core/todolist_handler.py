@@ -8,6 +8,12 @@ REQUIRED_TOOLS: dict[int, set[str]] = {
     2: {"search_articles", "grep_article"},
 }
 
+# 各步骤的可读描述，用于生成错误提示（由 REQUIRED_TOOLS 驱动，新增步骤只需改此处）
+_STEP_DESCRIPTIONS: dict[int, str] = {
+    1: "保存记忆",
+    2: "查询文章",
+}
+
 # 合法的步骤状态值
 VALID_STATUSES = {"start", "done", "skip"}
 
@@ -42,7 +48,7 @@ async def check_step(step: int, status: str, called_tools: list[str], reason: st
         if status == "start":
             return {"success": True, "message": "步骤1开始。请判断是否需要保存记忆，然后调用相应工具。"}
         if status == "done":
-            return _validate_done(step, called_tools, "保存记忆",
+            return _validate_done(step, called_tools,
                                   "请继续步骤2：判断是否需要查询文章。", reason)
         if status == "skip" and not _is_valid_skip_reason(reason):
             return {
@@ -55,7 +61,7 @@ async def check_step(step: int, status: str, called_tools: list[str], reason: st
         if status == "start":
             return {"success": True, "message": "步骤2开始。请判断是否需要查询文章，然后调用相应工具。"}
         if status == "done":
-            return _validate_done(step, called_tools, "查询文章",
+            return _validate_done(step, called_tools,
                                   "请继续步骤3：整理并总结回答。", reason)
         if status == "skip" and not _is_valid_skip_reason(reason):
             return {
@@ -74,7 +80,6 @@ async def check_step(step: int, status: str, called_tools: list[str], reason: st
 def _validate_done(
     step: int,
     called_tools: list[str],
-    action_desc: str,
     next_hint: str,
     reason: str = "",
 ) -> dict:
@@ -84,6 +89,7 @@ def _validate_done(
 
     if not required.intersection(called_set):
         tool_desc = "/".join(sorted(required)) if required else "必需工具"
+        action_desc = _STEP_DESCRIPTIONS.get(step, "该步骤")
         return {
             "success": False,
             "error": f"步骤{step}要求调用{tool_desc}工具，但未检测到调用记录。请先执行{action_desc}再标记完成。",
