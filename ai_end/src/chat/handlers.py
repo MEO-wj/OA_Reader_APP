@@ -141,6 +141,7 @@ async def handle_tool_calls(
     user_id: str | None = None,
     conversation_id: str | None = None,
     mark_form_memory_after_turn: Callable[[str], None] | None = None,
+    turn_tools: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     处理 OpenAI 返回的 tool_calls
@@ -152,13 +153,17 @@ async def handle_tool_calls(
         user_id: 用户ID
         conversation_id: 会话ID
         mark_form_memory_after_turn: 回合末执行标记回调，若提供则 form_memory 仅登记不直接执行
+        turn_tools: 跨批次共享的工具名列表。提供时本函数直接 append 到该列表，
+                    调用方可在同一回合的多次 handle_tool_calls 间共享此列表，
+                    使后续批次的 todolist_check 能检测到前面批次调用的工具。
 
     Returns:
         工具调用结果消息列表，每个消息包含 role="tool" 和对应的 content
     """
     activated = activated_skills or set()
     # 已尝试处理过的工具（不代表调用成功），用于 todolist_check 进行步骤校验。
-    processed_tools: list[str] = []
+    # 当 turn_tools 提供时直接复用引用，使跨批次累积生效。
+    processed_tools = turn_tools if turn_tools is not None else []
     tool_messages = []
 
     for tool_call in tool_calls:
@@ -320,6 +325,7 @@ def handle_tool_calls_sync(
     user_id: str | None = None,
     conversation_id: str | None = None,
     mark_form_memory_after_turn: Callable[[str], None] | None = None,
+    turn_tools: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     同步包装器，用于兼容现有代码
@@ -331,6 +337,7 @@ def handle_tool_calls_sync(
         user_id: 用户ID
         conversation_id: 会话ID
         mark_form_memory_after_turn: 回合末执行标记回调，透传给 handle_tool_calls
+        turn_tools: 跨批次共享的工具名列表，透传给 handle_tool_calls
 
     Returns:
         工具调用结果消息列表
@@ -344,6 +351,7 @@ def handle_tool_calls_sync(
             user_id,
             conversation_id,
             mark_form_memory_after_turn=mark_form_memory_after_turn,
+            turn_tools=turn_tools,
         ),
         loop,
     )

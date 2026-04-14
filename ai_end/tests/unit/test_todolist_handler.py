@@ -371,3 +371,43 @@ class TestTodolistCheckIntegration:
         # processed_tools 为空（没有实际调用 form_memory），系统注入覆盖伪造值
         assert data["success"] is False
         assert "form_memory" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_cross_batch_form_memory_detected_by_todolist_check(self, todolist_skill_system):
+        """form_memory 在前一批次调用后，todolist_check 在后续批次应能检测到
+
+        复现场景：LLM 先返回 form_memory（批次1），处理完后返回 todolist_check（批次2）。
+        turn_tools 参数在批次间共享，使 todolist_check 能看到之前调用的 form_memory。
+        """
+        from src.chat.handlers import handle_tool_calls
+
+        # 批次1：form_memory
+        mock_form_memory = Mock()
+        mock_form_memory.function.name = "form_memory"
+        mock_form_memory.function.arguments = '{"reason": "test"}'
+        mock_form_memory.id = "call_fm_cross"
+
+        turn_tools: list[str] = []
+        result1 = await handle_tool_calls(
+            [mock_form_memory],
+            todolist_skill_system,
+            activated_skills={"todolist"},
+            turn_tools=turn_tools,
+        )
+        assert "form_memory" in turn_tools
+
+        # 批次2：todolist_check（应能检测到批次1的 form_memory）
+        mock_tool_call = Mock()
+        mock_tool_call.function.name = "todolist_check"
+        mock_tool_call.function.arguments = '{"step": 1, "status": "done"}'
+        mock_tool_call.id = "call_tl_cross"
+
+        result2 = await handle_tool_calls(
+            [mock_tool_call],
+            todolist_skill_system,
+            activated_skills={"todolist"},
+            turn_tools=turn_tools,
+        )
+
+        data = json.loads(result2[0]["content"])
+        assert data["success"] is True, f"跨批次 todolist_check 应通过，实际返回: {data}"

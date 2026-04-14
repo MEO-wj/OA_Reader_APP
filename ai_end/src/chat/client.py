@@ -100,6 +100,7 @@ class ChatClient:
         self.round_count = 0  # 对话轮数计数
         self._force_memory_after_turn = False  # 回合末强制记忆裁决标记
         self._form_memory_reason: str | None = None  # 记忆触发原因（审计用）
+        self._turn_tool_names: list[str] = []  # 跨批次累积的工具名（每回合重置）
         self.usage_totals = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -433,6 +434,9 @@ class ChatClient:
             system_prompt = self._build_system_prompt()
             self.messages.append({"role": "system", "content": system_prompt})
 
+        # 每次用户输入时重置回合内工具记录
+        self._turn_tool_names.clear()
+
         # 添加用户消息
         self.messages.append({"role": "user", "content": user_input})
 
@@ -592,6 +596,7 @@ class ChatClient:
                     setattr(self, '_force_memory_after_turn', True),
                     setattr(self, '_form_memory_reason', reason),
                 ),
+                turn_tools=self._turn_tool_names,
             )
 
             # 显示工具响应摘要
@@ -749,6 +754,7 @@ class ChatClient:
                 setattr(self, '_force_memory_after_turn', True),
                 setattr(self, '_form_memory_reason', reason),
             ),
+            turn_tools=self._turn_tool_names,
         )
         self.messages.extend(tool_messages)
         return tool_messages
@@ -758,6 +764,9 @@ class ChatClient:
         异步流式聊天，输出技能/工具/文本事件。
         """
         is_new_runtime_session = not self.messages
+
+        # 每次用户输入时重置回合内工具记录
+        self._turn_tool_names.clear()
 
         # 第一次初始化固定 system prompt
         if is_new_runtime_session:
@@ -983,6 +992,7 @@ class ChatClient:
                 finally:
                     self._force_memory_after_turn = False
                     self._form_memory_reason = None
+                    self._turn_tool_names.clear()
 
                 logger.info(
     f"Chat stream completed: iteration={iteration}, "
