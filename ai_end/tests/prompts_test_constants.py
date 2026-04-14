@@ -9,20 +9,6 @@ TEST_FUNCTION_CALL_TOOL_DESCRIPTION = "获取指定城市的天气"
 
 # ─── v2 契约常量 ──────────────────────────────────────────────
 
-# MEMORY_PROMPT_TEMPLATE 必须包含的 v2 JSON 字段路径
-MEMORY_V2_REQUIRED_FIELDS = [
-    "confirmed",
-    "hypothesized",
-    "knowledge",
-    "confirmed_facts",
-    "pending_queries",
-]
-
-# MEMORY_PROMPT_TEMPLATE 必须包含的 v2 约束文案
-MEMORY_V2_REQUIRED_CONSTRAINTS = [
-    "禁止仅凭 OA 阅读记录写 confirmed.identity",
-]
-
 # COMPACT_PROMPT_TEMPLATE 必须包含的 v2 分层保护约束
 COMPACT_V2_NO_MERGE_CONSTRAINTS = [
     "不可把 hypothesized 合并到 confirmed",
@@ -43,6 +29,7 @@ PORTRAIT_EXTRACT_REQUIRED_PHRASES = [
     "confirmed",
     "hypothesized",
     "knowledge",
+    "禁止将未经验证的行为推断写入 confirmed",
 ]
 
 # PORTRAIT_MERGE_PROMPT 必须包含的关键短语

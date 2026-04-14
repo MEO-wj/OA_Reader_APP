@@ -6,7 +6,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.chat.memory_manager import MemoryManager
-from src.chat.prompts_runtime import MEMORY_PROMPT_TEMPLATE, PORTRAIT_EXTRACT_PROMPT, PORTRAIT_MERGE_PROMPT
 
 
 class TestMemoryManagerV2ReturnContract:
@@ -222,27 +221,6 @@ class TestMemoryManager:
 
         mock_get_llm_client.assert_called_once()
         shared_client.chat.completions.create.assert_called_once()
-
-    def test_memory_prompt_uses_runtime_template(self):
-        """验证 memory_manager.py 源码中使用了 MEMORY_PROMPT_TEMPLATE。"""
-        import inspect
-        from src.chat import memory_manager
-
-        # 获取源码
-        source = inspect.getsource(memory_manager)
-
-        # 验证导入了 MEMORY_PROMPT_TEMPLATE
-        assert "from src.chat.prompts_runtime import MEMORY_PROMPT_TEMPLATE" in source, \
-            "memory_manager.py 应从 prompts_runtime 导入 MEMORY_PROMPT_TEMPLATE"
-
-        # 验证 _build_memory_prompt 使用了模板
-        assert "MEMORY_PROMPT_TEMPLATE" in source, \
-            "memory_manager.py 应使用 MEMORY_PROMPT_TEMPLATE"
-
-        # 验证 _build_memory_prompt 方法体
-        method_source = inspect.getsource(memory_manager.MemoryManager._build_memory_prompt)
-        assert "MEMORY_PROMPT_TEMPLATE.format" in method_source, \
-            "_build_memory_prompt 应调用 MEMORY_PROMPT_TEMPLATE.format()"
 
 
 class TestV2SchemaValidationAndIdentityAdjudication:
@@ -608,6 +586,34 @@ class TestRetryProtocol:
                 "extract prompt 不应包含已有画像段落"
 
     @pytest.mark.asyncio
+    async def test_retry_prompt_contains_previous_error_message(self):
+        """重试 prompt 应包含上次错误信息和尝试次数。"""
+        uid = "00000000-0000-0000-0008-000000000205"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            if len(captured_prompts) == 1:
+                return self._invalid_response()
+            return self._valid_v2_response()
+
+        queue.submit = AsyncMock(side_effect=capture_submit)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            result = await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        assert result["saved"] is True
+        assert len(captured_prompts) == 2
+        retry_prompt = captured_prompts[1]
+        assert "上次错误" in retry_prompt
+        assert "第1次尝试" in retry_prompt
+
+    @pytest.mark.asyncio
     async def test_db_exception_is_not_retried_and_propagates(self):
         """DB 异常属于不可重试错误，直接抛出，不进行重试。"""
         uid = "00000000-0000-0000-0008-000000000203"
@@ -826,7 +832,7 @@ class TestTwoStepPortraitFlow:
         # extract 应使用 PORTRAIT_EXTRACT_PROMPT，不包含"合并策略"字样
         extract_prompt = captured_prompts[0]
         assert "合并策略" not in extract_prompt, \
-            "extract prompt 不应包含合并策略（属于 MEMORY_PROMPT_TEMPLATE）"
+            "extract prompt 不应包含合并策略（合并逻辑属于 PORTRAIT_MERGE_PROMPT）"
         assert "不参考旧画像" in extract_prompt, \
             "extract prompt 应包含 PORTRAIT_EXTRACT_PROMPT 的特征文本"
         # 保存结果应为 extract 结果

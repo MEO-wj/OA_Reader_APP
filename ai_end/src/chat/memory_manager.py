@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.chat.prompts_runtime import MEMORY_PROMPT_TEMPLATE, PORTRAIT_EXTRACT_PROMPT, PORTRAIT_MERGE_PROMPT
+from src.chat.prompts_runtime import PORTRAIT_EXTRACT_PROMPT, PORTRAIT_MERGE_PROMPT
 from src.chat.utils import _sanitize_memory_text
 from src.config.settings import Config
 from src.core.api_clients import get_llm_client
@@ -147,85 +147,6 @@ class MemoryManager:
             "knowledge_text": merged["knowledge_text"],
         }
 
-    async def _build_memory_prompt(self, messages: list[dict[str, Any]]) -> str:
-        conversation = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
-        existing_profile = await self._load_existing_profile()
-        profile_section = ""
-        if existing_profile:
-            profile_section = existing_profile
-        return MEMORY_PROMPT_TEMPLATE.format(
-            conversation=conversation,
-            existing_profile=profile_section,
-        )
-
-    async def _load_existing_profile(self) -> str:
-        """从 DB 加载已有用户画像，校验 v2 格式后返回可读文本。
-
-        v1 或非法 JSON 返回空字符串（等效于无画像）。
-        DB 异常静默降级（画像注入是可选装饰，不应阻塞主流程）。
-        """
-        try:
-            profile = await self.memory_db.get_profile(self.user_id)
-        except Exception:
-            return ""
-        if not profile:
-            return ""
-
-        portrait_raw = profile.get("portrait_text", "") or ""
-        knowledge_raw = profile.get("knowledge_text", "") or ""
-
-        if not portrait_raw:
-            return ""
-
-        try:
-            portrait_data = json.loads(portrait_raw)
-        except (json.JSONDecodeError, TypeError):
-            return ""
-
-        if not isinstance(portrait_data, dict):
-            return ""
-
-        if not self._validate_v2_memory_schema(portrait_data):
-            return ""
-
-        # 注入已有画像前先复用统一裁决逻辑，避免推断项以 confirmed 身份进入 prompt。
-        self._adjudicate_identity(portrait_data)
-
-        sections: list[str] = []
-        confirmed = portrait_data.get("confirmed", {})
-        identity = self._normalize_string_list(confirmed.get("identity"))
-        if identity:
-            sections.append("已确认身份: " + ", ".join(identity))
-        interests = self._normalize_string_list(confirmed.get("interests"))
-        if interests:
-            sections.append("已确认兴趣: " + ", ".join(interests))
-        constraints = self._normalize_string_list(confirmed.get("constraints"))
-        if constraints:
-            sections.append("已确认约束: " + ", ".join(constraints))
-
-        hypothesized = portrait_data.get("hypothesized", {})
-        hypo_identity = self._normalize_string_list(hypothesized.get("identity"))
-        if hypo_identity:
-            sections.append("推测身份: " + ", ".join(hypo_identity))
-        hypo_interests = self._normalize_string_list(hypothesized.get("interests"))
-        if hypo_interests:
-            sections.append("推测兴趣: " + ", ".join(hypo_interests))
-
-        if knowledge_raw:
-            try:
-                knowledge_data = json.loads(knowledge_raw)
-                if isinstance(knowledge_data, dict):
-                    facts = self._normalize_string_list(knowledge_data.get("confirmed_facts"))
-                    if facts:
-                        sections.append("已确认事实: " + ", ".join(facts))
-                    queries = self._normalize_string_list(knowledge_data.get("pending_queries"))
-                    if queries:
-                        sections.append("待查询事项: " + ", ".join(queries))
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        return "\n".join(sections) if sections else ""
-
     async def _load_existing_profile_raw(self) -> dict[str, str] | None:
         """从 DB 加载已有用户画像的原始数据，校验 v2 格式后返回。
 
@@ -259,19 +180,6 @@ class MemoryManager:
 
         return {"portrait_text": portrait_raw, "knowledge_text": knowledge_raw}
 
-    def _build_retry_prompt(self, messages: list[dict[str, Any]], last_error: str) -> str:
-        """构建重试提示词：仅包含原始对话 + 上次错误信息，不追加已保存画像。"""
-        conversation = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
-        base_prompt = MEMORY_PROMPT_TEMPLATE.format(
-            conversation=conversation,
-            existing_profile="",
-        )
-        return (
-            f"{base_prompt}\n\n"
-            f"【注意】上一次尝试失败，错误原因：{last_error}\n"
-            f"请严格按要求输出合法 JSON，不要添加任何额外文本。"
-        )
-
     async def _extract_portrait(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         """Step 1: 仅从对话中提取画像，不参考旧画像。
 
@@ -288,6 +196,12 @@ class MemoryManager:
 
         for attempt in range(1, max_attempts + 1):
             prompt = PORTRAIT_EXTRACT_PROMPT.format(conversation=conversation)
+            if attempt > 1 and last_error:
+                prompt = (
+                    f"{prompt}\n\n"
+                    f"【上次错误】{last_error}\n"
+                    "请严格输出合法 v2 JSON，不要添加任何额外文本。"
+                )
 
             response = await self.api_queue.submit(
                 "llm",
@@ -316,7 +230,7 @@ class MemoryManager:
 
     async def _merge_portraits(
         self, existing_profile: dict[str, str], extracted: dict[str, Any],
-    ) -> dict[str, Any] | None:
+    ) -> dict[str, Any]:
         """Step 2: 将旧画像与新提取的画像合并。
 
         使用 PORTRAIT_MERGE_PROMPT，最多重试 3 次。
@@ -324,7 +238,7 @@ class MemoryManager:
             portrait_text: 合并后的画像 JSON 字符串
             knowledge_text: 合并后的知识 JSON 字符串
             attempts_used: 实际 LLM 调用次数
-        全部重试失败返回 None。
+        全部重试失败返回空结果：portrait_text/knowledge_text 为空串。
         """
         max_attempts = 3
 

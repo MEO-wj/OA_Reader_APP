@@ -8,6 +8,9 @@ REQUIRED_TOOLS: dict[int, set[str]] = {
     2: {"search_articles", "grep_article"},
 }
 
+# 合法的步骤状态值
+VALID_STATUSES = {"start", "done", "skip"}
+
 
 async def check_step(step: int, status: str, called_tools: list[str], reason: str = "") -> dict:
     """
@@ -29,11 +32,17 @@ async def check_step(step: int, status: str, called_tools: list[str], reason: st
             "error": f"步骤{step}内部错误：called_tools 参数异常。请联系管理员。",
         }
 
+    if status not in VALID_STATUSES:
+        return {
+            "success": False,
+            "error": f"步骤{step} status 值非法：'{status}'。允许值仅为 start/done/skip。",
+        }
+
     if step == 1:
         if status == "start":
             return {"success": True, "message": "步骤1开始。请判断是否需要保存记忆，然后调用相应工具。"}
         if status == "done":
-            return _validate_done(step, called_tools, "form_memory", "保存记忆",
+            return _validate_done(step, called_tools, "保存记忆",
                                   "请继续步骤2：判断是否需要查询文章。", reason)
         if status == "skip" and not _is_valid_skip_reason(reason):
             return {
@@ -46,7 +55,7 @@ async def check_step(step: int, status: str, called_tools: list[str], reason: st
         if status == "start":
             return {"success": True, "message": "步骤2开始。请判断是否需要查询文章，然后调用相应工具。"}
         if status == "done":
-            return _validate_done(step, called_tools, "search_articles/grep_article", "查询文章",
+            return _validate_done(step, called_tools, "查询文章",
                                   "请继续步骤3：整理并总结回答。", reason)
         if status == "skip" and not _is_valid_skip_reason(reason):
             return {
@@ -63,14 +72,18 @@ async def check_step(step: int, status: str, called_tools: list[str], reason: st
 
 
 def _validate_done(
-    step: int, called_tools: list[str], tool_desc: str,
-    action_desc: str, next_hint: str, reason: str = "",
+    step: int,
+    called_tools: list[str],
+    action_desc: str,
+    next_hint: str,
+    reason: str = "",
 ) -> dict:
     """校验 done 状态时必需工具是否被调用。"""
-    required = REQUIRED_TOOLS.get(step, set())
+    required = REQUIRED_TOOLS.get(step, [])
     called_set = set(called_tools)
 
     if not required.intersection(called_set):
+        tool_desc = "/".join(sorted(required)) if required else "必需工具"
         return {
             "success": False,
             "error": f"步骤{step}要求调用{tool_desc}工具，但未检测到调用记录。请先执行{action_desc}再标记完成。",

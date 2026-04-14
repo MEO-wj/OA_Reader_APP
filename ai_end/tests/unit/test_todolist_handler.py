@@ -202,6 +202,18 @@ class TestCheckStepEdgeCases:
         assert result["success"] is False
         assert "内部错误" in result["error"]
 
+    @pytest.mark.asyncio
+    async def test_invalid_status_rejected(self):
+        result = await check_step(step=1, status="invalid", called_tools=[])
+        assert result["success"] is False
+        assert "status" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_step2_invalid_status_rejected(self):
+        result = await check_step(step=2, status="oops", called_tools=[])
+        assert result["success"] is False
+        assert "status" in result["error"]
+
 
 class TestTodolistCheckIntegration:
     """测试 todolist_check 通过 handle_tool_calls 完整调用链"""

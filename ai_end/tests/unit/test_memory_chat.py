@@ -241,7 +241,7 @@ async def test_new_session_emits_memory_injection_debug_event():
     message = debug_events[0].get("message", "")
     assert "SYSTEM_PROMPT_FULL" in message
     assert "confirmed" in message
-    assert "你是一个通用 AI Agent 助手。" in details.get("system_prompt_full", "")
+    assert "你是一个智能校园 OA 助手" in details.get("system_prompt_full", "")
     assert "已确认约束" in details.get("system_prompt_full", "")
 
 

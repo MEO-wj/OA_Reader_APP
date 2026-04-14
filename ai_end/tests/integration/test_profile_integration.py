@@ -91,17 +91,6 @@ _EXISTING_PROFILE_RAW = {
     }, ensure_ascii=False),
 }
 
-# 测试用的模拟对话数据
-SAMPLE_CONVERSATION = [
-    {"role": "user", "content": "我想考北京的医学院，专硕"},
-    {"role": "assistant", "content": "北京有协和、北医、首医等院校，请问您的英语水平是？"},
-    {"role": "user", "content": "六级550分"},
-    {"role": "assistant", "content": "这个英语成绩报考北京院校是比较有竞争力的。请问您对专业方向有什么偏好吗？"},
-    {"role": "user", "content": "我想学内科学消化方向"},
-    {"role": "assistant", "content": "消化内科是热门方向，竞争比较激烈。请问您能接受二战吗？"},
-]
-
-
 class TestUserProfileIntegration:
     """用户画像集成测试"""
 

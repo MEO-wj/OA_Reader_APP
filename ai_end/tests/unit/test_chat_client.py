@@ -167,7 +167,7 @@ class TestChatClient:
         prompt = client._build_system_prompt()
 
         assert "不要暴露内部工具调用过程" in prompt
-        assert "不要提及工具名、调用参数" in prompt
+        assert "不提及工具名、调用参数" in prompt
 
     def test_system_prompt_enforces_decision_guardrails(self):
         """
@@ -182,7 +182,7 @@ class TestChatClient:
         prompt = client._build_system_prompt()
 
         # 验证决策约束部分存在
-        assert "## 决策约束" in prompt
+        assert "【输出约束】" in prompt
         assert "信息不足" in prompt
         assert "不确定性" in prompt
         # 禁用承诺性表述

@@ -59,52 +59,12 @@ COMPACT_PROMPT_TEMPLATE = """你是对话历史压缩助手。请将以下对话
 - ...
 """
 
-# MEMORY_PROMPT_TEMPLATE 输出 JSON 格式，供程序解析
-# v2 分层：confirmed（已确认）/ hypothesized（假设）/ knowledge（知识）
-MEMORY_PROMPT_TEMPLATE = """请将以下对话浓缩成 JSON 格式，保留关键决策要素。
-
-## 分层规则
-- confirmed: 用户明确陈述或已验证的事实。禁止仅凭 OA 阅读记录写 confirmed.identity，必须有用户亲口说的内容支撑。
-- hypothesized: 从对话中合理推断但未确认的信息，格式为"（来源：...）可能..."。
-- knowledge: 已确认的事实知识和待查询事项。
-
-## 合并策略
-- 必须基于已有画像与当前对话合并输出完整 v2 JSON
-- 数据库保存的已有用户画像中未冲突的字段直接保留；冲突时新信息优先
-
-## 门槛约束
-- 用户仅提问某主题不直接进入 confirmed.interests，需明确表达偏好方可写入
-
-## 输出 JSON 格式
-
-{{
-    "confirmed": {{
-        "identity": ["用户明确告知的身份信息，如年级、专业、学校等"],
-        "interests": ["用户明确表达的偏好方向"],
-        "constraints": ["用户明确提出的硬性约束，如地点、条件、资质要求等"]
-    }},
-    "hypothesized": {{
-        "identity": ["（来源：对话中的线索）可能推断出的身份信息"],
-        "interests": ["（来源：对话中的线索）可能推断出的偏好"]
-    }},
-    "knowledge": {{
-        "confirmed_facts": ["已确认的事实信息，如已知条件、数据等"],
-        "pending_queries": ["待查询问题"]
-    }}
-}}
-
-对话内容：
-{conversation}
-
-## 数据库保存的用户画像：
-{existing_profile}"""
-
 # ─── 两步式画像 prompt ─────────────────────────────────────
 # Step 1: 仅从对话中提取新画像，不参考旧画像
 PORTRAIT_EXTRACT_PROMPT = """仅基于对话内容提取用户画像，不参考旧画像。
 
 ## 分层规则
-- confirmed: 用户明确陈述或已验证的事实
+- confirmed: 用户明确陈述或已验证的事实；禁止将未经验证的行为推断写入 confirmed（例如"频繁阅读某类文章"仅可进入 hypothesized）
 - hypothesized: 从对话中合理推断但未确认的信息，格式为"（来源：...）可能..."
 - knowledge: 已确认的事实知识和待查询事项
 

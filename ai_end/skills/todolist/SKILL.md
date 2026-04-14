@@ -15,6 +15,12 @@ verification_token: TODOLIST-FRAMEWORK-2026
 - 如果用户只是在闲聊、打招呼、或没有提供有价值的信息 → 调用 `todolist_check`，传入 `step=1, status=skip, reason="..."`，**reason 必须充分具体**（至少5个字符），skip 即代表该步骤完成
 - **注意**：标记 done 时系统会校验你是否真正调用了 form_memory，未调用将被打回
 - **不得直接跳过此步骤，必须给出判断（执行或 skip 都算完成）**
+- 触发示例：
+  - 用户说"我是临床医学专硕，想留在北京发展" → 应调用 form_memory 再标记 done
+  - 用户说"我英语六级 550，倾向消化内科" → 应调用 form_memory 再标记 done
+- 不触发示例：
+  - 用户仅说"你好""在吗" → 应 skip，并提供充分 reason
+  - 用户只问"今天天气怎样"且无个人信息 → 应 skip，并提供充分 reason
 
 ## 步骤 2：判断是否需要查询文章
 

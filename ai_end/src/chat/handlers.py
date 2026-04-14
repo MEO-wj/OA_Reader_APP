@@ -157,6 +157,7 @@ async def handle_tool_calls(
         工具调用结果消息列表，每个消息包含 role="tool" 和对应的 content
     """
     activated = activated_skills or set()
+    # 已尝试处理过的工具（不代表调用成功），用于 todolist_check 进行步骤校验。
     processed_tools: list[str] = []
     tool_messages = []
 
@@ -204,7 +205,8 @@ async def handle_tool_calls(
                 content = skill_system.get_skill_content(skill_name)
             else:
                 # 处理二级工具调用（异步）
-                # todolist_check 注入 called_tools
+                # TODO(tech-debt): 当前仅注入本批次已尝试工具；未来若引入跨回合校验，
+                # 可扩展为"本回合窗口 + 持久化轨迹"联合判定，避免误报/漏报。
                 if function_name == "todolist_check":
                     function_args["called_tools"] = list(processed_tools)
                 content = await _handle_secondary_tool_call(function_name, function_args, skill_system, activated)
