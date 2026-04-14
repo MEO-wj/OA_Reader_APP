@@ -10,14 +10,18 @@ verification_token: TODOLIST-FRAMEWORK-2026
 
 ## 步骤 1：判断是否需要保存记忆
 
-- 如果用户分享了个人信息、偏好、知识或表达了明确的意图 → 调用 `form_memory` 工具执行记忆保存，然后调用 `todolist_check`，传入 `step=1, status=done`
+- **先调用 `todolist_check`，传入 `step=1, status=start` 标记开始**
+- 如果用户分享了个人信息、偏好、知识或表达了明确的意图 → 调用 `form_memory` 工具执行记忆保存，然后调用 `todolist_check`，传入 `step=1, status=done`（可选传入 reason 记录原因）
 - 如果用户只是在闲聊、打招呼、或没有提供有价值的信息 → 调用 `todolist_check`，传入 `step=1, status=skip, reason="..."`，**reason 必须充分具体**（至少5个字符），skip 即代表该步骤完成
+- **注意**：标记 done 时系统会校验你是否真正调用了 form_memory，未调用将被打回
 - **不得直接跳过此步骤，必须给出判断（执行或 skip 都算完成）**
 
 ## 步骤 2：判断是否需要查询文章
 
-- 如果用户问题与 OA 文章/通知/公告相关 → 调用 `article-retrieval` 技能，然后使用 `search_articles` / `grep_article` 查询，完成后调用 `todolist_check`，传入 `step=2, status=done`
-- 如果用户问题与 OA 文章无关 → 调用 `todolist_check`，传入 `step=2, status=skip, reason="..."`，**reason 必须充分具体**，skip 即代表该步骤完成
+- **先调用 `todolist_check`，传入 `step=2, status=start` 标记开始**
+- 如果用户问题与 OA 文章/通知/公告相关 → 调用 `article-retrieval` 技能，然后使用 `search_articles` / `grep_article` 查询，完成后调用 `todolist_check`，传入 `step=2, status=done`（可选传入 reason 记录原因）
+- 如果用户问题与 OA 文章无关 → 调用 `todolist_check`，传入 `step=2, status=skip, reason="..."`，**reason 必须充分具体**
+- **注意**：标记 done 时系统会校验你是否真正调用了搜索工具（search_articles/grep_article），未调用将被打回
 - **不得直接跳过此步骤，必须给出判断（执行或 skip 都算完成）**
 
 ## 步骤 3：整理并总结回答

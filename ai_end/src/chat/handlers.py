@@ -157,6 +157,7 @@ async def handle_tool_calls(
         工具调用结果消息列表，每个消息包含 role="tool" 和对应的 content
     """
     activated = activated_skills or set()
+    processed_tools: list[str] = []
     tool_messages = []
 
     for tool_call in tool_calls:
@@ -203,6 +204,9 @@ async def handle_tool_calls(
                 content = skill_system.get_skill_content(skill_name)
             else:
                 # 处理二级工具调用（异步）
+                # todolist_check 注入 called_tools
+                if function_name == "todolist_check":
+                    function_args["called_tools"] = list(processed_tools)
                 content = await _handle_secondary_tool_call(function_name, function_args, skill_system, activated)
                 if not isinstance(content, str):
                     content = str(content)
@@ -223,6 +227,9 @@ async def handle_tool_calls(
                         content = truncate_tool_output("generic", function_name, content)["content"]
                 else:
                     content = truncate_tool_output("generic", function_name, content)["content"]
+
+        # 记录已处理的工具名
+        processed_tools.append(function_name)
 
         # 构建工具响应消息
         tool_message = {

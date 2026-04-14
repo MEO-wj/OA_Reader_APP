@@ -39,38 +39,69 @@ class TestCheckStepStep1:
 
     @pytest.mark.asyncio
     async def test_step1_done_passes(self):
-        result = await check_step(step=1, status="done")
+        result = await check_step(step=1, status="done", called_tools=["form_memory"])
         assert result["success"] is True
         assert "步骤2" in result["message"]
 
     @pytest.mark.asyncio
     async def test_step1_skip_with_valid_reason_passes(self):
-        result = await check_step(step=1, status="skip", reason="用户只是打招呼，没有提供任何个人信息")
+        result = await check_step(step=1, status="skip", called_tools=[], reason="用户只是打招呼，没有提供任何个人信息")
         assert result["success"] is True
         assert "步骤2" in result["message"]
 
     @pytest.mark.asyncio
     async def test_step1_skip_with_empty_reason_rejected(self):
-        result = await check_step(step=1, status="skip", reason="")
+        result = await check_step(step=1, status="skip", called_tools=[], reason="")
         assert result["success"] is False
         assert "error" in result
         assert "步骤1" in result["error"]
 
     @pytest.mark.asyncio
     async def test_step1_skip_with_short_reason_rejected(self):
-        result = await check_step(step=1, status="skip", reason="无")
+        result = await check_step(step=1, status="skip", called_tools=[], reason="无")
         assert result["success"] is False
         assert "error" in result
 
     @pytest.mark.asyncio
     async def test_step1_start_passes(self):
-        result = await check_step(step=1, status="start")
+        result = await check_step(step=1, status="start", called_tools=[])
         assert result["success"] is True
 
     @pytest.mark.asyncio
     async def test_step1_done_without_reason_passes(self):
-        result = await check_step(step=1, status="done")
+        """status=done 时不需要 reason"""
+        result = await check_step(step=1, status="done", called_tools=["form_memory"])
         assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_step1_done_without_form_memory_rejected(self):
+        """status=done 但 called_tools 中无 form_memory 应被打回"""
+        result = await check_step(step=1, status="done", called_tools=["todolist_check"])
+        assert result["success"] is False
+        assert "error" in result
+        assert "form_memory" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_step1_done_with_form_memory_passes(self):
+        """status=done 且 called_tools 中有 form_memory 应通过"""
+        result = await check_step(step=1, status="done", called_tools=["form_memory", "todolist_check"])
+        assert result["success"] is True
+        assert "步骤2" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_step1_done_with_empty_called_tools_rejected(self):
+        """status=done 但 called_tools 为空列表应被打回"""
+        result = await check_step(step=1, status="done", called_tools=[])
+        assert result["success"] is False
+        assert "form_memory" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_step1_done_with_reason_includes_reason_in_message(self):
+        """status=done 且有 reason 时 message 应附带 reason"""
+        result = await check_step(step=1, status="done", called_tools=["form_memory"], reason="用户分享了专业信息")
+        assert result["success"] is True
+        assert "备注" in result["message"]
+        assert "用户分享了专业信息" in result["message"]
 
 
 class TestCheckStepStep2:
@@ -78,26 +109,54 @@ class TestCheckStepStep2:
 
     @pytest.mark.asyncio
     async def test_step2_done_passes(self):
-        result = await check_step(step=2, status="done")
+        result = await check_step(step=2, status="done", called_tools=["search_articles"])
         assert result["success"] is True
         assert "步骤3" in result["message"]
 
     @pytest.mark.asyncio
     async def test_step2_skip_with_valid_reason_passes(self):
-        result = await check_step(step=2, status="skip", reason="用户问题与OA文章无关，不需要查询")
+        result = await check_step(step=2, status="skip", called_tools=[], reason="用户问题与OA文章无关，不需要查询")
         assert result["success"] is True
         assert "步骤3" in result["message"]
 
     @pytest.mark.asyncio
     async def test_step2_skip_with_empty_reason_rejected(self):
-        result = await check_step(step=2, status="skip", reason="")
+        result = await check_step(step=2, status="skip", called_tools=[], reason="")
         assert result["success"] is False
         assert "error" in result
         assert "步骤2" in result["error"]
 
     @pytest.mark.asyncio
     async def test_step2_skip_with_short_reason_rejected(self):
-        result = await check_step(step=2, status="skip", reason="跳过")
+        result = await check_step(step=2, status="skip", called_tools=[], reason="跳过")
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_step2_done_without_search_tool_rejected(self):
+        """status=done 但 called_tools 中无搜索工具应被打回"""
+        result = await check_step(step=2, status="done", called_tools=["todolist_check"])
+        assert result["success"] is False
+        assert "error" in result
+        assert "search_articles" in result["error"] or "grep_article" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_step2_done_with_search_articles_passes(self):
+        """status=done 且 called_tools 中有 search_articles 应通过"""
+        result = await check_step(step=2, status="done", called_tools=["search_articles"])
+        assert result["success"] is True
+        assert "步骤3" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_step2_done_with_grep_article_passes(self):
+        """status=done 且 called_tools 中有 grep_article 应通过"""
+        result = await check_step(step=2, status="done", called_tools=["grep_article"])
+        assert result["success"] is True
+        assert "步骤3" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_step2_done_with_empty_called_tools_rejected(self):
+        """status=done 但 called_tools 为空列表应被打回"""
+        result = await check_step(step=2, status="done", called_tools=[])
         assert result["success"] is False
 
 
@@ -106,13 +165,13 @@ class TestCheckStepStep3:
 
     @pytest.mark.asyncio
     async def test_step3_always_passes(self):
-        result = await check_step(step=3, status="done")
+        result = await check_step(step=3, status="done", called_tools=[])
         assert result["success"] is True
         assert "最终回答" in result["message"]
 
     @pytest.mark.asyncio
     async def test_step3_with_skip_also_passes(self):
-        result = await check_step(step=3, status="skip")
+        result = await check_step(step=3, status="skip", called_tools=[])
         assert result["success"] is True
 
 
@@ -121,13 +180,27 @@ class TestCheckStepEdgeCases:
 
     @pytest.mark.asyncio
     async def test_invalid_step_returns_generic_success(self):
-        result = await check_step(step=99, status="done")
+        result = await check_step(step=99, status="done", called_tools=[])
         assert result["success"] is True
 
     @pytest.mark.asyncio
     async def test_reason_with_only_whitespace_treated_as_empty(self):
-        result = await check_step(step=1, status="skip", reason="   ")
+        result = await check_step(step=1, status="skip", called_tools=[], reason="   ")
         assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_called_tools_none_triggers_defensive_check(self):
+        """called_tools 为 None 时应打回而非抛出 TypeError"""
+        result = await check_step(step=1, status="done", called_tools=None)
+        assert result["success"] is False
+        assert "内部错误" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_called_tools_string_triggers_defensive_check(self):
+        """called_tools 为非 list 类型时应打回"""
+        result = await check_step(step=1, status="done", called_tools="form_memory")
+        assert result["success"] is False
+        assert "内部错误" in result["error"]
 
 
 class TestTodolistCheckIntegration:
@@ -154,8 +227,13 @@ class TestTodolistCheckIntegration:
 
     @pytest.mark.asyncio
     async def test_todolist_check_step1_done_through_handle_tool_calls(self, todolist_skill_system):
-        """todolist_check(step=1, status=done) 应通过 handle_tool_calls 正确返回成功"""
+        """todolist_check(step=1, status=done) 在同一批有 form_memory 时应通过"""
         from src.chat.handlers import handle_tool_calls
+
+        mock_form_memory = Mock()
+        mock_form_memory.function.name = "form_memory"
+        mock_form_memory.function.arguments = '{"reason": "test"}'
+        mock_form_memory.id = "call_fm_0"
 
         mock_tool_call = Mock()
         mock_tool_call.function.name = "todolist_check"
@@ -163,14 +241,14 @@ class TestTodolistCheckIntegration:
         mock_tool_call.id = "call_tl_1"
 
         result = await handle_tool_calls(
-            [mock_tool_call],
+            [mock_form_memory, mock_tool_call],
             todolist_skill_system,
             activated_skills={"todolist"},
         )
 
-        data = json.loads(result[0]["content"])
-        assert data["success"] is True
-        assert "步骤2" in data["message"]
+        done_data = json.loads(result[1]["content"])
+        assert done_data["success"] is True
+        assert "步骤2" in done_data["message"]
 
     @pytest.mark.asyncio
     async def test_todolist_check_step1_skip_invalid_rejected_through_handle_tool_calls(self, todolist_skill_system):
@@ -179,7 +257,7 @@ class TestTodolistCheckIntegration:
 
         mock_tool_call = Mock()
         mock_tool_call.function.name = "todolist_check"
-        mock_tool_call.function.arguments = '{"step": 1, "status": "skip", "reason": "无"}'
+        mock_tool_call.function.arguments = '{"step": 1, "status": "skip", "called_tools": [], "reason": "无"}'
         mock_tool_call.id = "call_tl_2"
 
         result = await handle_tool_calls(
@@ -199,7 +277,7 @@ class TestTodolistCheckIntegration:
 
         mock_tool_call = Mock()
         mock_tool_call.function.name = "todolist_check"
-        mock_tool_call.function.arguments = '{"step": 2, "status": "skip", "reason": "用户问题与OA文章无关，不需要查询"}'
+        mock_tool_call.function.arguments = '{"step": 2, "status": "skip", "called_tools": [], "reason": "用户问题与OA文章无关，不需要查询"}'
         mock_tool_call.id = "call_tl_3"
 
         result = await handle_tool_calls(
@@ -211,3 +289,73 @@ class TestTodolistCheckIntegration:
         data = json.loads(result[0]["content"])
         assert data["success"] is True
         assert "步骤3" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_todolist_check_step1_done_without_form_memory_in_same_batch_rejected(self, todolist_skill_system):
+        """同一批 tool_calls 中 done 但无 form_memory 应被打回"""
+        from src.chat.handlers import handle_tool_calls
+
+        mock_tool_call = Mock()
+        mock_tool_call.function.name = "todolist_check"
+        mock_tool_call.function.arguments = '{"step": 1, "status": "done"}'
+        mock_tool_call.id = "call_tl_4"
+
+        result = await handle_tool_calls(
+            [mock_tool_call],
+            todolist_skill_system,
+            activated_skills={"todolist"},
+        )
+
+        data = json.loads(result[0]["content"])
+        assert data["success"] is False
+        assert "form_memory" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_todolist_check_step1_done_with_form_memory_in_same_batch_passes(self, todolist_skill_system):
+        """同一批 tool_calls 中 form_memory + done 应通过"""
+        from src.chat.handlers import handle_tool_calls
+
+        mock_form_memory = Mock()
+        mock_form_memory.function.name = "form_memory"
+        mock_form_memory.function.arguments = '{"reason": "test"}'
+        mock_form_memory.id = "call_fm_1"
+
+        mock_tool_call = Mock()
+        mock_tool_call.function.name = "todolist_check"
+        mock_tool_call.function.arguments = '{"step": 1, "status": "done"}'
+        mock_tool_call.id = "call_tl_5"
+
+        result = await handle_tool_calls(
+            [mock_form_memory, mock_tool_call],
+            todolist_skill_system,
+            activated_skills={"todolist"},
+        )
+
+        # form_memory 在无 user_id 时返回纯文本，不解析为 JSON
+        assert "记忆" in result[0]["content"] or "登记" in result[0]["content"]
+
+        done_data = json.loads(result[1]["content"])
+        assert done_data["success"] is True
+        assert "步骤2" in done_data["message"]
+
+    @pytest.mark.asyncio
+    async def test_todolist_check_forged_called_tools_overridden(self, todolist_skill_system):
+        """LLM 在 called_tools 中伪造 form_memory，但实际未调用，系统注入应覆盖伪造值"""
+        from src.chat.handlers import handle_tool_calls
+
+        # LLM 尝试在参数中伪造 called_tools=["form_memory"]
+        mock_tool_call = Mock()
+        mock_tool_call.function.name = "todolist_check"
+        mock_tool_call.function.arguments = '{"step": 1, "status": "done", "called_tools": ["form_memory"]}'
+        mock_tool_call.id = "call_tl_forge"
+
+        result = await handle_tool_calls(
+            [mock_tool_call],
+            todolist_skill_system,
+            activated_skills={"todolist"},
+        )
+
+        data = json.loads(result[0]["content"])
+        # processed_tools 为空（没有实际调用 form_memory），系统注入覆盖伪造值
+        assert data["success"] is False
+        assert "form_memory" in data["error"]
