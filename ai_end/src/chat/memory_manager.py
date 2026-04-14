@@ -241,6 +241,7 @@ class MemoryManager:
         全部重试失败返回空结果：portrait_text/knowledge_text 为空串。
         """
         max_attempts = 3
+        last_error = ""
 
         # 构建新画像 JSON：合并 portrait + knowledge 供 LLM 参考
         new_portrait_obj: dict[str, Any] = {}
@@ -258,13 +259,40 @@ class MemoryManager:
                 pass
 
         new_portrait_json = json.dumps(new_portrait_obj, ensure_ascii=False)
-        old_portrait_json = existing_profile.get("portrait_text", "{}")
+
+        # 旧画像输入也需携带 knowledge，保证 merge 可执行"空字段保留旧值"。
+        old_profile_obj: dict[str, Any] = {}
+        old_portrait_raw = existing_profile.get("portrait_text", "{}")
+        old_knowledge_raw = existing_profile.get("knowledge_text", "")
+
+        try:
+            old_portrait_data = json.loads(old_portrait_raw)
+            if isinstance(old_portrait_data, dict):
+                old_profile_obj.update(old_portrait_data)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        if old_knowledge_raw:
+            try:
+                old_knowledge_data = json.loads(old_knowledge_raw)
+                if isinstance(old_knowledge_data, dict):
+                    old_profile_obj["knowledge"] = old_knowledge_data
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        old_portrait_json = json.dumps(old_profile_obj, ensure_ascii=False)
 
         for attempt in range(1, max_attempts + 1):
             prompt = PORTRAIT_MERGE_PROMPT.format(
                 old_portrait=old_portrait_json,
                 new_portrait=new_portrait_json,
             )
+            if attempt > 1 and last_error:
+                prompt = (
+                    f"{prompt}\n\n"
+                    f"【上次错误】{last_error}\n"
+                    "请严格输出合法 v2 JSON，不要添加任何额外文本。"
+                )
 
             response = await self.api_queue.submit(
                 "llm",
@@ -280,6 +308,8 @@ class MemoryManager:
                     "knowledge_text": parsed["knowledge_text"],
                     "attempts_used": attempt,
                 }
+
+            last_error = f"第{attempt}次尝试: LLM 返回内容无法解析为有效 v2 JSON"
 
         # 全部重试失败返回含 attempts_used 的 dict（而非 None）
         return {

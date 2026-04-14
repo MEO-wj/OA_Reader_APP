@@ -614,6 +614,51 @@ class TestRetryProtocol:
         assert "第1次尝试" in retry_prompt
 
     @pytest.mark.asyncio
+    async def test_merge_retry_prompt_contains_previous_error_message(self):
+        """merge 阶段重试 prompt 应透传上次错误信息与尝试次数。"""
+        uid = "00000000-0000-0000-0008-000000000206"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        valid_extract = self._make_response(
+            '{"confirmed":{"identity":["大三"],"interests":["编程"],"constraints":[]},'
+            '"hypothesized":{"identity":[],"interests":[]},'
+            '"knowledge":{"confirmed_facts":["extract事实"],"pending_queries":[]}}'
+        )
+        valid_merge = self._make_response(
+            '{"confirmed":{"identity":["大三"],"interests":["编程"],"constraints":[]},'
+            '"hypothesized":{"identity":[],"interests":[]},'
+            '"knowledge":{"confirmed_facts":["merge事实"],"pending_queries":[]}}'
+        )
+
+        async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            # 1: extract 成功；2: merge 失败；3: merge 重试成功
+            if len(captured_prompts) == 1:
+                return valid_extract
+            if len(captured_prompts) == 2:
+                return self._invalid_response()
+            return valid_merge
+
+        queue.submit = AsyncMock(side_effect=capture_submit)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": '{"confirmed":{"identity":["大三"],"interests":["编程"],"constraints":[]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":["旧事实"],"pending_queries":["旧待查"]}',
+        })
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            result = await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        assert result["saved"] is True
+        assert len(captured_prompts) == 3
+        merge_retry_prompt = captured_prompts[2]
+        assert "上次错误" in merge_retry_prompt
+        assert "第1次尝试" in merge_retry_prompt
+
+    @pytest.mark.asyncio
     async def test_db_exception_is_not_retried_and_propagates(self):
         """DB 异常属于不可重试错误，直接抛出，不进行重试。"""
         uid = "00000000-0000-0000-0008-000000000203"
@@ -882,11 +927,43 @@ class TestTwoStepPortraitFlow:
             "extract prompt 不应包含已有画像段落"
         # 第二个 prompt（merge）应包含旧画像 JSON 和新画像 JSON
         merge_prompt = captured_prompts[1]
-        old_portrait_text = '{"confirmed":{"identity":["大三","计算机"]'
-        assert old_portrait_text in merge_prompt, \
-            "merge prompt 应包含旧画像 JSON"
+        old_payload_block = merge_prompt.split("旧画像 JSON：", 1)[1].split("新画像 JSON：", 1)[0].strip()
+        old_payload = json.loads(old_payload_block)
+        assert "confirmed" in old_payload, "merge prompt 中旧画像 payload 应包含 confirmed"
+        assert "大三" in old_payload["confirmed"]["identity"], "merge prompt 应包含旧画像身份信息"
         assert "extract确认事实" in merge_prompt, \
             "merge prompt 应包含新画像 JSON 内容"
+
+    @pytest.mark.asyncio
+    async def test_merge_prompt_includes_old_knowledge_payload(self):
+        """merge prompt 应包含旧知识 JSON，避免空字段场景丢失历史知识。"""
+        uid = "00000000-0000-0000-0008-000000000405"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_and_respond(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            if len(captured_prompts) == 1:
+                return self._valid_v2_extract()
+            return self._valid_v2_merged()
+
+        queue.submit = AsyncMock(side_effect=capture_and_respond)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": '{"confirmed":{"identity":["大三","计算机"],"interests":["编程"],"constraints":[]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":["旧事实保留锚点"],"pending_queries":["旧待查保留锚点"]}',
+        })
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            result = await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        assert result["saved"] is True
+        assert queue.submit.await_count == 2
+        merge_prompt = captured_prompts[1]
+        assert "旧事实保留锚点" in merge_prompt, "merge prompt 应包含旧 knowledge 内容"
+        assert "旧待查保留锚点" in merge_prompt, "merge prompt 应包含旧 knowledge 内容"
 
     @pytest.mark.asyncio
     async def test_form_memory_falls_back_to_extract_result_when_merge_fails(self):
