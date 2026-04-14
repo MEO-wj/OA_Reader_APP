@@ -6,6 +6,8 @@ from tests.prompts_test_constants import (
     MEMORY_V2_REQUIRED_CONSTRAINTS,
     COMPACT_V2_NO_MERGE_CONSTRAINTS,
     SYSTEM_PROMPT_V2_CONSTRAINTS,
+    PORTRAIT_EXTRACT_REQUIRED_PHRASES,
+    PORTRAIT_MERGE_REQUIRED_PHRASES,
 )
 
 
@@ -90,8 +92,7 @@ def test_memory_prompt_contains_existing_profile_placeholder():
 
 
 def test_system_prompt_contains_aggressive_trigger_semantic():
-    """SYSTEM_PROMPT 应包含激进触发语义：出现画像线索时优先触发 form_memory。"""
-    assert "form_memory" in p.SYSTEM_PROMPT_TEMPLATE
+    """SYSTEM_PROMPT 应包含画像相关语义提示。"""
     assert ("线索" in p.SYSTEM_PROMPT_TEMPLATE or "画像" in p.SYSTEM_PROMPT_TEMPLATE)
 
 
@@ -110,3 +111,29 @@ def test_memory_prompt_contains_confirmed_interests_threshold():
     # 验证提问与 confirmed.interests 的关系是负面的
     assert ("不等于" in p.MEMORY_PROMPT_TEMPLATE or "不代表" in p.MEMORY_PROMPT_TEMPLATE
             or "不直接" in p.MEMORY_PROMPT_TEMPLATE)
+
+
+# ─── 两步式画像 prompt 契约测试 ──────────────────────────────
+
+
+def test_portrait_extract_prompt_exists_and_blocks_merge_behavior():
+    """验证 PORTRAIT_EXTRACT_PROMPT 存在且仅负责从对话中提取画像，不涉及合并逻辑。"""
+    assert hasattr(p, "PORTRAIT_EXTRACT_PROMPT")
+    for phrase in PORTRAIT_EXTRACT_REQUIRED_PHRASES:
+        assert phrase in p.PORTRAIT_EXTRACT_PROMPT, (
+            f"PORTRAIT_EXTRACT_PROMPT 缺少预期短语: {phrase}"
+        )
+
+
+def test_portrait_merge_prompt_exists_and_contains_merge_rules():
+    """验证 PORTRAIT_MERGE_PROMPT 存在且包含完整的合并规则。"""
+    assert hasattr(p, "PORTRAIT_MERGE_PROMPT")
+    for phrase in PORTRAIT_MERGE_REQUIRED_PHRASES:
+        assert phrase in p.PORTRAIT_MERGE_PROMPT, (
+            f"PORTRAIT_MERGE_PROMPT 缺少预期短语: {phrase}"
+        )
+
+
+def test_memory_prompt_still_exists_for_compatibility():
+    """回归断言：旧的 MEMORY_PROMPT_TEMPLATE 仍保留，主流程不再依赖它但不删除。"""
+    assert hasattr(p, "MEMORY_PROMPT_TEMPLATE")

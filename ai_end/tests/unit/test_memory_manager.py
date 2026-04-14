@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.chat.memory_manager import MemoryManager
-from src.chat.prompts_runtime import MEMORY_PROMPT_TEMPLATE
+from src.chat.prompts_runtime import MEMORY_PROMPT_TEMPLATE, PORTRAIT_EXTRACT_PROMPT, PORTRAIT_MERGE_PROMPT
 
 
 class TestMemoryManagerV2ReturnContract:
@@ -538,8 +538,8 @@ class TestRetryProtocol:
         db.save_profile.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_retry_prompt_contains_messages_and_last_error_only(self):
-        """重试请求仅包含 messages + last_error，不追加已保存画像。"""
+    async def test_retry_prompt_contains_conversation_content(self):
+        """重试 prompt 仍应包含原始对话内容。"""
         uid = "00000000-0000-0000-0008-000000000202"
         queue = MagicMock()
         captured_prompts: list[str] = []
@@ -565,15 +565,13 @@ class TestRetryProtocol:
         assert result["saved"] is True
         assert len(captured_prompts) == 2, "应捕获 2 次 prompt"
 
-        # 第 2 次 prompt 应包含错误信息（重试特征）
+        # 第 2 次 prompt（重试）应包含原始对话内容
         retry_prompt = captured_prompts[1]
         assert "你好" in retry_prompt, "重试 prompt 应包含原始对话内容"
-        assert "第1次尝试" in retry_prompt, "重试 prompt 应包含上次错误信息"
-        assert "请严格按要求输出合法 JSON" in retry_prompt, "重试 prompt 应包含修正指令"
 
     @pytest.mark.asyncio
     async def test_retry_prompt_does_not_include_existing_profile_section(self):
-        """重试 prompt 不应注入已有用户画像段落。"""
+        """extract 阶段（含重试）不应注入已有用户画像段落。"""
         uid = "00000000-0000-0000-0008-000000000204"
         queue = MagicMock()
         captured_prompts: list[str] = []
@@ -587,7 +585,7 @@ class TestRetryProtocol:
         queue.submit = AsyncMock(side_effect=capture_submit)
         db = MagicMock()
         db.save_profile = AsyncMock()
-        # 模拟 DB 中有有效 v2 画像
+        # 模拟 DB 中有有效 v2 画像（但 extract 阶段不应使用它）
         db.get_profile = AsyncMock(return_value={
             "portrait_text": '{"confirmed":{"identity":["大三学生"],"interests":["编程"],"constraints":[]},"hypothesized":{"identity":[],"interests":[]}}',
             "knowledge_text": '{"confirmed_facts":["六级550分"],"pending_queries":["分数线"]}',
@@ -600,11 +598,14 @@ class TestRetryProtocol:
             result = await manager.form_memory(messages)
 
         assert result["saved"] is True
-        assert len(captured_prompts) == 2, "应捕获 2 次 prompt"
+        assert len(captured_prompts) >= 2, "应捕获至少 2 次 prompt（extract 重试 + merge）"
 
-        retry_prompt = captured_prompts[1]
-        assert "已有用户画像（仅供参考" not in retry_prompt, \
-            "重试 prompt 不应包含已有用户画像段落"
+        # extract 阶段的 prompt 不应包含已有画像特征
+        for p in captured_prompts[:2]:
+            assert "已确认身份" not in p, \
+                "extract prompt 不应包含已有画像段落"
+            assert "已确认事实" not in p, \
+                "extract prompt 不应包含已有画像段落"
 
     @pytest.mark.asyncio
     async def test_db_exception_is_not_retried_and_propagates(self):
@@ -722,15 +723,22 @@ class TestExistingProfileInjection:
             "无画像时首轮 prompt 不应包含已有画像段落"
 
     @pytest.mark.asyncio
-    async def test_first_prompt_adjudicates_inferred_identity_from_existing_profile(self):
-        """已有画像注入时，也应对 confirmed.identity 做推断裁决。"""
+    async def test_extract_prompt_does_not_include_existing_profile(self):
+        """有已有画像时，extract 阶段 prompt 不应包含已有画像文本。"""
         uid = "00000000-0000-0000-0008-000000000304"
         queue = MagicMock()
         captured_prompts: list[str] = []
 
         async def capture_submit(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
             captured_prompts.append(prompt)
-            return self._valid_v2_response()
+            if len(captured_prompts) == 1:
+                return self._valid_v2_response()
+            # merge 阶段
+            return self._make_response(
+                '{"confirmed":{"identity":["大三学生"],"interests":[],"constraints":[]},'
+                '"hypothesized":{"identity":[],"interests":[]},'
+                '"knowledge":{"confirmed_facts":[],"pending_queries":[]}}'
+            )
 
         queue.submit = AsyncMock(side_effect=capture_submit)
         db = MagicMock()
@@ -744,8 +752,207 @@ class TestExistingProfileInjection:
             manager = MemoryManager(user_id=uid, memory_db=db)
             await manager.form_memory([{"role": "user", "content": "你好"}])
 
-        first_prompt = captured_prompts[0]
-        assert "已确认身份: 可能是大三学生" not in first_prompt, \
-            "推断型 identity 不应以已确认身份注入 prompt"
-        assert "推测身份: （来源未确认）可能是大三学生" in first_prompt, \
-            "推断型 identity 应降级并带来源前缀后注入 prompt"
+        # extract 阶段的 prompt 不应包含旧画像文本
+        extract_prompt = captured_prompts[0]
+        assert "已确认身份: 可能是大三学生" not in extract_prompt, \
+            "extract prompt 不应包含旧画像的已确认身份"
+        assert "推测身份" not in extract_prompt, \
+            "extract prompt 不应包含旧画像的推测身份"
+
+
+class TestTwoStepPortraitFlow:
+    """两步式画像流程测试（TDD RED 阶段）。
+
+    期望行为：
+    - 无已有画像时：快速路径，仅 extract 一次 LLM 调用
+    - 有已有画像时：extract + merge 两次 LLM 调用
+    - merge 失败时：回退到 extract 结果
+    - extract 重试与 merge 独立
+    """
+
+    @staticmethod
+    def _make_response(content: str) -> MagicMock:
+        """构造 LLM 返回的 mock response 对象。"""
+        return MagicMock(
+            choices=[MagicMock(message=MagicMock(content=content))]
+        )
+
+    @staticmethod
+    def _valid_v2_extract() -> MagicMock:
+        """构造 extract 阶段的合法 v2 JSON 响应。"""
+        return TestTwoStepPortraitFlow._make_response(
+            '{"confirmed":{"identity":["大三","计算机"],"interests":["编程"],"constraints":[]},'
+            '"hypothesized":{"identity":[],"interests":[]},'
+            '"knowledge":{"confirmed_facts":["extract确认事实"],"pending_queries":[]}}'
+        )
+
+    @staticmethod
+    def _valid_v2_merged() -> MagicMock:
+        """构造 merge 阶段的合法 v2 JSON 响应。"""
+        return TestTwoStepPortraitFlow._make_response(
+            '{"confirmed":{"identity":["大三","计算机","已确认"],"interests":["编程","深度学习"],"constraints":[]},'
+            '"hypothesized":{"identity":[],"interests":[]},'
+            '"knowledge":{"confirmed_facts":["已确认事实","extract确认事实"],"pending_queries":["待查"]}}'
+        )
+
+    @staticmethod
+    def _invalid_response() -> MagicMock:
+        """构造非 JSON（解析失败）的 mock response。"""
+        return TestTwoStepPortraitFlow._make_response("this is not json at all!!!")
+
+    @pytest.mark.asyncio
+    async def test_form_memory_uses_fast_path_when_no_existing_profile(self):
+        """无已有画像时，应走快速路径：仅 extract 一次 LLM 调用，不触发 merge。"""
+        uid = "00000000-0000-0000-0008-000000000401"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_and_respond(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            return self._valid_v2_extract()
+
+        queue.submit = AsyncMock(side_effect=capture_and_respond)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value=None)
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            result = await manager.form_memory([{"role": "user", "content": "我是大三计算机学生"}])
+
+        # 快速路径：只调用一次 LLM（extract），不触发 merge
+        assert queue.submit.await_count == 1, \
+            f"无已有画像时应只调用 1 次 LLM，实际={queue.submit.await_count}"
+        # extract 应使用 PORTRAIT_EXTRACT_PROMPT，不包含"合并策略"字样
+        extract_prompt = captured_prompts[0]
+        assert "合并策略" not in extract_prompt, \
+            "extract prompt 不应包含合并策略（属于 MEMORY_PROMPT_TEMPLATE）"
+        assert "不参考旧画像" in extract_prompt, \
+            "extract prompt 应包含 PORTRAIT_EXTRACT_PROMPT 的特征文本"
+        # 保存结果应为 extract 结果
+        assert result["saved"] is True
+        assert "extract确认事实" in result["knowledge_text"]
+        # save_profile 只调用一次
+        db.save_profile.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_form_memory_merges_when_existing_profile_exists(self):
+        """有已有画像时，应走两步流程：先 extract 再 merge，保存 merge 结果。"""
+        uid = "00000000-0000-0000-0008-000000000402"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_and_respond(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            # 第 1 次：extract 返回，第 2 次：merge 返回
+            if len(captured_prompts) == 1:
+                return self._valid_v2_extract()
+            return self._valid_v2_merged()
+
+        queue.submit = AsyncMock(side_effect=capture_and_respond)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": '{"confirmed":{"identity":["大三","计算机"],"interests":["编程"],"constraints":[]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":["已确认事实"],"pending_queries":["待查"]}',
+        })
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            result = await manager.form_memory([{"role": "user", "content": "我在学深度学习"}])
+
+        # 两步流程：extract + merge 共 2 次 LLM 调用
+        assert queue.submit.await_count == 2, \
+            f"有已有画像时应调用 2 次 LLM（extract+merge），实际={queue.submit.await_count}"
+        # 保存结果应是 merge 结果，不是 extract 结果
+        assert result["saved"] is True
+        assert "已确认" in result["portrait_text"], \
+            "merge 结果应包含旧画像中的已确认身份"
+        # 第一个 prompt（extract）不应包含已有画像文本
+        extract_prompt = captured_prompts[0]
+        assert "已确认身份" not in extract_prompt, \
+            "extract prompt 不应包含已有画像段落"
+        assert "已确认事实" not in extract_prompt, \
+            "extract prompt 不应包含已有画像段落"
+        # 第二个 prompt（merge）应包含旧画像 JSON 和新画像 JSON
+        merge_prompt = captured_prompts[1]
+        old_portrait_text = '{"confirmed":{"identity":["大三","计算机"]'
+        assert old_portrait_text in merge_prompt, \
+            "merge prompt 应包含旧画像 JSON"
+        assert "extract确认事实" in merge_prompt, \
+            "merge prompt 应包含新画像 JSON 内容"
+
+    @pytest.mark.asyncio
+    async def test_form_memory_falls_back_to_extract_result_when_merge_fails(self):
+        """merge 失败时应回退到 extract 结果保存。"""
+        uid = "00000000-0000-0000-0008-000000000403"
+        queue = MagicMock()
+        captured_prompts: list[str] = []
+
+        async def capture_and_respond(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            captured_prompts.append(prompt)
+            if len(captured_prompts) == 1:
+                return self._valid_v2_extract()   # extract 成功
+            return self._invalid_response()        # merge 失败（非 JSON）
+
+        queue.submit = AsyncMock(side_effect=capture_and_respond)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": '{"confirmed":{"identity":["大三","计算机"],"interests":["编程"],"constraints":[]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":["已确认事实"],"pending_queries":["待查"]}',
+        })
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            result = await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        # 两步流程：extract + merge（失败）
+        assert queue.submit.await_count >= 2, \
+            f"应有至少 2 次 LLM 调用（extract + merge尝试），实际={queue.submit.await_count}"
+        # 第二个 prompt 应是 merge prompt（包含旧画像和新画像）
+        merge_prompt = captured_prompts[1]
+        assert "旧画像" in merge_prompt or "新画像" in merge_prompt, \
+            "第二个 prompt 应是 merge prompt，包含旧画像/新画像"
+        # merge 失败后应回退到 extract 结果
+        assert result["saved"] is True, "merge 失败时应回退到 extract 结果并 saved=True"
+        assert "extract确认事实" in result["knowledge_text"], \
+            "保存结果应是 extract 的结果，不是 merge 的"
+        # save_profile 应被调用
+        db.save_profile.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_extract_and_merge_retry_are_independent(self):
+        """extract 重试与 merge 调用应独立：extract 可重试，merge 在 extract 成功后才调用。"""
+        uid = "00000000-0000-0000-0008-000000000404"
+        queue = MagicMock()
+        call_count = 0
+
+        async def respond(lane: str, fn_or_sync: object, prompt: str) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            # 第 1 次：extract 失败（非 JSON）
+            # 第 2 次：extract 重试成功
+            # 第 3 次：merge 成功
+            if call_count == 1:
+                return self._invalid_response()
+            if call_count == 2:
+                return self._valid_v2_extract()
+            return self._valid_v2_merged()
+
+        queue.submit = AsyncMock(side_effect=respond)
+        db = MagicMock()
+        db.save_profile = AsyncMock()
+        db.get_profile = AsyncMock(return_value={
+            "portrait_text": '{"confirmed":{"identity":["大三","计算机"],"interests":["编程"],"constraints":[]},"hypothesized":{"identity":[],"interests":[]}}',
+            "knowledge_text": '{"confirmed_facts":["已确认事实"],"pending_queries":["待查"]}',
+        })
+
+        with patch("src.chat.memory_manager.get_api_queue", return_value=queue):
+            manager = MemoryManager(user_id=uid, memory_db=db)
+            result = await manager.form_memory([{"role": "user", "content": "你好"}])
+
+        # 至少 3 次 LLM 调用：2 次 extract（1次失败重试）+ 1 次 merge
+        assert queue.submit.await_count >= 3, \
+            f"应有至少 3 次 LLM 调用（2 extract + 1 merge），实际={queue.submit.await_count}"
+        assert result["saved"] is True

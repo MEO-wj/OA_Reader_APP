@@ -34,3 +34,24 @@ SYSTEM_PROMPT_V2_CONSTRAINTS = [
     "禁止将 hypothesized 推测合并写入 confirmed 已确认层",
 ]
 
+# ─── 两步式画像 prompt 契约常量 ──────────────────────────────
+
+# PORTRAIT_EXTRACT_PROMPT 必须包含的关键短语
+PORTRAIT_EXTRACT_REQUIRED_PHRASES = [
+    "仅基于对话内容提取",
+    "不参考旧画像",
+    "confirmed",
+    "hypothesized",
+    "knowledge",
+]
+
+# PORTRAIT_MERGE_PROMPT 必须包含的关键短语
+PORTRAIT_MERGE_REQUIRED_PHRASES = [
+    "旧画像 JSON",
+    "新画像 JSON",
+    "冲突时新信息优先",
+    "去重",
+    "hypothesized 不升入 confirmed",
+    "空字段保留旧值",
+]
+
