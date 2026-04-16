@@ -794,9 +794,14 @@ export default function HomeScreen() {
                 tintColor={colors.gold500}
               />
             }
-            onEndReached={undefined}
+            onEndReached={!filterActive ? loadMoreArticles : undefined}
+            onEndReachedThreshold={0.5}
             ListEmptyComponent={<HomeEmptyState />}
-            ListFooterComponent={null}
+            ListFooterComponent={isLoadingMore ? (
+              <View style={styles.loadingFooter}>
+                <ActivityIndicator size="small" color={colors.gold500} />
+              </View>
+            ) : null}
           />
         )}
       </Animated.View>
