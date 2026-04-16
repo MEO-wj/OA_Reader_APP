@@ -20,6 +20,7 @@ import { ArticleDetailSheet } from '@/components/article-detail-sheet';
 import { BottomDock } from '@/components/bottom-dock';
 import { ChatInput } from '@/components/chat-input';
 import { ChatMessageItem } from '@/components/chat-message';
+import { MarkdownTableCards } from '@/components/markdown-table-cards';
 import { SourceList } from '@/components/source-list';
 import { TopBar } from '@/components/top-bar';
 import { shadows } from '@/constants/shadows';
@@ -32,6 +33,7 @@ import { usePalette } from '@/hooks/use-palette';
 import type { Palette } from '@/constants/palette';
 import { buildArticleFromRelated, fetchArticleDetail } from '@/services/articles';
 import { formatDateLabel, getDayPeriod } from '@/utils/date';
+import { segmentMarkdownForMobile } from '@/utils/mobile-ai-markdown';
 import type { Article, ArticleDetail, RelatedArticle } from '@/types/article';
 const mermaidHtml = (diagram: string, script: string, theme: 'neutral' | 'dark') => `<!DOCTYPE html>
 <html>
@@ -185,11 +187,22 @@ export default function AiAssistantScreen() {
           </View>
         );
       }
-      return (
-        <Markdown key={`md-${index}`} style={markdownStyles}>
-          {segment.content || ' '}
-        </Markdown>
-      );
+      return segmentMarkdownForMobile(segment.content).map((markdownSegment, nestedIndex) => {
+        if (markdownSegment.type === 'table_cards') {
+          return (
+            <MarkdownTableCards
+              key={`table-${index}-${nestedIndex}`}
+              rows={markdownSegment.rows}
+            />
+          );
+        }
+
+        return (
+          <Markdown key={`md-${index}-${nestedIndex}`} style={markdownStyles}>
+            {markdownSegment.content || ' '}
+          </Markdown>
+        );
+      });
     });
   }, [colorScheme, markdownStyles, mermaidScript, styles.mermaidWebview, styles.mermaidWrap]);
 
@@ -236,22 +249,23 @@ export default function AiAssistantScreen() {
           ) : (
             messages.map((msg) => (
               <View key={msg.id} style={styles.messageBlock}>
-                
                 <ChatMessageItem
                   message={msg}
                   renderMarkdown={renderMarkdownWithMermaid}
                   isThinking={!!lastAiMessageId && isThinking && msg.id === lastAiMessageId}
+                  footer={
+                    !msg.isUser && msg.related && msg.related.length > 0 ? (
+                      <SourceList
+                        related={msg.related}
+                        highlights={msg.highlights || []}
+                        expanded={!!expandedSources[msg.id]}
+                        onToggle={() => toggleSources(msg.id)}
+                        onOpenArticle={openArticle}
+                        embedded
+                      />
+                    ) : undefined
+                  }
                 />
-                
-                {!msg.isUser && msg.related && msg.related.length > 0 && (
-                  <SourceList
-                    related={msg.related}
-                    highlights={msg.highlights || []}
-                    expanded={!!expandedSources[msg.id]}
-                    onToggle={() => toggleSources(msg.id)}
-                    onOpenArticle={openArticle}
-                  />
-                )}
               </View>
             ))
           )}
@@ -284,16 +298,45 @@ export default function AiAssistantScreen() {
 function createMarkdownStyles(colors: Palette, colorScheme: 'light' | 'dark') {
   const inlineCodeBackground = colorScheme === 'dark' ? colors.stone100 : colors.gold50;
   const inlineCodeText = colorScheme === 'dark' ? colors.stone900 : colors.stone800;
+  const blockBackground = colorScheme === 'dark' ? colors.stone100 : colors.stone900;
+  const blockText = colorScheme === 'dark' ? colors.stone850 : colors.gold50;
+  const quoteBackground = colorScheme === 'dark' ? 'rgba(42,36,19,0.18)' : colors.surfaceWarm;
+  const quoteBorder = colorScheme === 'dark' ? colors.gold200 : colors.gold300;
+  const tableBorder = colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : colors.gold100;
 
   return {
     body: {
-      color: colors.stone700,
-      fontSize: 14,
-      lineHeight: 22,
+      color: colorScheme === 'dark' ? colors.stone850 : colors.stone700,
+      fontSize: 15,
+      lineHeight: 26,
     },
     paragraph: {
       marginTop: 0,
-      marginBottom: 8,
+      marginBottom: 12,
+    },
+    heading1: {
+      marginTop: 4,
+      marginBottom: 14,
+      fontSize: 23,
+      lineHeight: 30,
+      fontWeight: '800' as const,
+      color: colorScheme === 'dark' ? colors.stone900 : colors.stone900,
+    },
+    heading2: {
+      marginTop: 4,
+      marginBottom: 12,
+      fontSize: 19,
+      lineHeight: 26,
+      fontWeight: '800' as const,
+      color: colorScheme === 'dark' ? colors.stone900 : colors.stone800,
+    },
+    heading3: {
+      marginTop: 2,
+      marginBottom: 10,
+      fontSize: 16,
+      lineHeight: 22,
+      fontWeight: '700' as const,
+      color: colorScheme === 'dark' ? colors.stone900 : colors.stone800,
     },
     strong: {
       color: colors.imperial600,
@@ -308,6 +351,73 @@ function createMarkdownStyles(colors: Palette, colorScheme: 'light' | 'dark') {
       paddingHorizontal: 6,
       paddingVertical: 2,
       borderRadius: 6,
+    },
+    fence: {
+      marginTop: 8,
+      marginBottom: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderRadius: 16,
+      backgroundColor: blockBackground,
+      color: blockText,
+      fontSize: 13,
+      lineHeight: 20,
+    },
+    code_block: {
+      color: blockText,
+      fontSize: 13,
+      lineHeight: 20,
+    },
+    blockquote: {
+      marginTop: 6,
+      marginBottom: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderRadius: 16,
+      backgroundColor: quoteBackground,
+      borderLeftWidth: 4,
+      borderLeftColor: quoteBorder,
+    },
+    bullet_list: {
+      marginTop: 2,
+      marginBottom: 14,
+    },
+    ordered_list: {
+      marginTop: 2,
+      marginBottom: 14,
+    },
+    list_item: {
+      marginBottom: 8,
+      color: colorScheme === 'dark' ? colors.stone850 : colors.stone700,
+    },
+    hr: {
+      marginTop: 10,
+      marginBottom: 18,
+      backgroundColor: tableBorder,
+      height: 1,
+    },
+    table: {
+      marginTop: 8,
+      marginBottom: 14,
+      borderWidth: 1,
+      borderColor: tableBorder,
+      borderRadius: 14,
+      overflow: 'hidden' as const,
+      opacity: 0.7,
+    },
+    th: {
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+      backgroundColor: colorScheme === 'dark' ? colors.gold50 : colors.surfaceWarm,
+      color: colorScheme === 'dark' ? colors.stone900 : colors.stone800,
+      fontWeight: '700' as const,
+    },
+    td: {
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+      color: colorScheme === 'dark' ? colors.stone850 : colors.stone700,
+      borderTopWidth: 1,
+      borderTopColor: tableBorder,
     },
   };
 }
@@ -326,10 +436,10 @@ function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
     },
     chatContainer: {
       flexGrow: 1,
-      paddingHorizontal: 18,
-      paddingTop: 10,
-      paddingBottom: 140,
-      gap: 20,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 144,
+      gap: 22,
     },
     emptyState: {
       flex: 1,
@@ -376,6 +486,7 @@ function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
     },
     messageBlock: {
       marginTop: 0,
+      width: '100%',
     },
     mermaidWrap: {
       marginVertical: 8,

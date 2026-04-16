@@ -11,16 +11,17 @@ type SourceCardProps = {
   article: RelatedArticle;
   highlights: string[];
   onPress: (article: RelatedArticle) => void;
+  embedded?: boolean;
 };
 
 function buildSnippet(article: RelatedArticle) {
   return article.content_snippet || article.summary_snippet || '';
 }
 
-export function SourceCard({ article, highlights, onPress }: SourceCardProps) {
+export function SourceCard({ article, highlights, onPress, embedded = false }: SourceCardProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const palette = usePalette();
-  const styles = useMemo(() => createStyles(palette, colorScheme), [colorScheme, palette]);
+  const styles = useMemo(() => createStyles(palette, colorScheme, embedded), [colorScheme, embedded, palette]);
 
   return (
     <Pressable style={styles.sourceCard} onPress={() => onPress(article)}>
@@ -43,15 +44,19 @@ export function SourceCard({ article, highlights, onPress }: SourceCardProps) {
   );
 }
 
-function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
+function createStyles(colors: Palette, colorScheme: 'light' | 'dark', embedded: boolean) {
   return StyleSheet.create({
   sourceCard: {
-    padding: 12,
-    borderRadius: 18,
-    backgroundColor: colors.white,
+    padding: embedded ? 14 : 12,
+    borderRadius: embedded ? 20 : 18,
+    backgroundColor: embedded
+      ? colorScheme === 'dark'
+        ? 'rgba(20,19,18,0.78)'
+        : colors.white
+      : colors.white,
     borderWidth: 1,
-    borderColor: colors.stone100,
-    gap: 6,
+    borderColor: embedded ? colors.gold100 : colors.stone100,
+    gap: 8,
   },
   sourceHeader: {
     flexDirection: 'row',
@@ -65,10 +70,10 @@ function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
   },
   sourceDate: {
     fontSize: 10,
-    color: colors.stone300,
+    color: embedded ? colors.stone400 : colors.stone300,
   },
   sourceTitleText: {
-    fontSize: 13,
+    fontSize: embedded ? 14 : 13,
     fontWeight: '700',
     color: colorScheme === 'dark' ? colors.stone900 : colors.stone800,
   },

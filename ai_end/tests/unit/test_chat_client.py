@@ -6,7 +6,10 @@ RED 阶段 - 测试先于实现
 import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
-from tests.prompts_test_constants import SYSTEM_PROMPT_EXPECTED_PHRASES
+from tests.prompts_test_constants import (
+    SYSTEM_PROMPT_EXPECTED_PHRASES,
+    SYSTEM_PROMPT_MOBILE_FORMAT_PHRASES,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -187,6 +190,21 @@ class TestChatClient:
         assert "不确定性" in prompt
         # 禁用承诺性表述
         assert "禁用承诺性表述" in prompt
+
+    def test_system_prompt_prefers_mobile_friendly_cards_over_tables(self):
+        """
+        多条通知/帖子结果应优先使用移动端友好的分层段落，而不是默认 Markdown 表格。
+        """
+        from src.chat.client import ChatClient
+        from src.config import Config
+
+        config = Config.with_defaults()
+        client = ChatClient(config)
+
+        prompt = client._build_system_prompt()
+
+        for phrase in SYSTEM_PROMPT_MOBILE_FORMAT_PHRASES:
+            assert phrase in prompt, f"System prompt 缺少移动端排版约束: {phrase}"
 
     def test_system_prompt_uses_skill_names_without_descriptions(self):
         """

@@ -2,6 +2,12 @@ SYSTEM_PROMPT_EXPECTED_PHRASES = [
     "不要暴露内部工具调用过程",
     "禁用承诺性表述",
 ]
+SYSTEM_PROMPT_MOBILE_FORMAT_PHRASES = [
+    "优先按分层列表输出，不要默认使用 Markdown 表格",
+    "每条结果单独成段",
+    "至少写出“适用对象 / 关键条件 / 关键时间或金额”三类信息中的两类",
+    "优先写成 2-3 句完整说明",
+]
 COMPACT_PROMPT_EXPECTED_PHRASES = ["对话压缩", "【原始对话】"]
 
 TEST_FUNCTION_CALL_USER_PROMPT = "北京天气怎么样？"
