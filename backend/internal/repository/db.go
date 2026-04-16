@@ -13,7 +13,6 @@ var DB *gorm.DB
 func autoMigrateModels() []interface{} {
 	return []interface{}{
 		&model.User{},
-		&model.Session{},
 		&model.Article{},
 		&model.Vector{},
 		&model.Conversation{},

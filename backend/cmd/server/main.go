@@ -58,8 +58,6 @@ func main() {
 	auth := r.Group("/api/auth")
 	{
 		auth.POST("/token", authHandler.Login)
-		auth.POST("/token/refresh", authHandler.Refresh)
-		auth.POST("/logout", authHandler.Logout)
 		auth.GET("/me", middleware.AuthRequired(cfg.AuthJWTSecret), authHandler.Me)
 	}
 

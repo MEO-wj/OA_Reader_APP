@@ -14,12 +14,8 @@ import (
 type fakeAuthRepo struct {
 	credentialErr            error
 	createWithPasswordCalled bool
-	createSessionCalled      bool
 	findByIDUser             *model.User
 	findByIDErr              error
-	refreshSession           *model.Session
-	findSessionErr           error
-	revokeSessionCalled      bool
 	lastCreatePasswordCost   int
 }
 
@@ -53,33 +49,12 @@ func (f *fakeAuthRepo) FindByID(id uuid.UUID) (*model.User, error) {
 	return &model.User{ID: id, Username: "u", DisplayName: "u"}, nil
 }
 
-func (f *fakeAuthRepo) CreateSession(session *model.Session) error {
-	f.createSessionCalled = true
-	return nil
-}
-
-func (f *fakeAuthRepo) FindSessionByRefreshTokenSHA(sha string) (*model.Session, error) {
-	if f.findSessionErr != nil {
-		return nil, f.findSessionErr
-	}
-	if f.refreshSession == nil {
-		return nil, errors.New("not implemented")
-	}
-	return f.refreshSession, nil
-}
-
-func (f *fakeAuthRepo) RevokeSession(id uuid.UUID) error {
-	f.revokeSessionCalled = true
-	return nil
-}
-
 func TestLogin_DoesNotAutoCreateUserWhenCampusVerifyFails(t *testing.T) {
 	repo := &fakeAuthRepo{credentialErr: repository.ErrNotFound}
 	svc := NewAuthServiceWithDeps(&config.Config{
 		AuthAllowAutoUser:  true,
 		CampusAuthEnabled:  true,
 		AuthJWTSecret:      "secret",
-		AuthRefreshHashKey: "hash-key",
 		AuthAccessTokenTTL: time.Hour,
 	}, repo, func(username, password string) string {
 		return ""
@@ -92,9 +67,6 @@ func TestLogin_DoesNotAutoCreateUserWhenCampusVerifyFails(t *testing.T) {
 	if repo.createWithPasswordCalled {
 		t.Fatalf("expected no user creation when campus verify fails")
 	}
-	if repo.createSessionCalled {
-		t.Fatalf("expected no session creation when campus verify fails")
-	}
 }
 
 func TestLogin_ReturnsInvalidCredentialsWhenCredentialLookupInternalError(t *testing.T) {
@@ -103,7 +75,6 @@ func TestLogin_ReturnsInvalidCredentialsWhenCredentialLookupInternalError(t *tes
 		AuthAllowAutoUser:  true,
 		CampusAuthEnabled:  true,
 		AuthJWTSecret:      "secret",
-		AuthRefreshHashKey: "hash-key",
 		AuthAccessTokenTTL: time.Hour,
 	}, repo, func(username, password string) string {
 		t.Fatalf("campus verifier should not be called on internal errors")
@@ -126,7 +97,6 @@ func TestLogin_UsesDefaultPasswordCostWhenConfigOutOfRange(t *testing.T) {
 		CampusAuthEnabled:  true,
 		AuthPasswordCost:   2,
 		AuthJWTSecret:      "secret",
-		AuthRefreshHashKey: "hash-key",
 		AuthAccessTokenTTL: time.Hour,
 	}, repo, func(username, password string) string {
 		return "Alice"
@@ -141,55 +111,28 @@ func TestLogin_UsesDefaultPasswordCostWhenConfigOutOfRange(t *testing.T) {
 	}
 }
 
-func TestRefresh_ReturnsValidationErrorWhenRefreshTokenMissing(t *testing.T) {
+func TestLogin_ReturnsJWTWith7DayTTL(t *testing.T) {
 	repo := &fakeAuthRepo{}
 	svc := NewAuthServiceWithDeps(&config.Config{
-		AuthJWTSecret:      "secret",
-		AuthRefreshHashKey: "hash-key",
-		AuthAccessTokenTTL: time.Hour,
-	}, repo, nil)
+		AuthJWTSecret:     "secret",
+		CampusAuthEnabled: true,
+		// 不设置 AuthAccessTokenTTL，应使用默认 7 天
+	}, repo, func(username, password string) string {
+		return "TestUser"
+	})
 
-	_, err := svc.Refresh("", AuthMetadata{})
-	if !errors.Is(err, ErrValidation) {
-		t.Fatalf("expected ErrValidation, got %v", err)
+	result, err := svc.Login("u", "p", AuthMetadata{})
+	if err != nil {
+		t.Fatalf("login failed: %v", err)
 	}
-}
 
-func TestLogout_ReturnsValidationErrorWhenRefreshTokenMissing(t *testing.T) {
-	repo := &fakeAuthRepo{}
-	svc := NewAuthServiceWithDeps(&config.Config{
-		AuthJWTSecret:      "secret",
-		AuthRefreshHashKey: "hash-key",
-		AuthAccessTokenTTL: time.Hour,
-	}, repo, nil)
-
-	err := svc.Logout("")
-	if !errors.Is(err, ErrValidation) {
-		t.Fatalf("expected ErrValidation, got %v", err)
+	if result.AccessToken == "" {
+		t.Fatal("expected non-empty access_token")
 	}
-}
-
-func TestRefresh_ReturnsInvalidTokenWhenSessionUserNotFound(t *testing.T) {
-	sessionUserID := uuid.New()
-	repo := &fakeAuthRepo{
-		refreshSession: &model.Session{
-			ID:        uuid.New(),
-			UserID:    sessionUserID,
-			ExpiresAt: time.Now().Add(time.Hour),
-		},
-		findByIDErr: errors.New("user not found"),
+	if result.ExpiresIn != int(7*24*time.Hour.Seconds()) {
+		t.Fatalf("expected expires_in=604800 (7 days), got %d", result.ExpiresIn)
 	}
-	svc := NewAuthServiceWithDeps(&config.Config{
-		AuthJWTSecret:      "secret",
-		AuthRefreshHashKey: "hash-key",
-		AuthAccessTokenTTL: time.Hour,
-	}, repo, nil)
-
-	_, err := svc.Refresh("refresh-token", AuthMetadata{})
-	if !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("expected ErrInvalidToken, got %v", err)
-	}
-	if !repo.revokeSessionCalled {
-		t.Fatalf("expected session to be revoked before issuing new tokens")
+	if result.User == nil {
+		t.Fatal("expected user info")
 	}
 }

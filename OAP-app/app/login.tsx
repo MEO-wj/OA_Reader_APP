@@ -20,7 +20,7 @@ import { colors } from '@/constants/palette';
 import { shadows } from '@/constants/shadows';
 import { getApiBaseUrl } from '@/services/api';
 import { setAuthToken } from '@/hooks/use-auth-token';
-import { setRefreshToken, setUserProfileRaw } from '@/storage/auth-storage';
+import { setUserProfileRaw } from '@/storage/auth-storage';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -54,7 +54,6 @@ export default function LoginScreen() {
         return;
       }
 
-      await setRefreshToken(data.refresh_token || null);
       await setUserProfileRaw(JSON.stringify(data.user || {}));
       await setAuthToken(data.access_token || null);
 

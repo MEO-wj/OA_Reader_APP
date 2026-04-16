@@ -12,7 +12,6 @@ import { Asset } from 'expo-asset';
 
 import { useAuthTokenState } from '@/hooks/use-auth-token';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { refreshSessionOnForeground } from '@/services/auth';
 
 export default function RootLayout() {
   // 设置SEO元数据（组件级别）
@@ -130,32 +129,6 @@ export default function RootLayout() {
     setMeta('theme-color', colorScheme === 'dark' ? '#151718' : '#ffffff');
     setMeta('apple-mobile-web-app-status-bar-style', colorScheme === 'dark' ? 'black' : 'default');
   }, [colorScheme, isMounted]);
-
-  useEffect(() => {
-    if (!isMounted) {
-      return;
-    }
-
-    const refreshIfVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshSessionOnForeground();
-      }
-    };
-
-    refreshIfVisible();
-
-    const handleVisibility = () => {
-      refreshIfVisible();
-    };
-
-    window.addEventListener('focus', refreshIfVisible);
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    return () => {
-      window.removeEventListener('focus', refreshIfVisible);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [isMounted]);
 
   useEffect(() => {
     if (!isMounted || isLoading) return;

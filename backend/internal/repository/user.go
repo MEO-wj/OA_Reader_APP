@@ -134,30 +134,3 @@ func (r *UserRepository) RecordLogin(userID uuid.UUID) error {
 	now := time.Now()
 	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("last_login_at", now).Error
 }
-
-// CreateSession 创建会话
-func (r *UserRepository) CreateSession(session *model.Session) error {
-	return r.db.Create(session).Error
-}
-
-// FindSessionByRefreshTokenSHA 通过 refresh token SHA 查找会话
-func (r *UserRepository) FindSessionByRefreshTokenSHA(sha string) (*model.Session, error) {
-	var session model.Session
-	if err := r.db.Where("refresh_token_sha = ?", sha).First(&session).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	return &session, nil
-}
-
-// RevokeSession 撤销会话
-func (r *UserRepository) RevokeSession(id uuid.UUID) error {
-	return r.db.Model(&model.Session{}).Where("id = ?", id).Update("revoked_at", time.Now()).Error
-}
-
-// RevokeAllUserSessions 撤销用户所有会话
-func (r *UserRepository) RevokeAllUserSessions(userID uuid.UUID) error {
-	return r.db.Model(&model.Session{}).Where("user_id = ?", userID).Update("revoked_at", time.Now()).Error
-}

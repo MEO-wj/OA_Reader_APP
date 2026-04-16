@@ -10,9 +10,7 @@ import (
 func TestLoad_UsesEnvironmentWhenDotEnvMissing(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("AUTH_JWT_SECRET", "secret")
-	t.Setenv("AUTH_REFRESH_HASH_KEY", "refresh")
 	t.Setenv("AUTH_ACCESS_TOKEN_TTL", "168h")
-	t.Setenv("AUTH_REFRESH_TOKEN_TTL", "336h")
 	t.Setenv("AUTH_PASSWORD_COST", "12")
 	t.Setenv("AUTH_ALLOW_AUTO_USER_CREATION", "true")
 	t.Setenv("CAMPUS_AUTH_ENABLED", "true")
@@ -44,7 +42,7 @@ func TestLoad_UsesEnvironmentWhenDotEnvMissing(t *testing.T) {
 
 func TestLoad_ReadsDotEnvWhenPresent(t *testing.T) {
 	envPath := filepath.Join(t.TempDir(), ".env")
-	content := []byte("DATABASE_URL=postgres://from-file\nAUTH_JWT_SECRET=file-secret\nAUTH_REFRESH_HASH_KEY=file-refresh\nAUTH_ACCESS_TOKEN_TTL=1h\nAUTH_REFRESH_TOKEN_TTL=2h\nAUTH_PASSWORD_COST=10\nAUTH_ALLOW_AUTO_USER_CREATION=false\nCAMPUS_AUTH_ENABLED=false\nCAMPUS_AUTH_URL=https://file.example.com/login\nCAMPUS_AUTH_TIMEOUT=9\nCORS_ALLOW_ORIGINS=https://file.example.com\nRATE_LIMIT_PER_DAY=9\nRATE_LIMIT_PER_HOUR=3\nAI_END_URL=http://file-ai:4421\nAUTH_DEBUG=false\nUPLOAD_ROOT_DIR=/srv/oap/uploads\n")
+	content := []byte("DATABASE_URL=postgres://from-file\nAUTH_JWT_SECRET=file-secret\nAUTH_ACCESS_TOKEN_TTL=1h\nAUTH_PASSWORD_COST=10\nAUTH_ALLOW_AUTO_USER_CREATION=false\nCAMPUS_AUTH_ENABLED=false\nCAMPUS_AUTH_URL=https://file.example.com/login\nCAMPUS_AUTH_TIMEOUT=9\nCORS_ALLOW_ORIGINS=https://file.example.com\nRATE_LIMIT_PER_DAY=9\nRATE_LIMIT_PER_HOUR=3\nAI_END_URL=http://file-ai:4421\nAUTH_DEBUG=false\nUPLOAD_ROOT_DIR=/srv/oap/uploads\n")
 	if err := os.WriteFile(envPath, content, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -69,8 +67,8 @@ func TestLoad_DefaultPathPrefersParentDotEnv(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	parentEnv := []byte("DATABASE_URL=postgres://parent\nAUTH_JWT_SECRET=secret\nAUTH_REFRESH_HASH_KEY=refresh\nAUTH_ACCESS_TOKEN_TTL=1h\nAUTH_REFRESH_TOKEN_TTL=2h\nAUTH_PASSWORD_COST=10\nAUTH_ALLOW_AUTO_USER_CREATION=false\nCAMPUS_AUTH_ENABLED=false\nCAMPUS_AUTH_URL=https://example.com/login\nCAMPUS_AUTH_TIMEOUT=10\nCORS_ALLOW_ORIGINS=https://parent.example.com\nRATE_LIMIT_PER_DAY=9\nRATE_LIMIT_PER_HOUR=3\nAI_END_URL=http://file-ai:4421\nAUTH_DEBUG=false\nUPLOAD_ROOT_DIR=/srv/oap/uploads\n")
-	childEnv := []byte("DATABASE_URL=postgres://child\nAUTH_JWT_SECRET=secret\nAUTH_REFRESH_HASH_KEY=refresh\nAUTH_ACCESS_TOKEN_TTL=1h\nAUTH_REFRESH_TOKEN_TTL=2h\nAUTH_PASSWORD_COST=10\nAUTH_ALLOW_AUTO_USER_CREATION=false\nCAMPUS_AUTH_ENABLED=false\nCAMPUS_AUTH_URL=https://example.com/login\nCAMPUS_AUTH_TIMEOUT=10\nCORS_ALLOW_ORIGINS=https://child.example.com\nRATE_LIMIT_PER_DAY=9\nRATE_LIMIT_PER_HOUR=3\nAI_END_URL=http://file-ai:4421\nAUTH_DEBUG=false\nUPLOAD_ROOT_DIR=/srv/oap/uploads\n")
+	parentEnv := []byte("DATABASE_URL=postgres://parent\nAUTH_JWT_SECRET=secret\nAUTH_ACCESS_TOKEN_TTL=1h\nAUTH_PASSWORD_COST=10\nAUTH_ALLOW_AUTO_USER_CREATION=false\nCAMPUS_AUTH_ENABLED=false\nCAMPUS_AUTH_URL=https://example.com/login\nCAMPUS_AUTH_TIMEOUT=10\nCORS_ALLOW_ORIGINS=https://parent.example.com\nRATE_LIMIT_PER_DAY=9\nRATE_LIMIT_PER_HOUR=3\nAI_END_URL=http://file-ai:4421\nAUTH_DEBUG=false\nUPLOAD_ROOT_DIR=/srv/oap/uploads\n")
+	childEnv := []byte("DATABASE_URL=postgres://child\nAUTH_JWT_SECRET=secret\nAUTH_ACCESS_TOKEN_TTL=1h\nAUTH_PASSWORD_COST=10\nAUTH_ALLOW_AUTO_USER_CREATION=false\nCAMPUS_AUTH_ENABLED=false\nCAMPUS_AUTH_URL=https://example.com/login\nCAMPUS_AUTH_TIMEOUT=10\nCORS_ALLOW_ORIGINS=https://child.example.com\nRATE_LIMIT_PER_DAY=9\nRATE_LIMIT_PER_HOUR=3\nAI_END_URL=http://file-ai:4421\nAUTH_DEBUG=false\nUPLOAD_ROOT_DIR=/srv/oap/uploads\n")
 	if err := os.WriteFile(filepath.Join(rootDir, ".env"), parentEnv, 0o644); err != nil {
 		t.Fatalf("WriteFile parent .env: %v", err)
 	}

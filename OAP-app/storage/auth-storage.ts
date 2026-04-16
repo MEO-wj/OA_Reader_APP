@@ -8,7 +8,6 @@ import type { UserProfile, UserProfilePatch } from '@/types/profile';
 type SecureStoreModule = typeof ExpoSecureStore;
 
 const ACCESS_TOKEN_KEY = 'access_token';
-const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_PROFILE_KEY = 'user_profile';
 
 const isWebEnv = Platform.OS === 'web';
@@ -83,18 +82,6 @@ export async function setAccessToken(token: string | null) {
   await removeItem(ACCESS_TOKEN_KEY);
 }
 
-export async function getRefreshToken() {
-  return await getItem(REFRESH_TOKEN_KEY);
-}
-
-export async function setRefreshToken(token: string | null) {
-  if (token) {
-    await setItem(REFRESH_TOKEN_KEY, token);
-    return;
-  }
-  await removeItem(REFRESH_TOKEN_KEY);
-}
-
 export async function getUserProfileRaw() {
   return await getItem(USER_PROFILE_KEY);
 }
@@ -144,7 +131,6 @@ export function subscribeUserProfile(listener: () => void) {
 export async function clearAuthStorage() {
   await Promise.all([
     removeItem(ACCESS_TOKEN_KEY),
-    removeItem(REFRESH_TOKEN_KEY),
     removeItem(USER_PROFILE_KEY),
   ]);
   emitUserProfileChanged();

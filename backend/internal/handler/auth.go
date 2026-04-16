@@ -23,14 +23,6 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
-type LogoutRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
 func (h *AuthHandler) Login(c *gin.Context) {
 	reqID := requestIDFromContext(c)
 	meta := authMetadataFromContext(c)
@@ -54,51 +46,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	alog.Authf("[AUTH][%s][login] success user_id=%s", reqID, result.User.ID)
 
 	c.JSON(http.StatusOK, buildAuthResponse(result))
-}
-
-func (h *AuthHandler) Refresh(c *gin.Context) {
-	reqID := requestIDFromContext(c)
-	meta := authMetadataFromContext(c)
-	var req RefreshRequest
-	_ = c.ShouldBindJSON(&req)
-	alog.Authf("[AUTH][%s][refresh] request received token_len=%d ip=%q ua=%q", reqID, len(req.RefreshToken), meta.IP, meta.UserAgent)
-
-	result, err := h.authService.Refresh(req.RefreshToken, meta)
-	if err != nil {
-		alog.Authf("[AUTH][%s][refresh] failed err=%v", reqID, err)
-		switch mapAuthError(err) {
-		case http.StatusBadRequest:
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		case http.StatusUnauthorized:
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "刷新令牌无效或已过期"})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新失败: " + err.Error()})
-		}
-		return
-	}
-	alog.Authf("[AUTH][%s][refresh] success user_id=%s", reqID, result.User.ID)
-
-	c.JSON(http.StatusOK, buildAuthResponse(result))
-}
-
-func (h *AuthHandler) Logout(c *gin.Context) {
-	reqID := requestIDFromContext(c)
-	var req LogoutRequest
-	_ = c.ShouldBindJSON(&req)
-	alog.Authf("[AUTH][%s][logout] request received token_len=%d", reqID, len(req.RefreshToken))
-
-	if err := h.authService.Logout(req.RefreshToken); err != nil {
-		alog.Authf("[AUTH][%s][logout] failed err=%v", reqID, err)
-		switch mapAuthError(err) {
-		case http.StatusBadRequest:
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "登出失败: " + err.Error()})
-		}
-		return
-	}
-	alog.Authf("[AUTH][%s][logout] success", reqID)
-	c.JSON(http.StatusOK, gin.H{"message": "已登出"})
 }
 
 func (h *AuthHandler) Me(c *gin.Context) {
@@ -130,7 +77,7 @@ func mapAuthError(err error) int {
 	switch {
 	case errors.Is(err, service.ErrValidation):
 		return http.StatusBadRequest
-	case errors.Is(err, service.ErrInvalidCredentials), errors.Is(err, service.ErrInvalidToken):
+	case errors.Is(err, service.ErrInvalidCredentials):
 		return http.StatusUnauthorized
 	default:
 		return http.StatusInternalServerError
@@ -139,10 +86,9 @@ func mapAuthError(err error) int {
 
 func buildAuthResponse(result *service.LoginResult) gin.H {
 	return gin.H{
-		"access_token":  result.AccessToken,
-		"refresh_token": result.RefreshToken,
-		"token_type":    result.TokenType,
-		"expires_in":    result.ExpiresIn,
+		"access_token": result.AccessToken,
+		"token_type":   result.TokenType,
+		"expires_in":   result.ExpiresIn,
 		"user": gin.H{
 			"id":           result.User.ID,
 			"username":     result.User.Username,

@@ -10,7 +10,7 @@ func DefaultVersions(_ *gorm.DB) []Version {
 		{
 			ID: "2026032601_base_schema",
 			Up: func(tx *gorm.DB) error {
-				return tx.AutoMigrate(&model.User{}, &model.Session{}, &model.Article{})
+				return tx.AutoMigrate(&model.User{}, &model.Article{})
 			},
 		},
 		{
@@ -101,7 +101,6 @@ func DefaultVersions(_ *gorm.DB) []Version {
 						END IF;
 					END $$;
 
-					CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON sessions(user_id);
 					CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON conversation_sessions(user_id);
 				`).Error
 			},
@@ -126,6 +125,12 @@ func DefaultVersions(_ *gorm.DB) []Version {
 
 					DROP INDEX IF EXISTS idx_vectors_article_id;
 				`).Error
+			},
+		},
+		{
+			ID: "2026041501_cleanup_sessions",
+			Up: func(tx *gorm.DB) error {
+				return tx.Exec(`DROP TABLE IF EXISTS sessions`).Error
 			},
 		},
 	}

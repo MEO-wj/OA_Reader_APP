@@ -1,6 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useEffect } from 'react';
-import { AppState } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
@@ -8,7 +7,6 @@ import 'react-native-reanimated';
 import { useAuthTokenState } from '@/hooks/use-auth-token';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { registerNotificationTaskIfEnabled } from '@/notifications/notification-task';
-import { refreshSessionOnForeground } from '@/services/auth';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -18,24 +16,6 @@ export default function RootLayout() {
 
   useEffect(() => {
     registerNotificationTaskIfEnabled();
-  }, []);
-
-  useEffect(() => {
-    const refreshIfActive = () => {
-      void refreshSessionOnForeground();
-    };
-
-    refreshIfActive();
-
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        refreshIfActive();
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
   }, []);
 
   useEffect(() => {
