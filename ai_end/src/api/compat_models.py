@@ -10,6 +10,7 @@ class AskCompatRequest(BaseModel):
     top_k: int | str | None = None
     display_name: str | None = None
     user_id: str | None = None
+    conversation_id: str | None = None
 
     @field_validator("top_k", mode="before")
     @classmethod

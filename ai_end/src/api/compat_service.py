@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.config.settings import Config
@@ -37,7 +37,7 @@ def _today_range(tz_name: str = "UTC") -> tuple[datetime, datetime]:
     try:
         tz = ZoneInfo(tz_name)
     except (KeyError, Exception):
-        tz = ZoneInfo("UTC")
+        tz = timezone.utc
 
     now = datetime.now(tz)
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -126,6 +126,7 @@ class CompatService:
     async def _resolve_session(
         self,
         user_id: str,
+        conversation_id: str | None = None,
     ) -> tuple[str, bool]:
         """根据 user_id 解析/创建当天会话。
 
@@ -133,6 +134,14 @@ class CompatService:
             (conversation_id, session_created)
         """
         db = self._create_memory_db()
+
+        if conversation_id:
+            session = await db.get_session(user_id, conversation_id)
+            if session:
+                return conversation_id, False
+
+            await db.create_session(user_id, conversation_id, "新会话")
+            return conversation_id, True
 
         tz_name = await self._resolve_timezone()
         start_utc, end_utc = _today_range(tz_name)
@@ -349,6 +358,7 @@ class CompatService:
         user_id: str | None = None,
         top_k: Any = None,
         display_name: str | None = None,
+        conversation_id: str | None = None,
     ) -> dict[str, Any]:
         """兼容旧 /ask 接口：聚合事件流，返回单个 JSON。
 
@@ -362,7 +372,7 @@ class CompatService:
             至少包含 ``answer`` 和 ``related_articles`` 的字典。
             当 ``user_id`` 存在时，额外包含 ``conversation_id`` 和 ``session_created``。
         """
-        conversation_id: str | None = None
+        resolved_conversation_id = conversation_id
         session_created: bool = False
 
         # 1) 构建运行时提示并追加到问题
@@ -375,11 +385,14 @@ class CompatService:
 
         # 2) 会话解析（仅 user_id 存在时）
         if user_id:
-            conversation_id, session_created = await self._resolve_session(user_id)
+            resolved_conversation_id, session_created = await self._resolve_session(
+                user_id,
+                resolved_conversation_id,
+            )
 
         # 3) 创建 ChatClient 并收集事件
         client = await self._create_chat_client(
-            self.config, user_id, conversation_id,
+            self.config, user_id, resolved_conversation_id,
         )
 
         collected_events: list[dict[str, Any]] = []
@@ -391,7 +404,7 @@ class CompatService:
 
         # 5) 附加会话字段（仅 user_id 存在时）
         if user_id:
-            result["conversation_id"] = conversation_id
+            result["conversation_id"] = resolved_conversation_id
             result["session_created"] = session_created
 
         return result

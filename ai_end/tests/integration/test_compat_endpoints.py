@@ -167,6 +167,33 @@ def test_ask_with_user_id_success(monkeypatch):
     assert data["session_created"] is True
 
 
+def test_ask_forwards_conversation_id(monkeypatch):
+    """/ask 应将调用方传入的 conversation_id 继续传给 CompatService.ask。"""
+    from src.api.main import app
+    from src.api.compat_service import CompatService
+
+    captured: dict[str, object] = {}
+
+    async def _mock_ask_capture(self, **kwargs):
+        captured.update(kwargs)
+        return {"answer": "mock", "related_articles": [], "conversation_id": "conv-9"}
+
+    monkeypatch.setattr(CompatService, "ask", _mock_ask_capture)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/ask",
+        json={
+            "question": "测试",
+            "user_id": VALID_UUID,
+            "conversation_id": "conv-9",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert captured["conversation_id"] == "conv-9"
+
+
 # ---------------------------------------------------------------------------
 # 异常处理测试（C1）
 # ---------------------------------------------------------------------------

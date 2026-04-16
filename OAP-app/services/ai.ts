@@ -1,6 +1,7 @@
 import EventSource from 'react-native-sse';
 
 import type { RelatedArticle } from '@/types/article';
+import { StreamAbortedError } from '@/services/ai-errors';
 import { getApiBaseUrl } from '@/services/api';
 import {
   dedupeRelatedArticles,
@@ -48,14 +49,26 @@ async function parseErrorResponse(resp: Response) {
   return new Error(toUserFriendlyError(errorData, resp.status));
 }
 
-export async function askAi(question: string, token: string, displayName?: string) {
+export async function askAi(
+  question: string,
+  token: string,
+  displayName?: string,
+  conversationId?: string | null,
+  signal?: AbortSignal
+) {
   const resp = await fetch(`${getApiBaseUrl()}/ai/ask`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ question, top_k: 3, display_name: displayName || undefined }),
+    body: JSON.stringify({
+      question,
+      top_k: 3,
+      display_name: displayName || undefined,
+      conversation_id: conversationId || undefined,
+    }),
+    signal,
   });
   if (!resp.ok) {
     throw await parseErrorResponse(resp);
@@ -73,6 +86,7 @@ type StreamAiChatOptions = {
   displayName?: string;
   topK?: number;
   conversationId?: string | null;
+  signal?: AbortSignal;
   onStart?: (payload: { conversationId?: string }) => void;
   onDelta?: (delta: string) => void;
   onRelated?: (related: RelatedArticle[]) => void;
@@ -101,6 +115,7 @@ export async function streamAiChat({
   displayName,
   topK = 3,
   conversationId,
+  signal,
   onStart,
   onDelta,
   onRelated,
@@ -110,6 +125,19 @@ export async function streamAiChat({
   return new Promise<void>((resolve, reject) => {
     const collectedRelated: RelatedArticle[] = [];
     let settled = false;
+
+    const fail = (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const abortStream = () => {
+      fail(new StreamAbortedError());
+    };
 
     const es = new EventSource<AiStreamEventName>(url, {
       method: 'POST',
@@ -129,6 +157,7 @@ export async function streamAiChat({
     });
 
     const cleanup = () => {
+      signal?.removeEventListener('abort', abortStream);
       es.removeAllEventListeners();
       es.close();
     };
@@ -142,14 +171,12 @@ export async function streamAiChat({
       resolve();
     };
 
-    const fail = (error: Error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      reject(error);
-    };
+    if (signal?.aborted) {
+      abortStream();
+      return;
+    }
+
+    signal?.addEventListener('abort', abortStream, { once: true });
 
     es.addEventListener('start', (event) => {
       const data = readCustomEventData(event);
@@ -186,11 +213,20 @@ export async function streamAiChat({
 
     es.addEventListener('close', () => {
       if (!settled) {
+        if (signal?.aborted) {
+          fail(new StreamAbortedError());
+          return;
+        }
         fail(new Error('AI 连接已关闭'));
       }
     });
 
     es.addEventListener('error', (event) => {
+      if (signal?.aborted) {
+        fail(new StreamAbortedError());
+        return;
+      }
+
       const rawData =
         'data' in event && (typeof event.data === 'string' || event.data === null)
           ? event.data

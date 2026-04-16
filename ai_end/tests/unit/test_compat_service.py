@@ -49,9 +49,13 @@ class _FakeMemoryDB:
     def __init__(
         self,
         latest_session: dict | None = None,
+        sessions_by_id: dict[str, dict] | None = None,
     ):
         self._latest_session = latest_session
         self._created_sessions: list[tuple[str, str]] = []
+        self._sessions_by_id = sessions_by_id or {}
+        if latest_session and latest_session.get("conversation_id"):
+            self._sessions_by_id.setdefault(latest_session["conversation_id"], latest_session)
 
     async def get_latest_session_in_utc_range(self, user_id, start_utc, end_utc):
         return self._latest_session
@@ -59,8 +63,18 @@ class _FakeMemoryDB:
     async def get_latest_session_with_messages(self, user_id, start_utc, end_utc):
         return self._latest_session
 
+    async def get_session(self, user_id, conversation_id):
+        return self._sessions_by_id.get(conversation_id)
+
     async def create_session(self, user_id, conversation_id, title="新会话"):
         self._created_sessions.append((user_id, conversation_id))
+        self._sessions_by_id[conversation_id] = {
+            "user_id": user_id,
+            "conversation_id": conversation_id,
+            "title": title,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+        }
 
     async def ensure_user_exists(self, user_id):
         pass
@@ -265,6 +279,57 @@ class TestCompatServiceAsk:
         assert result["conversation_id"] == "reuse-me"
         assert result["session_created"] is False
         # 不应创建新会话
+        assert len(fake_memory._created_sessions) == 0
+
+    @pytest.mark.asyncio
+    async def test_ask_prefers_explicit_conversation_id_over_latest_session(self, monkeypatch):
+        """
+        调用方显式传入 conversation_id 时，应优先使用该会话，而不是“当天最新会话”。
+        """
+        from src.api.compat_service import CompatService
+
+        config = _make_config()
+        fake_memory = _FakeMemoryDB(
+            latest_session={
+                "conversation_id": "latest-conv",
+                "user_id": "u1",
+                "title": "最新会话",
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+            },
+            sessions_by_id={
+                "target-conv": {
+                    "conversation_id": "target-conv",
+                    "user_id": "u1",
+                    "title": "目标会话",
+                    "created_at": datetime.now(),
+                    "updated_at": datetime.now(),
+                },
+            },
+        )
+        fake_client = _FakeClient([
+            {"type": "delta", "content": "ok"},
+            {"type": "done", "usage": {}},
+        ])
+        called = {}
+
+        async def _fake_create_client(cfg, uid, cid):
+            called["conversation_id"] = cid
+            return fake_client
+
+        service = CompatService(config=config)
+        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
+        monkeypatch.setattr(service, "_create_chat_client", _fake_create_client)
+
+        result = await service.ask(
+            question="q",
+            user_id="u1",
+            conversation_id="target-conv",
+        )
+
+        assert result["conversation_id"] == "target-conv"
+        assert result["session_created"] is False
+        assert called["conversation_id"] == "target-conv"
         assert len(fake_memory._created_sessions) == 0
 
 

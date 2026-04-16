@@ -261,6 +261,7 @@ async def ask_compat(request: AskCompatRequest) -> dict:
             user_id=request.user_id,
             top_k=request.top_k,
             display_name=request.display_name,
+            conversation_id=request.conversation_id,
         )
         return JSONResponse(content=payload, media_type="application/json")
     except Exception as exc:
