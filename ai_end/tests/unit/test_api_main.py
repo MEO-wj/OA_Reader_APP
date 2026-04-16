@@ -130,6 +130,47 @@ async def test_chat_endpoint_sets_conversation_header(monkeypatch):
     assert response.headers["x-conversation-id"] == "conv-in"
 
 
+@pytest.mark.asyncio
+async def test_chat_endpoint_applies_runtime_hints(monkeypatch):
+    from src.api.main import chat
+    from src.api.models import ChatRequest
+
+    class _FakeMemoryDB:
+        async def get_or_create_session(self, user_id: str, conversation_id: str | None = None):
+            assert user_id == VALID_UUID
+            return "conv-default", "新会话"
+
+    class _FakeChatService:
+        def __init__(self, user_id: str | None = None, conversation_id: str | None = None):
+            self.user_id = user_id
+            self.conversation_id = conversation_id
+
+        async def chat_stream(self, message: str):
+            assert message == "hello\n请优先返回前 3 条相关结果\n可酌情称呼用户为Alice"
+            yield 'event: done\\ndata: {"type": "done"}\\n\\n'
+
+    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None):
+        return _FakeChatService(user_id=user_id, conversation_id=conversation_id)
+
+    monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
+    monkeypatch.setattr("src.api.main.get_chat_service", _fake_get_chat_service)
+
+    response = await chat(
+        ChatRequest(
+            message="hello",
+            user_id=VALID_UUID,
+            top_k=3,
+            display_name="Alice",
+        )
+    )
+
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk)
+
+    assert "event: done" in "".join(chunks)
+
+
 def test_list_sessions_endpoint(monkeypatch):
     from src.api.main import app
 

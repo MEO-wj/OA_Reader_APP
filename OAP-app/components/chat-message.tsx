@@ -36,7 +36,7 @@ export function ChatMessageItem({ message, renderMarkdown, isThinking }: ChatMes
         {message.isUser && <View style={styles.userLine} />}
         {message.isUser ? (
           <Text style={styles.messageText}>{message.text}</Text>
-        ) : isThinking ? (
+        ) : isThinking && !message.text.trim() ? (
           <ThinkingIndicator />
         ) : (
           renderMarkdown(message.text || ' ')

@@ -21,6 +21,7 @@ from scripts.import_skills import main as import_skills_main
 from src.chat.handlers import shutdown_tool_loop
 from src.api.models import ChatRequest, ConversationCreate, HealthResponse, SkillsResponse
 from src.api.compat_models import AskCompatRequest, ClearMemoryCompatRequest, EmbedCompatRequest
+from src.api.compat_service import build_runtime_hints
 from src.api.import_decider import should_run_auto_import
 from src.api.admin import router as admin_router
 from src.core.api_clients import close_clients
@@ -133,8 +134,15 @@ async def chat(request: ChatRequest) -> StreamingResponse:
         user_id=request.user_id,
         conversation_id=conversation_id,
     )
+    hints = build_runtime_hints(
+        top_k=request.top_k,
+        display_name=request.display_name,
+    )
+    effective_message = request.message
+    if hints:
+        effective_message = f"{request.message}\n" + "\n".join(hints.values())
     return StreamingResponse(
-        service.chat_stream(request.message),
+        service.chat_stream(effective_message),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

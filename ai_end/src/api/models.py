@@ -12,6 +12,15 @@ class ChatRequest(BaseModel):
     message: str
     user_id: str = Field(min_length=1, max_length=64)  # 限制长度，避免数据库约束错误
     conversation_id: str | None = None
+    top_k: int | str | None = None
+    display_name: str | None = None
+
+    @field_validator("top_k", mode="before")
+    @classmethod
+    def _reject_bool_top_k(cls, v: object) -> object:
+        if isinstance(v, bool):
+            raise ValueError("top_k must be an integer or string, not boolean")
+        return v
 
     @field_validator("user_id")
     @classmethod

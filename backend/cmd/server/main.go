@@ -84,6 +84,7 @@ func main() {
 	ai := r.Group("/api/ai")
 	ai.Use(middleware.AuthRequired(cfg.AuthJWTSecret))
 	{
+		ai.POST("/chat", aiHandler.Chat)
 		ai.POST("/ask", aiHandler.Ask)
 		ai.POST("/clear_memory", aiHandler.ClearMemory)
 		ai.POST("/embed", aiHandler.Embed)

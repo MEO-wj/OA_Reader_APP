@@ -1,11 +1,23 @@
 # Build stage
-FROM docker.1ms.run/golang:1.21-alpine AS builder
+ARG BUILDER_IMAGE=docker.1ms.run/golang:1.21-alpine
+ARG RUNTIME_IMAGE=docker.1ms.run/alpine:3.19
+FROM ${BUILDER_IMAGE} AS builder
 
 WORKDIR /app
 
 # 安装依赖 - 使用国内镜像源
-RUN apk add --no-cache git && \
-    echo 'https://mirrors.ustc.edu.cn' > /etc/apk/repositories
+RUN set -eux; \
+    printf '%s\n' \
+        'https://mirrors.ustc.edu.cn/alpine/v3.19/main' \
+        'https://mirrors.ustc.edu.cn/alpine/v3.19/community' \
+        > /etc/apk/repositories; \
+    if ! apk add --no-cache git; then \
+        printf '%s\n' \
+            'https://dl-cdn.alpinelinux.org/alpine/v3.19/main' \
+            'https://dl-cdn.alpinelinux.org/alpine/v3.19/community' \
+            > /etc/apk/repositories; \
+        apk add --no-cache git; \
+    fi
 
 # 复制 go mod 文件
 COPY go.mod go.sum ./
@@ -22,13 +34,24 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /server ./cmd/server
 
 # Runtime stage
-FROM docker.1ms.run/alpine:3.19
+ARG RUNTIME_IMAGE
+FROM ${RUNTIME_IMAGE}
 
 WORKDIR /app
 
 # 安装 CA 证书 - 使用国内镜像源
-RUN apk add --no-cache ca-certificates tzdata && \
-    echo 'https://mirrors.ustc.edu.cn' > /etc/apk/repositories
+RUN set -eux; \
+    printf '%s\n' \
+        'https://mirrors.ustc.edu.cn/alpine/v3.19/main' \
+        'https://mirrors.ustc.edu.cn/alpine/v3.19/community' \
+        > /etc/apk/repositories; \
+    if ! apk add --no-cache ca-certificates tzdata; then \
+        printf '%s\n' \
+            'https://dl-cdn.alpinelinux.org/alpine/v3.19/main' \
+            'https://dl-cdn.alpinelinux.org/alpine/v3.19/community' \
+            > /etc/apk/repositories; \
+        apk add --no-cache ca-certificates tzdata; \
+    fi
 
 # 创建非 root 用户
 RUN adduser -D -g '' appuser

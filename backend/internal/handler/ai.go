@@ -49,6 +49,13 @@ func (h *AIHandler) Ask(c *gin.Context) {
 	h.proxy(c, "/ask")
 }
 
+func (h *AIHandler) Chat(c *gin.Context) {
+	if !injectUserID(c) {
+		return
+	}
+	h.proxy(c, "/chat")
+}
+
 func (h *AIHandler) ClearMemory(c *gin.Context) {
 	if !injectUserID(c) {
 		return

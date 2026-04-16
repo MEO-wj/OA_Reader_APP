@@ -9,7 +9,7 @@ networks:
 
 services:
   postgres:
-    image: docker.1ms.run/ankane/pgvector:latest
+    image: ${PGVECTOR_IMAGE:-docker.1ms.run/ankane/pgvector:latest}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-oa-reader}
       POSTGRES_USER: ${POSTGRES_USER:-Unself}
@@ -31,6 +31,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        BUILDER_IMAGE: ${GO_BUILDER_IMAGE:-docker.1ms.run/golang:1.21-alpine}
+        RUNTIME_IMAGE: ${ALPINE_RUNTIME_IMAGE:-docker.1ms.run/alpine:3.19}
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-Unself}:${POSTGRES_PASSWORD:-Unself-oa-reader-5}@postgres:5432/${POSTGRES_DB:-oa-reader}?sslmode=disable
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-your-jwt-secret-key-change-in-production}
@@ -61,6 +64,8 @@ services:
     build:
       context: ./ai_end
       dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${PYTHON_IMAGE:-docker.1ms.run/python:3.11-slim}
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
