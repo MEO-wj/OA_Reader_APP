@@ -19,6 +19,7 @@ SYSTEM_PROMPT_TEMPLATE = """你是一个智能校园 OA 助手，善于理解用
 - 不要暴露内部工具调用过程，不提及工具名、调用参数等实现细节
 - 信息不足时先说明不确定性，再给合理的建议方案，禁用承诺性表述
 
+{user_profile_section}
 【数据库保存的用户画像】
 {profile_section}"""
 
@@ -146,3 +147,34 @@ DOC_SUMMARY_USER_PROMPT_TEMPLATE = """请为以下文档生成一个简短的摘
 
 摘要："""
 READ_REFERENCE_TOOL_DESCRIPTION = "【重要】只有在调用技能后才能使用！读取技能目录下的 references 文件内容。使用流程：1) 先调用相关技能获取 SKILL.md；2) 查看 SKILL.md 中提到的 references 文件路径；3) 使用此工具读取具体文件。不要直接使用此工具而不先调用技能。"
+
+
+def build_user_profile_section(
+    display_name: str | None = None,
+    profile_tags: list[str] | None = None,
+    bio: str | None = None,
+) -> str:
+    """构建用户资料提示词区块。
+
+    用户手动填写的资料与 AI 画像分离，每次从 DB 实时读取，
+    用户修改后即时生效，不写入 AI 画像表。
+
+    Returns:
+        格式化的用户资料文本，所有字段为空时返回空字符串。
+    """
+    lines: list[str] = []
+
+    if display_name:
+        lines.append(f"昵称：{display_name}")
+
+    if profile_tags:
+        tags_str = "、".join(profile_tags)
+        lines.append(f"兴趣标签：{tags_str}")
+
+    if bio:
+        lines.append(f"个人简介：{bio}")
+
+    if not lines:
+        return ""
+
+    return "【用户资料】\n" + "\n".join(lines)

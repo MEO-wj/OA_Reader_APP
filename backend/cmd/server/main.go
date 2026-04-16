@@ -36,11 +36,14 @@ func main() {
 	articleService := service.NewArticleService()
 	profileService := service.NewProfileService(repository.NewUserRepository())
 
+	aiQueue := handler.NewAIRequestQueue(2)
+	defer aiQueue.Close()
+
 	// 初始化处理器
 	authHandler := handler.NewAuthHandler(authService)
 	articleHandler := handler.NewArticleHandler(articleService)
 	profileHandler := handler.NewProfileHandlerWithUploadRoot(profileService, cfg.UploadRootDir)
-	aiHandler := handler.NewAIHandler(cfg.AIEndURL)
+	aiHandler := handler.NewAIHandler(cfg.AIEndURL, aiQueue)
 
 	// Gin 路由
 	r := gin.Default()
@@ -81,7 +84,9 @@ func main() {
 	// AI 路由 (需要认证)
 	ai := r.Group("/api/ai")
 	ai.Use(middleware.AuthRequired(cfg.AuthJWTSecret))
+	ai.Use(middleware.InjectProfile(profileService))
 	{
+		ai.POST("/chat", aiHandler.Chat)
 		ai.POST("/ask", aiHandler.Ask)
 		ai.POST("/clear_memory", aiHandler.ClearMemory)
 		ai.POST("/embed", aiHandler.Embed)

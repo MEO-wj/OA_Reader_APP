@@ -10,11 +10,17 @@ from src.di.providers import create_chat_client
 class ChatService:
     """聊天服务 - 处理 SSE 流式响应"""
 
-    def __init__(self, user_id: str | None = None, conversation_id: str | None = None) -> None:
+    def __init__(
+        self,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+        user_profile: dict | None = None,
+    ) -> None:
         self.config = Config.load()
         self._client = None
         self.user_id = self._normalize_user_id(user_id)
         self.conversation_id = conversation_id or "default"
+        self.user_profile = user_profile
 
     @staticmethod
     def _normalize_user_id(user_id: str | None) -> str | None:
@@ -37,6 +43,7 @@ class ChatService:
                 self.config,
                 self.user_id,
                 self.conversation_id,
+                user_profile=self.user_profile,
             )
         return self._client
 

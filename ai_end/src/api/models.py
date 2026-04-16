@@ -12,6 +12,10 @@ class ChatRequest(BaseModel):
     message: str
     user_id: str = Field(min_length=1, max_length=64)  # 限制长度，避免数据库约束错误
     conversation_id: str | None = None
+    # 用户资料字段（由 Backend 从 users 表查询后注入）
+    display_name: str | None = None
+    profile_tags: list[str] | None = None
+    bio: str | None = None
 
     @field_validator("user_id")
     @classmethod

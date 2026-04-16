@@ -82,7 +82,7 @@ async def test_chat_endpoint_streams_sse_from_chat_service(monkeypatch):
 
     called = {}
 
-    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None):
+    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None, user_profile: dict | None = None):
         called["user_id"] = user_id
         called["conversation_id"] = conversation_id
         return _FakeChatService(user_id=user_id, conversation_id=conversation_id)
@@ -120,7 +120,7 @@ async def test_chat_endpoint_sets_conversation_header(monkeypatch):
         async def chat_stream(self, _message: str):
             yield 'event: done\\ndata: {"type": "done"}\\n\\n'
 
-    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None):
+    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None, user_profile: dict | None = None):
         return _FakeChatService(user_id=user_id, conversation_id=conversation_id)
 
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)

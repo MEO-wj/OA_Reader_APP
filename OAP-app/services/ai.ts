@@ -78,3 +78,83 @@ export async function clearAiMemory(token: string) {
     cleared?: boolean;
   };
 }
+
+export type SSEEvent = {
+  type: string;
+  [key: string]: unknown;
+};
+
+export async function chatSSE(
+  message: string,
+  token: string,
+  onEvent: (event: SSEEvent) => void,
+  conversationId?: string,
+  onError?: (error: Error) => void,
+): Promise<void> {
+  const resp = await fetch(`${getApiBaseUrl()}/ai/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({
+      message,
+      conversation_id: conversationId || undefined,
+    }),
+  });
+
+  if (!resp.ok) {
+    let errorMsg = '当前服务不可用，请稍后再试。';
+    if (resp.status === 503) errorMsg = '服务繁忙，请稍后再试';
+    else if (resp.status === 401) errorMsg = '登录已过期，请重新登录';
+    onError?.(new Error(errorMsg));
+    return;
+  }
+
+  const reader = resp.body?.getReader();
+  if (!reader) {
+    onError?.(new Error('无法读取响应流'));
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const eventBlock of events) {
+        const lines = eventBlock.split('\n');
+        let eventType = 'message';
+        let dataStr = '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            dataStr = line.slice(6);
+          }
+        }
+
+        if (!dataStr) continue;
+
+        try {
+          const data = JSON.parse(dataStr);
+          onEvent({ type: eventType, ...data });
+        } catch {
+          // ignore unparseable data
+        }
+      }
+    }
+  } catch (err) {
+    onError?.(err instanceof Error ? err : new Error('连接中断'));
+  }
+}

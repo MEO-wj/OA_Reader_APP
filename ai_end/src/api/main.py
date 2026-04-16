@@ -20,7 +20,7 @@ from scripts.import_skills import main as import_skills_main
 
 from src.chat.handlers import shutdown_tool_loop
 from src.api.models import ChatRequest, ConversationCreate, HealthResponse, SkillsResponse
-from src.api.compat_models import AskCompatRequest, ClearMemoryCompatRequest, EmbedCompatRequest
+from src.api.compat_models import ClearMemoryCompatRequest, EmbedCompatRequest
 from src.api.import_decider import should_run_auto_import
 from src.api.admin import router as admin_router
 from src.core.api_clients import close_clients
@@ -129,9 +129,19 @@ async def chat(request: ChatRequest) -> StreamingResponse:
         request.conversation_id,
     )
 
+    # Collect user profile (only pass when data exists)
+    user_profile = None
+    if request.display_name or request.profile_tags or request.bio:
+        user_profile = {
+            "display_name": request.display_name,
+            "profile_tags": request.profile_tags,
+            "bio": request.bio,
+        }
+
     service = get_chat_service(
         user_id=request.user_id,
         conversation_id=conversation_id,
+        user_profile=user_profile,
     )
     return StreamingResponse(
         service.chat_stream(request.message),
@@ -237,27 +247,6 @@ async def delete_chat_history(user_id: str = Query(min_length=1, max_length=64))
 # ---------------------------------------------------------------------------
 # 旧 AI End 兼容路由（通过 CompatService 桥接到新 ChatClient 事件流）
 # ---------------------------------------------------------------------------
-
-
-@app.post("/ask", response_model=dict)
-async def ask_compat(request: AskCompatRequest) -> dict:
-    """旧 /ask 兼容端点"""
-    if not request.question:
-        return JSONResponse(status_code=400, content={"error": "请求参数错误，缺少question字段"})
-    from src.api.compat_service import CompatService
-
-    try:
-        service = CompatService()
-        payload = await service.ask(
-            question=request.question,
-            user_id=request.user_id,
-            top_k=request.top_k,
-            display_name=request.display_name,
-        )
-        return JSONResponse(content=payload, media_type="application/json")
-    except Exception as exc:
-        logger.exception("/ask compat error")
-        return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
 @app.post("/clear_memory", response_model=dict)

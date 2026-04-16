@@ -7,7 +7,7 @@ from src.api.models import (
     ConversationListResponse,
     ConversationResponse,
 )
-from src.api.compat_models import AskCompatRequest, ClearMemoryCompatRequest
+from src.api.compat_models import ClearMemoryCompatRequest
 
 VALID_UUID = "123e4567-e89b-12d3-a456-426614174000"
 
@@ -49,8 +49,9 @@ def test_conversation_create_accepts_uuid_user_id():
 
 
 def test_compat_models_validate_uuid_user_id():
-    req = AskCompatRequest(question="test", user_id=VALID_UUID)
-    assert req.user_id == VALID_UUID
-
     with pytest.raises(ValidationError, match="user_id must be a valid UUID"):
         ClearMemoryCompatRequest(user_id="bad-user")
+
+    # valid UUID should pass
+    req = ClearMemoryCompatRequest(user_id=VALID_UUID)
+    assert req.user_id == VALID_UUID

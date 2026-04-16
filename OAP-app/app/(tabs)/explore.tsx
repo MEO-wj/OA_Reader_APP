@@ -63,7 +63,7 @@ export default function AiAssistantScreen() {
   const token = useAuthToken();
   const displayName = useDisplayName('用户');
   const mermaidScript = useMermaidScript();
-  const { messages, isThinking, sendChat, clearChat } = useAiChat(token, displayName);
+  const { messages, isThinking, sendChat, clearChat } = useAiChat(token);
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = usePalette();
