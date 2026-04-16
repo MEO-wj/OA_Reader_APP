@@ -28,6 +28,8 @@ const TITLE_HEADER_RE = /标题|主题|名称|事项|文件|文章|通知|帖子
 const TABLE_REQUEST_RE =
   /(表格|表形式|列表格|table|markdown table|tabular|按表格|用表格|以表格)/i;
 const NOISE_FIELD_RE = /^(序号|编号|序列|no\.?|No\.?)$/i;
+const EXPLANATION_LABEL_HEADER_RE = /^(项目|字段|要点|模块|事项|条目|类别|问题|维度|环节|部分|板块|步骤)$/i;
+const EXPLANATION_VALUE_HEADER_RE = /^(内容|说明|解读|要求|详情|描述|介绍|答案|结果|分析|做法)$/i;
 
 function splitTableRow(line: string): string[] {
   return line
@@ -55,6 +57,46 @@ function isTableRow(line: string) {
 
 function isNoiseFieldLabel(label: string) {
   return NOISE_FIELD_RE.test(label.trim());
+}
+
+function stripInlineMarkdown(text: string) {
+  return text
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^#+\s*/, '')
+    .replace(/[*_`~]/g, '')
+    .trim();
+}
+
+function isExplanationTable(headers: string[], rawRows: string[][]) {
+  if (headers.length !== 2 || rawRows.length === 0) {
+    return false;
+  }
+
+  const [labelHeader, valueHeader] = headers.map((header) => stripInlineMarkdown(header));
+  if (
+    !EXPLANATION_LABEL_HEADER_RE.test(labelHeader) ||
+    !EXPLANATION_VALUE_HEADER_RE.test(valueHeader)
+  ) {
+    return false;
+  }
+
+  return rawRows.every((cells) => {
+    const label = stripInlineMarkdown(cells[0] ?? '');
+    const value = (cells[1] ?? '').trim();
+    return label.length > 0 && value.length > 0;
+  });
+}
+
+function buildExplanationMarkdown(rawRows: string[][]) {
+  return rawRows
+    .map((cells, index) => {
+      const label = stripInlineMarkdown(cells[0] ?? '') || `要点 ${index + 1}`;
+      const value = (cells[1] ?? '').trim();
+      return value ? `### ${label}\n${value}` : `### ${label}`;
+    })
+    .join('\n\n')
+    .trim();
 }
 
 function buildTableRows(headers: string[], rawRows: string[][]): MobileTableCardRow[] {
@@ -162,6 +204,11 @@ export function segmentMarkdownForMobile(
         type: 'table_grid',
         headers,
         rows: rawRows,
+      });
+    } else if (isExplanationTable(headers, rawRows)) {
+      segments.push({
+        type: 'markdown',
+        content: buildExplanationMarkdown(rawRows),
       });
     } else {
       segments.push({

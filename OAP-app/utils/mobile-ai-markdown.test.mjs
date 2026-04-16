@@ -29,6 +29,26 @@ test('segmentMarkdownForMobile converts markdown tables into article card segmen
   ]);
 });
 
+test('segmentMarkdownForMobile converts explanation tables into layered markdown blocks', () => {
+  const content = `| 项目 | 内容 |
+| --- | --- |
+| **奖励对象** | 全日制在校二年级以上（含二年级）品学兼优的本科学生 |
+| 申请条件 | 学习成绩与综合素质排名均位于前10% |`;
+
+  const segments = segmentMarkdownForMobile(content);
+
+  assert.deepEqual(segments, [
+    {
+      type: 'markdown',
+      content: `### 奖励对象
+全日制在校二年级以上（含二年级）品学兼优的本科学生
+
+### 申请条件
+学习成绩与综合素质排名均位于前10%`,
+    },
+  ]);
+});
+
 test('segmentMarkdownForMobile keeps plain markdown as a single segment', () => {
   const content = `### 奖学金提醒
 请优先关注截止时间，并准备好证明材料。`;
