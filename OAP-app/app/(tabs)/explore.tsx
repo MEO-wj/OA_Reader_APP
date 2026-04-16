@@ -21,9 +21,10 @@ import { BottomDock } from '@/components/bottom-dock';
 import { ChatInput } from '@/components/chat-input';
 import { ChatMessageItem } from '@/components/chat-message';
 import { MarkdownTableCards } from '@/components/markdown-table-cards';
+import { MarkdownTableGrid } from '@/components/markdown-table-grid';
 import { SourceList } from '@/components/source-list';
 import { TopBar } from '@/components/top-bar';
-import { getChatInputDockOffset, getTabContentBottomPadding } from '@/constants/layout-metrics';
+import { getChatInputDockOffset } from '@/constants/layout-metrics';
 import { shadows } from '@/constants/shadows';
 import { useAiChat } from '@/hooks/use-ai-chat';
 import { useAuthToken } from '@/hooks/use-auth-token';
@@ -34,7 +35,7 @@ import { usePalette } from '@/hooks/use-palette';
 import type { Palette } from '@/constants/palette';
 import { buildArticleFromRelated, fetchArticleDetail } from '@/services/articles';
 import { formatDateLabel, getDayPeriod } from '@/utils/date';
-import { segmentMarkdownForMobile } from '@/utils/mobile-ai-markdown';
+import { prefersMarkdownTableRequest, segmentMarkdownForMobile } from '@/utils/mobile-ai-markdown';
 import type { Article, ArticleDetail, RelatedArticle } from '@/types/article';
 const mermaidHtml = (diagram: string, script: string, theme: 'neutral' | 'dark') => `<!DOCTYPE html>
 <html>
@@ -149,7 +150,12 @@ export default function AiAssistantScreen() {
     await clearChat();
   }, [clearChat, closeArticle]);
 
-  const renderMarkdownWithMermaid = useCallback((content: string) => {
+  const renderMarkdownWithMermaid = useCallback((
+    content: string,
+    options?: {
+      preserveTables?: boolean;
+    }
+  ) => {
     const segments: { type: 'markdown' | 'mermaid'; content: string }[] = [];
     const regex = /```mermaid\s*([\s\S]*?)```/g;
     let lastIndex = 0;
@@ -185,11 +191,21 @@ export default function AiAssistantScreen() {
           </View>
         );
       }
-      return segmentMarkdownForMobile(segment.content).map((markdownSegment, nestedIndex) => {
+      return segmentMarkdownForMobile(segment.content, options).map((markdownSegment, nestedIndex) => {
         if (markdownSegment.type === 'table_cards') {
           return (
             <MarkdownTableCards
               key={`table-${index}-${nestedIndex}`}
+              rows={markdownSegment.rows}
+            />
+          );
+        }
+
+        if (markdownSegment.type === 'table_grid') {
+          return (
+            <MarkdownTableGrid
+              key={`table-grid-${index}-${nestedIndex}`}
+              headers={markdownSegment.headers}
               rows={markdownSegment.rows}
             />
           );
@@ -245,27 +261,39 @@ export default function AiAssistantScreen() {
               </Text>
             </View>
           ) : (
-            messages.map((msg) => (
-              <View key={msg.id} style={styles.messageBlock}>
-                <ChatMessageItem
-                  message={msg}
-                  renderMarkdown={renderMarkdownWithMermaid}
-                  isThinking={!!lastAiMessageId && isThinking && msg.id === lastAiMessageId}
-                  footer={
-                    !msg.isUser && msg.related && msg.related.length > 0 ? (
-                      <SourceList
-                        related={msg.related}
-                        highlights={msg.highlights || []}
-                        expanded={!!expandedSources[msg.id]}
-                        onToggle={() => toggleSources(msg.id)}
-                        onOpenArticle={openArticle}
-                        embedded
-                      />
-                    ) : undefined
-                  }
-                />
-              </View>
-            ))
+            messages.map((msg, index) => {
+              const previousUserMessage = !msg.isUser
+                ? messages
+                    .slice(0, index)
+                    .reverse()
+                    .find((item) => item.isUser)
+                : null;
+              const preserveTables = !!previousUserMessage?.text && prefersMarkdownTableRequest(previousUserMessage.text);
+
+              return (
+                <View key={msg.id} style={styles.messageBlock}>
+                  <ChatMessageItem
+                    message={msg}
+                    renderMarkdown={(content) =>
+                      renderMarkdownWithMermaid(content, { preserveTables })
+                    }
+                    isThinking={!!lastAiMessageId && isThinking && msg.id === lastAiMessageId}
+                    footer={
+                      !msg.isUser && msg.related && msg.related.length > 0 ? (
+                        <SourceList
+                          related={msg.related}
+                          highlights={msg.highlights || []}
+                          expanded={!!expandedSources[msg.id]}
+                          onToggle={() => toggleSources(msg.id)}
+                          onOpenArticle={openArticle}
+                          embedded
+                        />
+                      ) : undefined
+                    }
+                  />
+                </View>
+              );
+            })
           )}
 
           

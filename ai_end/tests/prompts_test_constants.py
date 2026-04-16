@@ -4,6 +4,8 @@ SYSTEM_PROMPT_EXPECTED_PHRASES = [
 ]
 SYSTEM_PROMPT_MOBILE_FORMAT_PHRASES = [
     "优先按分层列表输出，不要默认使用 Markdown 表格",
+    "如果用户明确要求“用表格展示”",
+    "不要混用“帖子卡片 + 表格字段”两套样式",
     "每条结果单独成段",
     "至少写出“适用对象 / 关键条件 / 关键时间或金额”三类信息中的两类",
     "优先写成 2-3 句完整说明",

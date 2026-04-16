@@ -14,12 +14,20 @@ export type MobileMarkdownSegment =
       content: string;
     }
   | {
+      type: 'table_grid';
+      headers: string[];
+      rows: string[][];
+    }
+  | {
       type: 'table_cards';
       rows: MobileTableCardRow[];
     };
 
 const TABLE_SEPARATOR_RE = /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/;
 const TITLE_HEADER_RE = /标题|主题|名称|事项|文件|文章|通知|帖子/i;
+const TABLE_REQUEST_RE =
+  /(表格|表形式|列表格|table|markdown table|tabular|按表格|用表格|以表格)/i;
+const NOISE_FIELD_RE = /^(序号|编号|序列|no\.?|No\.?)$/i;
 
 function splitTableRow(line: string): string[] {
   return line
@@ -45,6 +53,10 @@ function isTableRow(line: string) {
   return !TABLE_SEPARATOR_RE.test(trimmed);
 }
 
+function isNoiseFieldLabel(label: string) {
+  return NOISE_FIELD_RE.test(label.trim());
+}
+
 function buildTableRows(headers: string[], rawRows: string[][]): MobileTableCardRow[] {
   const titleIndex = headers.findIndex((header) => TITLE_HEADER_RE.test(header));
 
@@ -67,6 +79,9 @@ function buildTableRows(headers: string[], rawRows: string[][]): MobileTableCard
         if (fieldIndex === titleIndex && field.value === title) {
           return false;
         }
+        if (isNoiseFieldLabel(field.label)) {
+          return false;
+        }
         return true;
       });
 
@@ -74,7 +89,16 @@ function buildTableRows(headers: string[], rawRows: string[][]): MobileTableCard
   });
 }
 
-export function segmentMarkdownForMobile(content: string): MobileMarkdownSegment[] {
+export function prefersMarkdownTableRequest(text: string) {
+  return TABLE_REQUEST_RE.test(text);
+}
+
+export function segmentMarkdownForMobile(
+  content: string,
+  options?: {
+    preserveTables?: boolean;
+  }
+): MobileMarkdownSegment[] {
   if (!content.trim()) {
     return [{ type: 'markdown', content }];
   }
@@ -133,10 +157,18 @@ export function segmentMarkdownForMobile(content: string): MobileMarkdownSegment
     }
 
     flushMarkdown();
-    segments.push({
-      type: 'table_cards',
-      rows: buildTableRows(headers, rawRows),
-    });
+    if (options?.preserveTables) {
+      segments.push({
+        type: 'table_grid',
+        headers,
+        rows: rawRows,
+      });
+    } else {
+      segments.push({
+        type: 'table_cards',
+        rows: buildTableRows(headers, rawRows),
+      });
+    }
     index = cursor;
   }
 
