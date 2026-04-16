@@ -4,6 +4,7 @@ import { BlurView } from 'expo-blur';
 import { Bell } from 'phosphor-react-native';
 import { shadows } from '@/constants/shadows';
 import type { Palette } from '@/constants/palette';
+import { TOP_BAR_LAYOUT } from '@/constants/layout-metrics';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { usePalette } from '@/hooks/use-palette';
 
@@ -85,9 +86,6 @@ export function TopBar({
   );
 }
 
-const HOME_TOP_PADDING = 18;
-const EXPLORE_TOP_PADDING = 44;
-
 function createStyles(colors: Palette) {
   return StyleSheet.create({
   homeWrap: {
@@ -99,14 +97,14 @@ function createStyles(colors: Palette) {
   },
   homeBlur: {
     paddingHorizontal: 20,
-    paddingTop: HOME_TOP_PADDING,
-    paddingBottom: 10,
+    paddingTop: TOP_BAR_LAYOUT.homeTopPadding,
+    paddingBottom: TOP_BAR_LAYOUT.homeBlurBottom,
   },
   homeBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    paddingVertical: TOP_BAR_LAYOUT.homeBarVertical,
     borderRadius: 28,
   },
   homeBarScrolled: {
@@ -115,7 +113,7 @@ function createStyles(colors: Palette) {
     paddingHorizontal: 8,
   },
   exploreWrap: {
-    paddingTop: EXPLORE_TOP_PADDING,
+    paddingTop: TOP_BAR_LAYOUT.exploreTopPadding,
     paddingHorizontal: 16,
     zIndex: 10,
   },
@@ -127,8 +125,8 @@ function createStyles(colors: Palette) {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingHorizontal: TOP_BAR_LAYOUT.exploreBarHorizontal,
+    paddingVertical: TOP_BAR_LAYOUT.exploreBarVertical,
   },
   dateRowHome: {
     flexDirection: 'row',
@@ -167,7 +165,7 @@ function createStyles(colors: Palette) {
     color: colors.stone900,
   },
   exploreTitle: {
-    marginTop: 4,
+    marginTop: TOP_BAR_LAYOUT.exploreTitleMarginTop,
     fontSize: 22,
     fontWeight: '800',
     color: colors.stone900,

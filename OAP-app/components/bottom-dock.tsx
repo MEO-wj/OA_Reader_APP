@@ -5,6 +5,7 @@ import { Gear, House, Sparkle } from 'phosphor-react-native';
 
 import { shadows } from '@/constants/shadows';
 import type { Palette } from '@/constants/palette';
+import { BOTTOM_DOCK_LAYOUT } from '@/constants/layout-metrics';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { usePalette } from '@/hooks/use-palette';
 
@@ -71,28 +72,28 @@ function createStyles(colors: Palette) {
   return StyleSheet.create({
   dockWrap: {
     position: 'absolute',
-    bottom: 24,
+    bottom: BOTTOM_DOCK_LAYOUT.bottomOffset,
     left: 0,
     right: 0,
     alignItems: 'center',
-    paddingHorizontal: 20, 
+    paddingHorizontal: BOTTOM_DOCK_LAYOUT.horizontalPadding,
   },
   dock: {
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: 999, 
+    paddingHorizontal: 20,
+    paddingVertical: BOTTOM_DOCK_LAYOUT.verticalPadding,
+    borderRadius: 999,
     flexDirection: 'row',
-    gap: 24,
+    gap: BOTTOM_DOCK_LAYOUT.innerGap,
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.stone100,
-    overflow: 'hidden', 
+    overflow: 'hidden',
     ...shadows.dock,
   },
   dockButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
+    width: BOTTOM_DOCK_LAYOUT.buttonSize,
+    height: BOTTOM_DOCK_LAYOUT.buttonSize,
+    borderRadius: BOTTOM_DOCK_LAYOUT.buttonRadius,
     alignItems: 'center',
     justifyContent: 'center',
   },

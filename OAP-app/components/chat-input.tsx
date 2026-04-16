@@ -4,6 +4,7 @@ import { ArrowUp } from 'phosphor-react-native';
 
 import { shadows } from '@/constants/shadows';
 import type { Palette } from '@/constants/palette';
+import { CHAT_INPUT_LAYOUT } from '@/constants/layout-metrics';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { usePalette } from '@/hooks/use-palette';
 
@@ -45,30 +46,30 @@ function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
 
   return StyleSheet.create({
   inputWrap: {
-    paddingHorizontal: 18,
-    paddingBottom: 12,
+    paddingHorizontal: CHAT_INPUT_LAYOUT.outerHorizontal,
+    paddingBottom: CHAT_INPUT_LAYOUT.outerBottom,
   },
   inputShell: {
-    borderRadius: 26,
-    padding: 6,
+    borderRadius: CHAT_INPUT_LAYOUT.shellRadius,
+    padding: CHAT_INPUT_LAYOUT.shellPadding,
     backgroundColor: shellBackground,
     borderWidth: 1,
     borderColor: shellBorder,
   },
   input: {
-    paddingLeft: 16,
-    paddingRight: 56,
-    paddingVertical: 12,
+    paddingLeft: CHAT_INPUT_LAYOUT.inputHorizontalLeft,
+    paddingRight: CHAT_INPUT_LAYOUT.inputHorizontalRight,
+    paddingVertical: CHAT_INPUT_LAYOUT.inputVertical,
     fontSize: 14,
     color: colorScheme === 'dark' ? colors.stone900 : colors.stone800,
   },
   sendButton: {
     position: 'absolute',
-    right: 10,
-    top: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    right: CHAT_INPUT_LAYOUT.sendButtonRight,
+    top: CHAT_INPUT_LAYOUT.sendButtonTop,
+    width: CHAT_INPUT_LAYOUT.sendButtonSize,
+    height: CHAT_INPUT_LAYOUT.sendButtonSize,
+    borderRadius: CHAT_INPUT_LAYOUT.sendButtonSize / 2,
     backgroundColor: colors.imperial600,
     alignItems: 'center',
     justifyContent: 'center',

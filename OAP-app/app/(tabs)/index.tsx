@@ -29,6 +29,7 @@ import { HomeEmptyState } from '@/components/home-empty-state';
 import { HomeLoadingState } from '@/components/home-loading-state';
 import { TopBar } from '@/components/top-bar';
 
+import { getTabContentBottomPadding } from '@/constants/layout-metrics';
 import { colors } from '@/constants/palette';
 import { useArticles } from '@/hooks/use-articles';
 import { useAuthToken } from '@/hooks/use-auth-token';
@@ -1135,11 +1136,11 @@ const styles = StyleSheet.create({
   },
   listWrap: {
     flex: 1,
-    paddingTop: 24,
+    paddingTop: 4,
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingBottom: 130,
+    paddingBottom: getTabContentBottomPadding(8),
   },
   loadingFooter: {
     paddingVertical: 16,

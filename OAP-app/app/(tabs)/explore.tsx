@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import Markdown from 'react-native-markdown-display';
@@ -23,6 +23,7 @@ import { ChatMessageItem } from '@/components/chat-message';
 import { MarkdownTableCards } from '@/components/markdown-table-cards';
 import { SourceList } from '@/components/source-list';
 import { TopBar } from '@/components/top-bar';
+import { getChatInputDockOffset, getTabContentBottomPadding } from '@/constants/layout-metrics';
 import { shadows } from '@/constants/shadows';
 import { useAiChat } from '@/hooks/use-ai-chat';
 import { useAuthToken } from '@/hooks/use-auth-token';
@@ -66,7 +67,6 @@ export default function AiAssistantScreen() {
   const displayName = useDisplayName('用户');
   const mermaidScript = useMermaidScript();
   const { messages, isThinking, sendChat, clearChat } = useAiChat(token, displayName);
-  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = usePalette();
   const styles = useMemo(() => createStyles(palette, colorScheme), [colorScheme, palette]);
@@ -99,9 +99,7 @@ export default function AiAssistantScreen() {
     }
     return null;
   }, [messages]);
-  const dockHeight = 68;
-  const dockSpacing = 24;
-  const dockOffset = dockHeight + dockSpacing + insets.bottom;
+  const dockOffset = getChatInputDockOffset();
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => {
@@ -437,8 +435,8 @@ function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
     chatContainer: {
       flexGrow: 1,
       paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 144,
+      paddingTop: 4,
+      paddingBottom: 24,
       gap: 22,
     },
     emptyState: {
@@ -513,8 +511,7 @@ function createStyles(colors: Palette, colorScheme: 'light' | 'dark') {
       ...shadows.soft,
     },
     inputContainer: {
-      paddingHorizontal: 18,
-      paddingBottom: 12,
+      paddingHorizontal: 0,
     },
   });
 }

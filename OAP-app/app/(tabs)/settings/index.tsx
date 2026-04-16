@@ -30,6 +30,7 @@ import Constants from 'expo-constants';
 import { AmbientBackground } from '@/components/ambient-background';
 import { BottomDock } from '@/components/bottom-dock';
 import { TopBar } from '@/components/top-bar';
+import { getTabContentBottomPadding } from '@/constants/layout-metrics';
 import type { Palette } from '@/constants/palette';
 import { shadows } from '@/constants/shadows';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -420,9 +421,9 @@ function createStyles(colors: Palette) {
       backgroundColor: colors.surface,
     },
     content: {
-      paddingTop: 16,
+      paddingTop: 4,
       paddingHorizontal: 20,
-      paddingBottom: 140,
+      paddingBottom: getTabContentBottomPadding(8),
       gap: 20,
     },
     profileCard: {
