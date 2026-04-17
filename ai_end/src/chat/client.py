@@ -70,6 +70,7 @@ class ChatClient:
         skill_system: Any,
         user_id: str | None = None,
         conversation_id: str | None = None,
+        user_profile: dict | None = None,
     ) -> None:
         """初始化共享状态，供同步/异步构造复用。"""
         self.config = config
@@ -84,6 +85,7 @@ class ChatClient:
         self.activated_skills: set[str] = set()
         self._user_id = user_id
         self._conversation_id = conversation_id or "default"
+        self.user_profile = user_profile  # 用户资料模板参数（来自请求，非AI画像）
         self._memory_manager = get_memory_manager(
             user_id=self.user_id,
             conversation_id=self.conversation_id,
@@ -113,6 +115,7 @@ class ChatClient:
         config: Config,
         user_id: str | None = None,
         conversation_id: str | None = None,
+        user_profile: dict | None = None,
     ) -> "ChatClient":
         """
         异步工厂方法，创建聊天客户端
@@ -121,6 +124,7 @@ class ChatClient:
             config: 配置对象
             user_id: 用户ID（可选）
             conversation_id: 会话ID（可选）
+            user_profile: 用户资料模板参数（可选）
 
         Returns:
             ChatClient 实例
@@ -128,7 +132,7 @@ class ChatClient:
         self = cls.__new__(cls)
         skill_system = get_skill_system(backend=SkillBackend.DATABASE)
         await skill_system.load_skills()
-        self._init_state(config, skill_system, user_id, conversation_id)
+        self._init_state(config, skill_system, user_id, conversation_id, user_profile=user_profile)
         return self
 
     def __init__(self, config: Config):
@@ -142,7 +146,8 @@ class ChatClient:
     def _build_system_prompt(
         self,
         portrait: str | None = None,
-        knowledge: str | None = None
+        knowledge: str | None = None,
+        user_profile: str | None = None,
     ) -> str:
         """
         构建系统提示词（结构化版）
@@ -202,7 +207,8 @@ class ChatClient:
             current_date=current_date,
             weekday=weekday,
             skills_list=skills_text if skills_text else "暂无可用技能",
-            profile_section=profile_section
+            profile_section=profile_section,
+            user_profile_section=user_profile or "",
         )
 
         return system_prompt
@@ -781,6 +787,7 @@ class ChatClient:
         profile_loaded = False
         profile_injected = False
         portrait = ""
+        knowledge = ""
         portrait_len = 0
         knowledge_len = 0
 
@@ -793,12 +800,23 @@ class ChatClient:
                 knowledge = self._sanitize_memory_text(str(profile.get("knowledge_text", "") or ""))
                 portrait_len = len(str(portrait or ""))
                 knowledge_len = len(str(knowledge or ""))
-                if portrait or knowledge:
-                    # 融入主 system prompt，而非单独追加
-                    # 重新构建包含画像的 system prompt
-                    main_prompt = self._build_system_prompt(portrait=portrait, knowledge=knowledge)
-                    self.messages[0]["content"] = main_prompt
-                    profile_injected = True
+
+        # Build user profile template (from request params, not portrait table)
+        user_profile_text = ""
+        if getattr(self, "user_profile", None):
+            from src.chat.prompts_runtime import build_user_profile_section
+            user_profile_text = build_user_profile_section(**self.user_profile)
+
+        if portrait or knowledge or user_profile_text:
+            # 融入主 system prompt，而非单独追加
+            # 重新构建包含画像的系统提示词
+            main_prompt = self._build_system_prompt(
+                portrait=portrait,
+                knowledge=knowledge,
+                user_profile=user_profile_text,
+            )
+            self.messages[0]["content"] = main_prompt
+            profile_injected = True
 
         if is_new_runtime_session and self.user_id:
             system_prompt_full = "\n\n".join(

@@ -1,9 +1,6 @@
 package service
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"strings"
 	"time"
@@ -19,7 +16,6 @@ import (
 
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrInvalidToken       = errors.New("invalid token")
 	ErrValidation         = errors.New("validation error")
 )
 
@@ -53,17 +49,13 @@ type authRepository interface {
 	RecordLogin(userID uuid.UUID) error
 	UpdateCredentials(userID uuid.UUID, passwordHash, passwordAlgo string, passwordCost int, displayName string) error
 	FindByID(id uuid.UUID) (*model.User, error)
-	CreateSession(session *model.Session) error
-	FindSessionByRefreshTokenSHA(sha string) (*model.Session, error)
-	RevokeSession(id uuid.UUID) error
 }
 
 type LoginResult struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	TokenType    string    `json:"token_type"`
-	ExpiresIn    int       `json:"expires_in"`
-	User         *UserInfo `json:"user"`
+	AccessToken string    `json:"access_token"`
+	TokenType   string    `json:"token_type"`
+	ExpiresIn   int       `json:"expires_in"`
+	User        *UserInfo `json:"user"`
 }
 
 type UserInfo struct {
@@ -83,9 +75,6 @@ func NewAuthServiceWithDeps(cfg *config.Config, repo authRepository, verifier fu
 	}
 	if strings.TrimSpace(cfg.AuthJWTSecret) == "" {
 		panic("AUTH_JWT_SECRET 未配置")
-	}
-	if strings.TrimSpace(cfg.AuthRefreshHashKey) == "" {
-		panic("AUTH_REFRESH_HASH_KEY 未配置")
 	}
 	if verifier == nil {
 		verifier = campusVerify
@@ -206,118 +195,36 @@ func campusVerify(username, password string) string {
 
 func (s *AuthService) issueTokens(user *model.User, meta AuthMetadata) (*LoginResult, error) {
 	alog.Authf("[AUTH][%s][service.issue_tokens] begin user_id=%s", meta.RequestID, user.ID.String())
-	// 生成 refresh token (48 bytes, base64 url-safe)
-	refreshBytes := make([]byte, 48)
-	rand.Read(refreshBytes)
-	refreshToken := base64.RawURLEncoding.EncodeToString(refreshBytes)
-	refreshSHA := s.hashRefreshToken(refreshToken)
 
-	// 计算默认 TTL
 	accessTTL := s.cfg.AuthAccessTokenTTL
 	if accessTTL == 0 {
-		accessTTL = time.Hour
-	}
-	refreshTTL := s.cfg.AuthRefreshTokenTTL
-	if refreshTTL == 0 {
-		refreshTTL = 7 * 24 * time.Hour
+		accessTTL = 7 * 24 * time.Hour
 	}
 
-	now := time.Now()
-	session := &model.Session{
-		ID:              uuid.New(),
-		UserID:          user.ID,
-		RefreshTokenSHA: refreshSHA,
-		ExpiresAt:       now.Add(refreshTTL),
-		UserAgent:       meta.UserAgent,
-		IP:              meta.IP,
-		CreatedAt:       now,
-	}
-	s.userRepo.CreateSession(session)
-	alog.Authf("[AUTH][%s][service.issue_tokens] session created session_id=%s expire_at=%s", meta.RequestID, session.ID.String(), session.ExpiresAt.Format(time.RFC3339))
-
-	accessToken, _ := jwt.GenerateToken(
+	accessToken, err := jwt.GenerateToken(
 		s.cfg.AuthJWTSecret,
 		user.ID.String(),
 		user.Username,
 		user.DisplayName,
-			[]string(user.Roles),
+		[]string(user.Roles),
 		int64(accessTTL.Seconds()),
 	)
+	if err != nil {
+		alog.Authf("[AUTH][%s][service.issue_tokens] generate token failed: %v", meta.RequestID, err)
+		return nil, err
+	}
 
 	return &LoginResult{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		TokenType:    "bearer",
-		ExpiresIn:    int(accessTTL.Seconds()),
+		AccessToken: accessToken,
+		TokenType:   "bearer",
+		ExpiresIn:   int(accessTTL.Seconds()),
 		User: &UserInfo{
 			ID:          user.ID.String(),
 			Username:    user.Username,
 			DisplayName: user.DisplayName,
-				Roles:       append([]string{}, []string(user.Roles)...),
-			},
-		}, nil
-	}
-
-func (s *AuthService) hashRefreshToken(token string) string {
-	key := s.cfg.AuthRefreshHashKey
-	data := key + token
-	hash := sha256.Sum256([]byte(data))
-	return base64.RawURLEncoding.EncodeToString(hash[:])
-}
-
-func (s *AuthService) Refresh(refreshToken string, meta AuthMetadata) (*LoginResult, error) {
-	token := strings.TrimSpace(refreshToken)
-	alog.Authf("[AUTH][%s][service.refresh] begin token_len=%d", meta.RequestID, len(token))
-	if token == "" {
-		alog.Authf("[AUTH][%s][service.refresh] validation failed: missing token", meta.RequestID)
-		return nil, validationError{message: "refresh token missing"}
-	}
-
-	sha := s.hashRefreshToken(token)
-	session, err := s.userRepo.FindSessionByRefreshTokenSHA(sha)
-	if err != nil || session.RevokedAt != nil || session.ExpiresAt.Before(time.Now()) {
-		alog.Authf("[AUTH][%s][service.refresh] invalid session err=%v revoked=%t expired=%t", meta.RequestID, err, session != nil && session.RevokedAt != nil, session != nil && session.ExpiresAt.Before(time.Now()))
-		return nil, ErrInvalidToken
-	}
-
-	if err := s.userRepo.RevokeSession(session.ID); err != nil {
-		alog.Authf("[AUTH][%s][service.refresh] revoke old session failed: %v", meta.RequestID, err)
-		return nil, err
-	}
-	alog.Authf("[AUTH][%s][service.refresh] old session revoked session_id=%s", meta.RequestID, session.ID.String())
-
-	user, err := s.userRepo.FindByID(session.UserID)
-	if errors.Is(err, repository.ErrNotFound) || user == nil {
-		alog.Authf("[AUTH][%s][service.refresh] user missing for session user_id=%s", meta.RequestID, session.UserID.String())
-		return nil, ErrInvalidToken
-	}
-	if err != nil {
-		alog.Authf("[AUTH][%s][service.refresh] find user failed: %v", meta.RequestID, err)
-		return nil, err
-	}
-	alog.Authf("[AUTH][%s][service.refresh] issuing new tokens user_id=%s", meta.RequestID, user.ID.String())
-	return s.issueTokens(user, meta)
-}
-
-func (s *AuthService) Logout(refreshToken string) error {
-	token := strings.TrimSpace(refreshToken)
-	alog.Authf("[AUTH][service.logout] begin token_len=%d", len(token))
-	if token == "" {
-		alog.Authf("[AUTH][service.logout] validation failed: missing token")
-		return validationError{message: "refresh token missing"}
-	}
-	sha := s.hashRefreshToken(token)
-	session, err := s.userRepo.FindSessionByRefreshTokenSHA(sha)
-	if errors.Is(err, repository.ErrNotFound) {
-		alog.Authf("[AUTH][service.logout] session not found, treat as success")
-		return nil
-	}
-	if err != nil {
-		alog.Authf("[AUTH][service.logout] find session failed: %v", err)
-		return err
-	}
-	alog.Authf("[AUTH][service.logout] revoke session session_id=%s", session.ID.String())
-	return s.userRepo.RevokeSession(session.ID)
+			Roles:       []string(user.Roles),
+		},
+	}, nil
 }
 
 func (s *AuthService) passwordCost() int {

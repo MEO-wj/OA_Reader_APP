@@ -17,9 +17,7 @@ import (
 	"github.com/oap/backend-go/internal/service"
 )
 
-type handlerAuthRepoStub struct {
-	session *model.Session
-}
+type handlerAuthRepoStub struct{}
 
 func (s *handlerAuthRepoStub) GetCredential(username string) (*repository.UserCredential, error) {
 	return nil, repository.ErrNotFound
@@ -39,25 +37,10 @@ func (s *handlerAuthRepoStub) FindByID(id uuid.UUID) (*model.User, error) {
 	return &model.User{ID: id, Username: "alice", DisplayName: "Alice"}, nil
 }
 
-func (s *handlerAuthRepoStub) CreateSession(session *model.Session) error {
-	s.session = session
-	return nil
-}
-
-func (s *handlerAuthRepoStub) FindSessionByRefreshTokenSHA(sha string) (*model.Session, error) {
-	if s.session == nil {
-		return nil, repository.ErrNotFound
-	}
-	return s.session, nil
-}
-
-func (s *handlerAuthRepoStub) RevokeSession(id uuid.UUID) error { return nil }
-
 func newHandlerUnderTest() *AuthHandler {
 	repo := &handlerAuthRepoStub{}
 	svc := service.NewAuthServiceWithDeps(&config.Config{
 		AuthJWTSecret:      "secret",
-		AuthRefreshHashKey: "hash-key",
 		AuthAccessTokenTTL: time.Hour,
 	}, repo, func(username, password string) string {
 		return "Alice"
@@ -127,38 +110,12 @@ func TestMe_AlignsWithPythonResponseShape(t *testing.T) {
 	}
 }
 
-func TestLogout_ReturnsPythonStyleSuccessPayload(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	h := newHandlerUnderTest()
-	r.POST("/api/auth/logout", h.Logout)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", bytes.NewBufferString(`{"refresh_token":"abc"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if body["message"] != "已登出" {
-		t.Fatalf("unexpected message: %v", body["message"])
-	}
-}
-
 func TestErrorMappings(t *testing.T) {
 	if mapAuthError(service.ErrValidation) != http.StatusBadRequest {
 		t.Fatalf("validation should map to 400")
 	}
 	if mapAuthError(service.ErrInvalidCredentials) != http.StatusUnauthorized {
 		t.Fatalf("invalid credentials should map to 401")
-	}
-	if mapAuthError(service.ErrInvalidToken) != http.StatusUnauthorized {
-		t.Fatalf("invalid token should map to 401")
 	}
 	if mapAuthError(errors.New("boom")) != http.StatusInternalServerError {
 		t.Fatalf("unexpected errors should map to 500")
@@ -167,10 +124,9 @@ func TestErrorMappings(t *testing.T) {
 
 func TestBuildAuthResponse_UserIDString(t *testing.T) {
 	payload := buildAuthResponse(&service.LoginResult{
-		AccessToken:  "a",
-		RefreshToken: "r",
-		TokenType:    "bearer",
-		ExpiresIn:    123,
+		AccessToken: "a",
+		TokenType:   "bearer",
+		ExpiresIn:   123,
 		User: &service.UserInfo{
 			ID:          uuid.New().String(),
 			Username:    "alice",

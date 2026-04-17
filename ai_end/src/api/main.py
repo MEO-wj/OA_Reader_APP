@@ -130,9 +130,19 @@ async def chat(request: ChatRequest) -> StreamingResponse:
         request.conversation_id,
     )
 
+    # Collect user profile (only pass when data exists)
+    user_profile = None
+    if request.display_name or request.profile_tags or request.bio:
+        user_profile = {
+            "display_name": request.display_name,
+            "profile_tags": request.profile_tags,
+            "bio": request.bio,
+        }
+
     service = get_chat_service(
         user_id=request.user_id,
         conversation_id=conversation_id,
+        user_profile=user_profile,
     )
     hints = build_runtime_hints(
         top_k=request.top_k,
@@ -261,6 +271,8 @@ async def ask_compat(request: AskCompatRequest) -> dict:
             user_id=request.user_id,
             top_k=request.top_k,
             display_name=request.display_name,
+            profile_tags=request.profile_tags,
+            bio=request.bio,
             conversation_id=request.conversation_id,
         )
         return JSONResponse(content=payload, media_type="application/json")

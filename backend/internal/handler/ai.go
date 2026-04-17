@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,16 +15,17 @@ import (
 type AIHandler struct {
 	aiEndURL string
 	forward  func(c *gin.Context, path string)
+	queue    *AIRequestQueue
 }
 
-func NewAIHandler(aiEndURL string) *AIHandler {
-	h := &AIHandler{aiEndURL: aiEndURL}
+func NewAIHandler(aiEndURL string, queue *AIRequestQueue) *AIHandler {
+	h := &AIHandler{aiEndURL: aiEndURL, queue: queue}
 	h.forward = h.defaultForward
 	return h
 }
 
 func NewAIHandlerWithForward(forward func(c *gin.Context, path string)) *AIHandler {
-	return &AIHandler{forward: forward}
+	return &AIHandler{forward: forward, queue: NewAIRequestQueue(2)}
 }
 
 func (h *AIHandler) defaultForward(c *gin.Context, path string) {
@@ -42,20 +44,25 @@ func (h *AIHandler) proxy(c *gin.Context, path string) {
 	h.forward(c, path)
 }
 
-func (h *AIHandler) Ask(c *gin.Context) {
-	if !injectUserID(c) {
-		return
-	}
-	h.proxy(c, "/ask")
-}
-
+// Chat handles /chat requests: inject user_id + profile -> enqueue -> proxy
 func (h *AIHandler) Chat(c *gin.Context) {
 	if !injectUserID(c) {
 		return
 	}
-	h.proxy(c, "/chat")
+	injectUserProfile(c)
+	h.queuedProxy(c, "/chat")
 }
 
+// Ask keeps the JSON compat contract while reusing the same queue/profile pipeline.
+func (h *AIHandler) Ask(c *gin.Context) {
+	if !injectUserID(c) {
+		return
+	}
+	injectUserProfile(c)
+	h.queuedProxy(c, "/ask")
+}
+
+// ClearMemory keeps original logic (low frequency, no queue needed)
 func (h *AIHandler) ClearMemory(c *gin.Context) {
 	if !injectUserID(c) {
 		return
@@ -63,6 +70,23 @@ func (h *AIHandler) ClearMemory(c *gin.Context) {
 	h.proxy(c, "/clear_memory")
 }
 
+func (h *AIHandler) Embed(c *gin.Context) {
+	h.proxy(c, "/embed")
+}
+
+// queuedProxy enqueues the request to control concurrency
+func (h *AIHandler) queuedProxy(c *gin.Context, path string) {
+	if h.queue == nil {
+		h.forward(c, path)
+		return
+	}
+	done := h.queue.Enqueue(c.Request.Context(), func(ctx context.Context) {
+		h.forward(c, path)
+	})
+	<-done
+}
+
+// injectUserID injects user_id from JWT context into request body
 func injectUserID(c *gin.Context) bool {
 	userID, ok := c.Get("user_id")
 	if !ok {
@@ -92,6 +116,61 @@ func injectUserID(c *gin.Context) bool {
 	return true
 }
 
-func (h *AIHandler) Embed(c *gin.Context) {
-	h.proxy(c, "/embed")
+// injectUserProfile reads user profile from context and injects into request body.
+// It handles both []string and []interface{} for profile_tags.
+func injectUserProfile(c *gin.Context) {
+	profile, ok := c.Get("user_profile")
+	if !ok {
+		return
+	}
+	profileMap, ok := profile.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return
+	}
+	var payload map[string]interface{}
+	if len(bytes.TrimSpace(body)) > 0 {
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return
+		}
+	} else {
+		payload = map[string]interface{}{}
+	}
+
+	if dn, ok := profileMap["display_name"].(string); ok && dn != "" {
+		payload["display_name"] = dn
+	}
+	if bio, ok := profileMap["bio"].(string); ok && bio != "" {
+		payload["bio"] = bio
+	}
+	// Handle profile_tags: could be []string (from middleware) or []interface{} (from JSON)
+	if tags := extractStringSlice(profileMap["profile_tags"]); len(tags) > 0 {
+		payload["profile_tags"] = tags
+	}
+
+	bodyBytes, _ := json.Marshal(payload)
+	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	c.Request.ContentLength = int64(len(bodyBytes))
+}
+
+// extractStringSlice converts both []string and []interface{} to []interface{} for JSON serialization.
+func extractStringSlice(val interface{}) []interface{} {
+	if val == nil {
+		return nil
+	}
+	switch v := val.(type) {
+	case []string:
+		result := make([]interface{}, len(v))
+		for i, s := range v {
+			result[i] = s
+		}
+		return result
+	case []interface{}:
+		return v
+	}
+	return nil
 }

@@ -49,8 +49,37 @@ def test_conversation_create_accepts_uuid_user_id():
 
 
 def test_compat_models_validate_uuid_user_id():
-    req = AskCompatRequest(question="test", user_id=VALID_UUID)
-    assert req.user_id == VALID_UUID
-
     with pytest.raises(ValidationError, match="user_id must be a valid UUID"):
         ClearMemoryCompatRequest(user_id="bad-user")
+
+    # valid UUID should pass
+    req = ClearMemoryCompatRequest(user_id=VALID_UUID)
+    assert req.user_id == VALID_UUID
+
+
+def test_chat_request_rejects_bool_top_k():
+    with pytest.raises(ValidationError, match="top_k must be an integer or string, not boolean"):
+        ChatRequest(message="hi", user_id=VALID_UUID, top_k=True)
+
+
+def test_ask_compat_request_accepts_extended_fields():
+    req = AskCompatRequest(
+        question="hi",
+        user_id=VALID_UUID,
+        top_k="3",
+        display_name="Alice",
+        profile_tags=["tag-a", "tag-b"],
+        bio="student",
+        conversation_id="conv-1",
+    )
+
+    assert req.user_id == VALID_UUID
+    assert req.top_k == "3"
+    assert req.profile_tags == ["tag-a", "tag-b"]
+    assert req.bio == "student"
+    assert req.conversation_id == "conv-1"
+
+
+def test_ask_compat_request_rejects_bool_top_k():
+    with pytest.raises(ValidationError, match="top_k must be an integer or string, not boolean"):
+        AskCompatRequest(question="hi", top_k=False)

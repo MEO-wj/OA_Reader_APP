@@ -12,7 +12,13 @@ const listeners = new Set<() => void>();
 let authState: AuthState = { token: null, isLoading: true };
 
 function notify() {
-  listeners.forEach((listener) => listener());
+  listeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (error) {
+      console.error('Auth listener error:', error);
+    }
+  });
 }
 
 export function subscribeAuthToken(listener: () => void) {
@@ -26,7 +32,7 @@ export function getAuthSnapshot() {
   return authState;
 }
 
-export async function refreshAuthToken() {
+export async function loadAuthToken() {
   let token: string | null = null;
 
   try {
@@ -60,7 +66,7 @@ export function useAuthTokenState() {
 
   useEffect(() => {
     if (state.isLoading) {
-      void refreshAuthToken();
+      void loadAuthToken();
     }
   }, [state.isLoading]);
 
@@ -68,7 +74,7 @@ export function useAuthTokenState() {
     ...state,
     setAuthToken,
     clearAuthToken,
-    refreshAuthToken,
+    loadAuthToken,
   };
 }
 

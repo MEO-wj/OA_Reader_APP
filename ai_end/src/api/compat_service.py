@@ -1,8 +1,8 @@
 """兼容编排服务 - 将旧 JSON API 请求桥接到新 ChatClient 事件流。
 
 CompatService 负责两件事：
-1. ``ask``      — 聚合 ChatClient 事件流为单个 JSON 响应，兼容旧 /ask 接口
-2. ``clear_memory`` — 创建新会话（不删除旧数据），兼容旧 /clear_memory 接口
+1. ``clear_memory`` — 创建新会话（不删除旧数据），兼容旧 /clear_memory 接口
+2. ``embed``        — 调用 generate_embedding 返回向量，兼容旧 /embed 接口
 """
 
 from __future__ import annotations
@@ -49,34 +49,20 @@ def build_runtime_hints(
     top_k: Any = None,
     display_name: str | None = None,
 ) -> dict[str, str]:
-    """根据旧 /ask 请求参数构建运行时提示。
-
-    将 ``top_k`` 和 ``display_name`` 转换为可追加到用户问题末尾的提示文本。
-
-    Args:
-        top_k:        用户期望的返回条数。仅当为正整数（或可解析为正整数的字符串）时生效。
-        display_name: 用户显示名称。非空时生成称呼提示。
-
-    Returns:
-        键为提示类别（``"top_k"`` / ``"display_name"``），值为提示文本的字典。
-        无有效提示时返回空字典。
-    """
     hints: dict[str, str] = {}
 
-    # --- top_k 处理 ---
     parsed_top_k: int | None = None
     if isinstance(top_k, int) and not isinstance(top_k, bool):
         parsed_top_k = top_k
     elif isinstance(top_k, str):
         try:
             parsed_top_k = int(top_k)
-        except (ValueError, TypeError):
-            pass
+        except (TypeError, ValueError):
+            parsed_top_k = None
 
     if parsed_top_k is not None and parsed_top_k > 0:
         hints["top_k"] = f"请优先返回前 {parsed_top_k} 条相关结果"
 
-    # --- display_name 处理 ---
     if display_name:
         hints["display_name"] = f"可酌情称呼用户为{display_name}"
 
@@ -104,10 +90,17 @@ class CompatService:
         config: Config,
         user_id: str | None,
         conversation_id: str | None,
+        user_profile: dict[str, Any] | None = None,
     ):
-        """创建 ChatClient 实例（可在测试中被替换）。"""
+        """Create a ChatClient instance."""
         from src.di.providers import create_chat_client
-        return await create_chat_client(config, user_id, conversation_id)
+
+        return await create_chat_client(
+            config,
+            user_id,
+            conversation_id,
+            user_profile=user_profile,
+        )
 
     # -- 会话解析 --
 
@@ -358,6 +351,8 @@ class CompatService:
         user_id: str | None = None,
         top_k: Any = None,
         display_name: str | None = None,
+        profile_tags: list[str] | None = None,
+        bio: str | None = None,
         conversation_id: str | None = None,
     ) -> dict[str, Any]:
         """兼容旧 /ask 接口：聚合事件流，返回单个 JSON。
@@ -391,8 +386,19 @@ class CompatService:
             )
 
         # 3) 创建 ChatClient 并收集事件
+        user_profile = None
+        if display_name or profile_tags or bio:
+            user_profile = {
+                "display_name": display_name,
+                "profile_tags": profile_tags,
+                "bio": bio,
+            }
+
         client = await self._create_chat_client(
-            self.config, user_id, resolved_conversation_id,
+            self.config,
+            user_id,
+            resolved_conversation_id,
+            user_profile=user_profile,
         )
 
         collected_events: list[dict[str, Any]] = []
@@ -408,6 +414,8 @@ class CompatService:
             result["session_created"] = session_created
 
         return result
+
+    # -- 公开接口 --
 
     async def clear_memory(self, user_id: str | None = None) -> dict[str, Any]:
         """兼容旧 /clear_memory 接口：创建或复用当天会话。

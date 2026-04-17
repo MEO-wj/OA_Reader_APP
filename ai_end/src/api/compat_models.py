@@ -9,6 +9,8 @@ class AskCompatRequest(BaseModel):
     question: str | None = None
     top_k: int | str | None = None
     display_name: str | None = None
+    profile_tags: list[str] | None = None
+    bio: str | None = None
     user_id: str | None = None
     conversation_id: str | None = None
 
@@ -28,8 +30,6 @@ class AskCompatRequest(BaseModel):
             return str(UUID(v))
         except ValueError as exc:
             raise ValueError("user_id must be a valid UUID") from exc
-
-
 class ClearMemoryCompatRequest(BaseModel):
     user_id: str | None = None
 

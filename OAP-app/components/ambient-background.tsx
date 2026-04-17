@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import type { Palette } from '@/constants/palette';
@@ -14,10 +14,11 @@ type AmbientBackgroundProps = {
 export function AmbientBackground({ variant }: AmbientBackgroundProps) {
   const palette = usePalette();
   const styles = useMemo(() => createStyles(palette), [palette]);
+  const webViewportFill = Platform.OS === 'web' ? styles.webViewportFill : null;
 
   if (variant === 'home') {
     return (
-      <View style={styles.ambientBg}>
+      <View pointerEvents="none" style={[styles.ambientBg, webViewportFill]}>
         <LinearGradient
           colors={[palette.surface, palette.surfaceWarm]}
           start={{ x: 0, y: 0 }}
@@ -33,7 +34,7 @@ export function AmbientBackground({ variant }: AmbientBackgroundProps) {
 
   if (variant === 'explore') {
     return (
-      <View style={styles.ambientBg}>
+      <View pointerEvents="none" style={[styles.ambientBg, webViewportFill]}>
         <View style={[styles.orb, styles.orbGold]} />
         <View style={[styles.orb, styles.orbRed]} />
         <View style={[styles.orb, styles.orbWarmExplore]} />
@@ -42,7 +43,7 @@ export function AmbientBackground({ variant }: AmbientBackgroundProps) {
   }
 
   return (
-    <View pointerEvents="none" style={styles.ambientBgLogin}>
+    <View pointerEvents="none" style={[styles.ambientBgLogin, webViewportFill]}>
       <View style={[styles.orb, styles.orbGoldLogin]} />
       <View style={[styles.orb, styles.orbRedLogin]} />
       <View style={[styles.orb, styles.orbWarmLogin]} />
@@ -63,6 +64,14 @@ function createStyles(colors: Palette) {
     right: 0,
     bottom: 0,
     backgroundColor: colors.surface,
+  },
+  webViewportFill: {
+    position: 'fixed',
+    top: 0,
+    left: '50%',
+    bottom: 0,
+    width: '100vw',
+    marginLeft: '-50vw',
   },
   orb: {
     position: 'absolute',

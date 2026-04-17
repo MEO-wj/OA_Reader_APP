@@ -1,0 +1,81 @@
+name: Web Deploy dev (OAP-app)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - "OAP-app/**"
+      - ".github/workflows/web-deploy-dev.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-deploy-dev
+  cancel-in-progress: true
+
+env:
+  APP_PATH: OAP-app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-local
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.APP_PATH }}/node_modules
+          key: npm-web-${{ hashFiles('OAP-app/package-lock.json') }}
+          restore-keys: npm-web-
+
+      - name: Install dependencies
+        working-directory: ${{ env.APP_PATH }}
+        run: npm ci --registry https://registry.npmmirror.com
+
+      - name: Build web
+        working-directory: ${{ env.APP_PATH }}
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://oa-reader-backend-dev.local.unself.cn/api
+        run: npm run build:web
+
+      - name: Clean remote directory
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST_DEV }}
+          username: ${{ secrets.DEPLOY_USER_DEV }}
+          key: ${{ secrets.DEPLOY_KEY_DEV }}
+          script: rm -rf ${{ secrets.DEPLOY_PATH_DEV }}/*
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST_DEV }}
+          username: ${{ secrets.DEPLOY_USER_DEV }}
+          key: ${{ secrets.DEPLOY_KEY_DEV }}
+          source: "OAP-app/dist/*"
+          target: ${{ secrets.DEPLOY_PATH_DEV }}/
+
+      - name: Fix permissions
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST_DEV }}
+          username: ${{ secrets.DEPLOY_USER_DEV }}
+          key: ${{ secrets.DEPLOY_KEY_DEV }}
+          script: chown -R 1000:1000 ${{ secrets.DEPLOY_PATH_DEV }}
+
+      - name: Deploy summary
+        run: |
+          echo "## Web Deploy Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Branch: \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commit: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"

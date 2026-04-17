@@ -51,14 +51,6 @@ func TestConversationAndSessionUseDistinctCompositeUniqueIndexTags(t *testing.T)
 	}
 }
 
-func TestAuthSessionUsesDedicatedUserIndexName(t *testing.T) {
-	field, _ := reflect.TypeOf(Session{}).FieldByName("UserID")
-	tag := field.Tag.Get("gorm")
-	if !strings.Contains(tag, "index:idx_auth_sessions_user_id") {
-		t.Fatalf("unexpected Session.UserID tag: %s", tag)
-	}
-}
-
 func TestArticlePublishedOnUsesDateTypeTag(t *testing.T) {
 	field, ok := reflect.TypeOf(Article{}).FieldByName("PublishedOn")
 	if !ok {

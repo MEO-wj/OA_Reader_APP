@@ -10,7 +10,7 @@ async def test_sse_event_format(monkeypatch):
             if False:
                 yield {}
 
-    async def _fake_create(_config, _user_id, _conversation_id):
+    async def _fake_create(_config, _user_id, _conversation_id, user_profile=None):
         return _FakeClient()
 
     monkeypatch.setattr("src.api.chat_service.create_chat_client", _fake_create)
@@ -32,7 +32,7 @@ async def test_chat_stream_emits_start_and_forwards_events(monkeypatch):
             yield {"type": "delta", "content": "A"}
             yield {"type": "done", "usage": {"total_tokens": 1}}
 
-    async def _fake_create(_config, _user_id, _conversation_id):
+    async def _fake_create(_config, _user_id, _conversation_id, user_profile=None):
         return _FakeClient()
 
     monkeypatch.setattr("src.api.chat_service.create_chat_client", _fake_create)
@@ -57,7 +57,7 @@ async def test_chat_stream_emits_error_event_on_exception(monkeypatch):
             raise RuntimeError("boom")
             yield  # pragma: no cover
 
-    async def _fake_create(_config, _user_id, _conversation_id):
+    async def _fake_create(_config, _user_id, _conversation_id, user_profile=None):
         return _FakeClient()
 
     monkeypatch.setattr("src.api.chat_service.create_chat_client", _fake_create)
@@ -90,7 +90,7 @@ async def test_chat_stream_reuses_client_without_per_request_cleanup(monkeypatch
 
     created_clients = []
 
-    async def _fake_create(_config, _user_id, _conversation_id):
+    async def _fake_create(_config, _user_id, _conversation_id, user_profile=None):
         client = _FakeClient()
         created_clients.append(client)
         return client
@@ -127,7 +127,7 @@ async def test_chat_service_initializes_user_memory_before_create(monkeypatch):
         async def chat_stream_async(self, _user_input: str):
             yield {"type": "done", "usage": {}}
 
-    async def _fake_create(_config, _user_id, _conversation_id):
+    async def _fake_create(_config, _user_id, _conversation_id, user_profile=None):
         return _FakeClient()
 
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
@@ -157,7 +157,7 @@ async def test_chat_service_passes_conversation_id_to_chat_client(monkeypatch):
         async def chat_stream_async(self, _user_input: str):
             yield {"type": "done", "usage": {}}
 
-    async def _fake_create(_config, _user_id, conversation_id):
+    async def _fake_create(_config, _user_id, conversation_id, user_profile=None):
         captured["conversation_id"] = conversation_id
         return _FakeClient()
 
@@ -185,7 +185,7 @@ async def test_chat_service_uses_di_create_chat_client(monkeypatch):
         async def chat_stream_async(self, _user_input: str):
             yield {"type": "done", "usage": {}}
 
-    async def _fake_create(config, user_id, conversation_id):
+    async def _fake_create(config, user_id, conversation_id, user_profile=None):
         captured["called"] += 1
         captured["user_id"] = user_id
         captured["conversation_id"] = conversation_id

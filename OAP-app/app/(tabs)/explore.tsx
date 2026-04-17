@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import Markdown from 'react-native-markdown-display';
@@ -68,6 +68,7 @@ export default function AiAssistantScreen() {
   const displayName = useDisplayName('用户');
   const mermaidScript = useMermaidScript();
   const { messages, isThinking, sendChat, clearChat } = useAiChat(token, displayName);
+  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = usePalette();
   const styles = useMemo(() => createStyles(palette, colorScheme), [colorScheme, palette]);
@@ -100,7 +101,7 @@ export default function AiAssistantScreen() {
     }
     return null;
   }, [messages]);
-  const dockOffset = getChatInputDockOffset();
+  const dockOffset = getChatInputDockOffset() + insets.bottom;
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => {

@@ -75,18 +75,20 @@ async def create_chat_client(
     config,
     user_id: str | None = None,
     conversation_id: str | None = None,
+    user_profile: dict | None = None,
 ):
     """获取异步聊天客户端。"""
     from src.chat.client import ChatClient
 
-    return await ChatClient.create(config, user_id, conversation_id)
+    return await ChatClient.create(config, user_id, conversation_id, user_profile=user_profile)
 
 
 def get_chat_service(
     user_id: str | None = None,
     conversation_id: str | None = None,
+    user_profile: dict | None = None,
 ):
     """获取聊天服务实例。"""
     from src.api.chat_service import ChatService
 
-    return ChatService(user_id=user_id, conversation_id=conversation_id)
+    return ChatService(user_id=user_id, conversation_id=conversation_id, user_profile=user_profile)

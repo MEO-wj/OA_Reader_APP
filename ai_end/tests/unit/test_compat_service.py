@@ -2,46 +2,19 @@
 TDD RED -> GREEN 阶段 - CompatService 兼容编排服务测试
 
 测试要点：
-  1) ask 有 user_id → 返回 answer + related_articles + conversation_id + session_created
-  2) ask 无 user_id → 返回 answer + related_articles，不含 conversation_id / session_created
-  3) ask 有 user_id 且当天已有会话 → session_created=False，复用 conversation_id
-  4) ask 有 user_id 且当天无会话 → session_created=True，新建 conversation_id
-  5) ask 事件聚合：delta 拼接为 answer，tool_result 提取 related_articles
-  6) ask 错误事件处理
-  7) clear_memory → 返回 cleared=True + conversation_id（新会话）
-  8) _today_range 工具方法正确计算 UTC 范围
+  1) clear_memory → 返回 cleared=True + conversation_id（新会话）
+  2) _today_range 工具方法正确计算 UTC 范围
 """
 import pytest
-import uuid
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 from src.config.settings import Config
 
 
-def test_ask_compat_request_rejects_bool_top_k():
-    """I1: AskCompatRequest 应在模型层拒绝 bool 类型的 top_k。"""
-    from pydantic import ValidationError
-    from src.api.compat_models import AskCompatRequest
-
-    with pytest.raises(ValidationError, match="boolean"):
-        AskCompatRequest(question="test", top_k=True)
-
-
 # ---------------------------------------------------------------------------
-# Helpers: fake client / fake MemoryDB
+# Helpers: fake MemoryDB
 # ---------------------------------------------------------------------------
-
-class _FakeClient:
-    """Fake ChatClient，通过 events 参数预设 chat_stream_async 产出的事件序列。"""
-
-    def __init__(self, events: list[dict] | None = None):
-        self._events = events or []
-
-    async def chat_stream_async(self, _user_input: str):
-        for event in self._events:
-            yield event
-
 
 class _FakeMemoryDB:
     """可编程的 MemoryDB 替身。"""
@@ -85,6 +58,15 @@ def _make_config() -> Config:
     return Config.with_defaults()
 
 
+class _FakeClient:
+    def __init__(self, events: list[dict]):
+        self._events = events
+
+    async def chat_stream_async(self, _question: str):
+        for event in self._events:
+            yield event
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -114,7 +96,7 @@ class TestCompatServiceAsk:
             {"type": "done", "usage": {"total_tokens": 10}},
         ])
 
-        async def _fake_create_client(cfg, uid, cid):
+        async def _fake_create_client(cfg, uid, cid, user_profile=None):
             return fake_client
 
         service = CompatService(config=config)
@@ -145,7 +127,7 @@ class TestCompatServiceAsk:
             {"type": "done", "usage": {}},
         ])
 
-        async def _fake_create_client(cfg, uid, cid):
+        async def _fake_create_client(cfg, uid, cid, user_profile=None):
             return fake_client
 
         service = CompatService(config=config)
@@ -173,7 +155,7 @@ class TestCompatServiceAsk:
             {"type": "done", "usage": {}},
         ])
 
-        async def _fake_create_client(cfg, uid, cid):
+        async def _fake_create_client(cfg, uid, cid, user_profile=None):
             return fake_client
 
         service = CompatService(config=config)
@@ -208,7 +190,7 @@ class TestCompatServiceAsk:
             {"type": "done", "usage": {}},
         ])
 
-        async def _fake_create_client(cfg, uid, cid):
+        async def _fake_create_client(cfg, uid, cid, user_profile=None):
             return fake_client
 
         service = CompatService(config=config)
@@ -234,7 +216,7 @@ class TestCompatServiceAsk:
             {"type": "done", "usage": {}},
         ])
 
-        async def _fake_create_client(cfg, uid, cid):
+        async def _fake_create_client(cfg, uid, cid, user_profile=None):
             return fake_client
 
         service = CompatService(config=config)
@@ -267,7 +249,7 @@ class TestCompatServiceAsk:
             {"type": "done", "usage": {}},
         ])
 
-        async def _fake_create_client(cfg, uid, cid):
+        async def _fake_create_client(cfg, uid, cid, user_profile=None):
             return fake_client
 
         service = CompatService(config=config)
@@ -313,7 +295,7 @@ class TestCompatServiceAsk:
         ])
         called = {}
 
-        async def _fake_create_client(cfg, uid, cid):
+        async def _fake_create_client(cfg, uid, cid, user_profile=None):
             called["conversation_id"] = cid
             return fake_client
 
@@ -767,162 +749,6 @@ class TestCompatServiceClearMemory:
             await service.clear_memory(user_id=None)
 
 
-class TestBuildRuntimeHints:
-    """build_runtime_hints 运行时提示构建测试"""
-
-    def test_ignores_invalid_top_k_string(self):
-        """非数字字符串的 top_k 应被忽略。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k="abc", display_name=None)
-        assert "top_k" not in hints
-
-    def test_ignores_invalid_top_k_zero(self):
-        """top_k=0 应被忽略。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k=0, display_name=None)
-        assert "top_k" not in hints
-
-    def test_ignores_invalid_top_k_negative(self):
-        """负数的 top_k 应被忽略。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k=-1, display_name=None)
-        assert "top_k" not in hints
-
-    def test_ignores_invalid_top_k_none(self):
-        """None 的 top_k 应被忽略。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k=None, display_name=None)
-        assert "top_k" not in hints
-
-    def test_valid_top_k_included(self):
-        """正整数 top_k 应生成提示。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k=5, display_name=None)
-        assert "top_k" in hints
-        assert "前 5 条" in hints["top_k"]
-
-    def test_valid_top_k_from_string_number(self):
-        """数字字符串的 top_k 应被解析并生成提示。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k="10", display_name=None)
-        assert "top_k" in hints
-        assert "前 10 条" in hints["top_k"]
-
-    def test_display_name_included(self):
-        """有效的 display_name 应生成称呼提示。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k=None, display_name="张三")
-        assert "display_name" in hints
-        assert "可酌情称呼" in hints["display_name"]
-        assert "张三" in hints["display_name"]
-
-    def test_display_name_none_omitted(self):
-        """None 的 display_name 不应生成提示。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k=None, display_name=None)
-        assert "display_name" not in hints
-
-    def test_display_name_empty_string_omitted(self):
-        """空字符串的 display_name 不应生成提示。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k=None, display_name="")
-        assert "display_name" not in hints
-
-    def test_both_provided(self):
-        """top_k 和 display_name 同时提供时都应生成提示。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k=3, display_name="李四")
-        assert "top_k" in hints
-        assert "display_name" in hints
-        assert "前 3 条" in hints["top_k"]
-        assert "李四" in hints["display_name"]
-
-    def test_neither_produced_empty_dict(self):
-        """两个参数都无效/缺失时返回空字典。"""
-        from src.api.compat_service import build_runtime_hints
-
-        hints = build_runtime_hints(top_k=None, display_name=None)
-        assert hints == {}
-
-    @pytest.mark.asyncio
-    async def test_ask_appends_hints_to_question(self, monkeypatch):
-        """ask() 应将 runtime hints 追加到 question 后传入 ChatClient。"""
-        from src.api.compat_service import CompatService, build_runtime_hints
-
-        config = _make_config()
-        received_questions: list[str] = []
-
-        class _CapturingClient:
-            def __init__(self):
-                self._events = [
-                    {"type": "delta", "content": "回答"},
-                    {"type": "done", "usage": {}},
-                ]
-
-            async def chat_stream_async(self, user_input: str):
-                received_questions.append(user_input)
-                for event in self._events:
-                    yield event
-
-        async def _fake_create_client(cfg, uid, cid):
-            return _CapturingClient()
-
-        service = CompatService(config=config)
-        monkeypatch.setattr(service, "_create_chat_client", _fake_create_client)
-
-        await service.ask(question="今天有什么通知", user_id=None, top_k=5, display_name="王五")
-
-        assert len(received_questions) == 1
-        actual_question = received_questions[0]
-        # 原始问题应在前面
-        assert actual_question.startswith("今天有什么通知")
-        # hints 应被追加
-        hints = build_runtime_hints(top_k=5, display_name="王五")
-        for hint_text in hints.values():
-            assert hint_text in actual_question
-
-    @pytest.mark.asyncio
-    async def test_ask_without_hints_passes_original_question(self, monkeypatch):
-        """ask() 无 hints 时应原样传递 question。"""
-        from src.api.compat_service import CompatService
-
-        config = _make_config()
-        received_questions: list[str] = []
-
-        class _CapturingClient:
-            def __init__(self):
-                self._events = [
-                    {"type": "delta", "content": "回答"},
-                    {"type": "done", "usage": {}},
-                ]
-
-            async def chat_stream_async(self, user_input: str):
-                received_questions.append(user_input)
-                for event in self._events:
-                    yield event
-
-        async def _fake_create_client(cfg, uid, cid):
-            return _CapturingClient()
-
-        service = CompatService(config=config)
-        monkeypatch.setattr(service, "_create_chat_client", _fake_create_client)
-
-        await service.ask(question="原始问题", user_id=None)
-
-        assert len(received_questions) == 1
-        assert received_questions[0] == "原始问题"
-
-
 class TestTodayRange:
     """_today_range 时区工具方法测试"""
 
@@ -981,141 +807,6 @@ class TestTodayRange:
         start_utc, end_utc = _today_range("UTC")
         assert start_fallback == start_utc
         assert end_fallback == end_utc
-
-
-class TestResolveSessionTimezone:
-    """_resolve_session 时区策略测试"""
-
-    @pytest.mark.asyncio
-    async def test_resolve_session_uses_config_timezone(self, monkeypatch):
-        """
-        config.compat_timezone 优先级最高，应优先使用。
-        当 config 指定 Asia/Shanghai 时，_today_range 应收到该时区名。
-        """
-        import dataclasses
-        from src.api.compat_service import CompatService, _today_range
-
-        config = _make_config()
-        config = dataclasses.replace(config, compat_timezone="Asia/Shanghai")
-
-        received_tz: list[str] = []
-
-        original_today_range = _today_range
-
-        def _spy_today_range(tz_name: str = "UTC"):
-            received_tz.append(tz_name)
-            return original_today_range(tz_name)
-
-        monkeypatch.setattr(
-            "src.api.compat_service._today_range", _spy_today_range
-        )
-
-        fake_memory = _FakeMemoryDB(latest_session=None)
-        service = CompatService(config=config)
-        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
-
-        await service._resolve_session("u1")
-
-        assert len(received_tz) == 1
-        assert received_tz[0] == "Asia/Shanghai"
-
-    @pytest.mark.asyncio
-    async def test_resolve_session_falls_back_to_utc_when_no_config(self, monkeypatch):
-        """
-        无 config.compat_timezone 且 DB 查询失败时，应回退到 UTC。
-        """
-        from src.api.compat_service import CompatService, _today_range
-
-        config = _make_config()
-
-        received_tz: list[str] = []
-
-        original_today_range = _today_range
-
-        def _spy_today_range(tz_name: str = "UTC"):
-            received_tz.append(tz_name)
-            return original_today_range(tz_name)
-
-        monkeypatch.setattr(
-            "src.api.compat_service._today_range", _spy_today_range
-        )
-
-        fake_memory = _FakeMemoryDB(latest_session=None)
-        service = CompatService(config=config)
-        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
-
-        await service._resolve_session("u1")
-
-        assert len(received_tz) == 1
-        assert received_tz[0] == "UTC"
-
-    @pytest.mark.asyncio
-    async def test_resolve_session_falls_back_to_db_timezone(self, monkeypatch):
-        """
-        无 config.compat_timezone 时，应查询数据库 SHOW TIMEZONE 获取时区。
-        """
-        import dataclasses
-        from src.api.compat_service import CompatService, _today_range
-
-        config = _make_config()
-        config = dataclasses.replace(config, compat_timezone=None)
-
-        received_tz: list[str] = []
-
-        original_today_range = _today_range
-
-        def _spy_today_range(tz_name: str = "UTC"):
-            received_tz.append(tz_name)
-            return original_today_range(tz_name)
-
-        monkeypatch.setattr(
-            "src.api.compat_service._today_range", _spy_today_range
-        )
-
-        # 模拟 DB SHOW TIMEZONE 返回 Asia/Shanghai
-        class _FakeMemoryDBWithTZ(_FakeMemoryDB):
-            async def get_db_timezone(self) -> str | None:
-                return "Asia/Shanghai"
-
-        fake_memory = _FakeMemoryDBWithTZ(latest_session=None)
-        service = CompatService(config=config)
-        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
-
-        await service._resolve_session("u1")
-
-        assert len(received_tz) == 1
-        assert received_tz[0] == "Asia/Shanghai"
-
-    @pytest.mark.asyncio
-    async def test_resolve_session_falls_back_to_utc_when_db_tz_fails(self, monkeypatch):
-        """
-        无 config 且 DB SHOW TIMEZONE 查询也失败时，回退到 UTC。
-        """
-        from src.api.compat_service import CompatService, _today_range
-
-        config = _make_config()
-
-        received_tz: list[str] = []
-
-        original_today_range = _today_range
-
-        def _spy_today_range(tz_name: str = "UTC"):
-            received_tz.append(tz_name)
-            return original_today_range(tz_name)
-
-        monkeypatch.setattr(
-            "src.api.compat_service._today_range", _spy_today_range
-        )
-
-        # DB 无 get_db_timezone 方法（老版本 MemoryDB），回退到 UTC
-        fake_memory = _FakeMemoryDB(latest_session=None)
-        service = CompatService(config=config)
-        monkeypatch.setattr(service, "_create_memory_db", lambda: fake_memory)
-
-        await service._resolve_session("u1")
-
-        assert len(received_tz) == 1
-        assert received_tz[0] == "UTC"
 
 
 class TestConfigCompatTimezone:

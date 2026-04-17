@@ -2,7 +2,7 @@
 // 主要功能：配置网页端的全局布局、主题、路由守卫
 // 特别处理网页端的 localStorage 异步加载和路由守卫逻辑
 
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -12,7 +12,6 @@ import { Asset } from 'expo-asset';
 
 import { useAuthTokenState } from '@/hooks/use-auth-token';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { refreshSessionOnForeground } from '@/services/auth';
 
 export default function RootLayout() {
   // 设置SEO元数据（组件级别）
@@ -132,32 +131,6 @@ export default function RootLayout() {
   }, [colorScheme, isMounted]);
 
   useEffect(() => {
-    if (!isMounted) {
-      return;
-    }
-
-    const refreshIfVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshSessionOnForeground();
-      }
-    };
-
-    refreshIfVisible();
-
-    const handleVisibility = () => {
-      refreshIfVisible();
-    };
-
-    window.addEventListener('focus', refreshIfVisible);
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    return () => {
-      window.removeEventListener('focus', refreshIfVisible);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [isMounted]);
-
-  useEffect(() => {
     if (!isMounted || isLoading) return;
 
     const first = segments[0];
@@ -176,27 +149,50 @@ export default function RootLayout() {
 
   if (!isMounted) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
-        <ActivityIndicator size="large" color="#000" />
+      <View style={styles.appShell}>
+        <View style={[styles.appFrame, styles.loadingFrame]}>
+          <ActivityIndicator size="large" color="#000" />
+        </View>
       </View>
     );
   }
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack initialRouteName="login">
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="modal"
-          options={{
-            presentation: 'modal',
-            title: 'Modal',
-            headerShown: true
-          }}
-        />
-      </Stack>
+      <View style={styles.appShell}>
+        <View style={styles.appFrame}>
+          <Stack initialRouteName="login">
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="modal"
+              options={{
+                presentation: 'modal',
+                title: 'Modal',
+                headerShown: true
+              }}
+            />
+          </Stack>
+        </View>
+      </View>
       <StatusBar style="auto" />
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  appShell: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  appFrame: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 960,
+  },
+  loadingFrame: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});

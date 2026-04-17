@@ -11,9 +11,7 @@ import (
 type Config struct {
 	DatabaseURL         string        `mapstructure:"DATABASE_URL"`
 	AuthJWTSecret       string        `mapstructure:"AUTH_JWT_SECRET"`
-	AuthRefreshHashKey  string        `mapstructure:"AUTH_REFRESH_HASH_KEY"`
 	AuthAccessTokenTTL  time.Duration `mapstructure:"AUTH_ACCESS_TOKEN_TTL"`
-	AuthRefreshTokenTTL time.Duration `mapstructure:"AUTH_REFRESH_TOKEN_TTL"`
 	AuthPasswordCost    int           `mapstructure:"AUTH_PASSWORD_COST"`
 	AuthAllowAutoUser   bool          `mapstructure:"AUTH_ALLOW_AUTO_USER_CREATION"`
 	CampusAuthEnabled   bool          `mapstructure:"CAMPUS_AUTH_ENABLED"`
@@ -38,9 +36,7 @@ func Load(path string) (*Config, error) {
 	for _, key := range []string{
 		"DATABASE_URL",
 		"AUTH_JWT_SECRET",
-		"AUTH_REFRESH_HASH_KEY",
 		"AUTH_ACCESS_TOKEN_TTL",
-		"AUTH_REFRESH_TOKEN_TTL",
 		"AUTH_PASSWORD_COST",
 		"AUTH_ALLOW_AUTO_USER_CREATION",
 		"CAMPUS_AUTH_ENABLED",

@@ -14,7 +14,7 @@ func TestAutoMigrateModelsIncludesSchemaSyncModels(t *testing.T) {
 	}
 
 	expected := []string{
-		"User", "Session", "Article", "Vector",
+		"User", "Article", "Vector",
 		"Conversation", "ConversationSession", "UserProfile",
 		"Skill", "SkillReference",
 	}

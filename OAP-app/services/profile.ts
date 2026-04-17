@@ -1,8 +1,6 @@
 import { Platform } from 'react-native';
 
 import { buildAuthHeaders, getApiBaseUrl } from '@/services/api';
-import { refreshSessionOnForeground } from '@/services/auth';
-import { requestWithSessionRefresh } from '@/services/profile-request';
 import { toStoredAvatarUrl } from '@/services/profile-avatar-url';
 import { getAccessToken, setUserProfileRaw } from '@/storage/auth-storage';
 import type { UserProfile } from '@/types/profile';
@@ -52,13 +50,9 @@ async function parseErrorMessage(response: Response) {
 }
 
 export async function fetchProfile() {
-  const response = await requestWithSessionRefresh(
-    async () =>
-      await fetch(`${getApiBaseUrl()}${PROFILE_API.getProfile}`, {
-        headers: await buildAuthorizedHeaders(),
-      }),
-    refreshSessionOnForeground
-  );
+  const response = await fetch(`${getApiBaseUrl()}${PROFILE_API.getProfile}`, {
+    headers: await buildAuthorizedHeaders(),
+  });
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -68,18 +62,14 @@ export async function fetchProfile() {
 }
 
 async function patchProfile(payload: ProfileUpdatePayload) {
-  const response = await requestWithSessionRefresh(
-    async () =>
-      await fetch(`${getApiBaseUrl()}${PROFILE_API.updateProfile}`, {
-        method: 'PATCH',
-        headers: await buildAuthorizedHeaders(true),
-        body: JSON.stringify({
-          ...payload,
-          avatar_url: toStoredAvatarUrl(payload.avatar_url),
-        }),
-      }),
-    refreshSessionOnForeground
-  );
+  const response = await fetch(`${getApiBaseUrl()}${PROFILE_API.updateProfile}`, {
+    method: 'PATCH',
+    headers: await buildAuthorizedHeaders(true),
+    body: JSON.stringify({
+      ...payload,
+      avatar_url: toStoredAvatarUrl(payload.avatar_url),
+    }),
+  });
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -92,15 +82,11 @@ async function postProfileAvatar(payload: ProfileAvatarUploadPayload) {
   const formData = new FormData();
   formData.append('avatar', buildAvatarFormValue(payload, Platform.OS === 'web') as any);
 
-  const response = await requestWithSessionRefresh(
-    async () =>
-      await fetch(`${getApiBaseUrl()}${PROFILE_API.uploadAvatar}`, {
-        method: 'POST',
-        headers: await buildAuthorizedHeaders(),
-        body: formData,
-      }),
-    refreshSessionOnForeground
-  );
+  const response = await fetch(`${getApiBaseUrl()}${PROFILE_API.uploadAvatar}`, {
+    method: 'POST',
+    headers: await buildAuthorizedHeaders(),
+    body: formData,
+  });
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));

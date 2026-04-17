@@ -14,6 +14,8 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
     top_k: int | str | None = None
     display_name: str | None = None
+    profile_tags: list[str] | None = None
+    bio: str | None = None
 
     @field_validator("top_k", mode="before")
     @classmethod

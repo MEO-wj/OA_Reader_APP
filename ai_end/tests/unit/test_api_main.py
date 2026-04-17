@@ -82,7 +82,7 @@ async def test_chat_endpoint_streams_sse_from_chat_service(monkeypatch):
 
     called = {}
 
-    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None):
+    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None, user_profile: dict | None = None):
         called["user_id"] = user_id
         called["conversation_id"] = conversation_id
         return _FakeChatService(user_id=user_id, conversation_id=conversation_id)
@@ -120,7 +120,7 @@ async def test_chat_endpoint_sets_conversation_header(monkeypatch):
         async def chat_stream(self, _message: str):
             yield 'event: done\\ndata: {"type": "done"}\\n\\n'
 
-    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None):
+    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None, user_profile: dict | None = None):
         return _FakeChatService(user_id=user_id, conversation_id=conversation_id)
 
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
@@ -149,7 +149,11 @@ async def test_chat_endpoint_applies_runtime_hints(monkeypatch):
             assert message == "hello\n请优先返回前 3 条相关结果\n可酌情称呼用户为Alice"
             yield 'event: done\\ndata: {"type": "done"}\\n\\n'
 
-    def _fake_get_chat_service(user_id: str | None = None, conversation_id: str | None = None):
+    def _fake_get_chat_service(
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+        user_profile: dict | None = None,
+    ):
         return _FakeChatService(user_id=user_id, conversation_id=conversation_id)
 
     monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
@@ -169,6 +173,57 @@ async def test_chat_endpoint_applies_runtime_hints(monkeypatch):
         chunks.append(chunk)
 
     assert "event: done" in "".join(chunks)
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_passes_user_profile_to_service(monkeypatch):
+    from src.api.main import chat
+    from src.api.models import ChatRequest
+
+    class _FakeMemoryDB:
+        async def get_or_create_session(self, user_id: str, conversation_id: str | None = None):
+            assert user_id == VALID_UUID
+            return "conv-default", "title"
+
+    class _FakeChatService:
+        async def chat_stream(self, _message: str):
+            yield 'event: done\\ndata: {"type": "done"}\\n\\n'
+
+    captured = {}
+
+    def _fake_get_chat_service(
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+        user_profile: dict | None = None,
+    ):
+        captured["user_id"] = user_id
+        captured["conversation_id"] = conversation_id
+        captured["user_profile"] = user_profile
+        return _FakeChatService()
+
+    monkeypatch.setattr("src.db.memory.MemoryDB", _FakeMemoryDB)
+    monkeypatch.setattr("src.api.main.get_chat_service", _fake_get_chat_service)
+
+    response = await chat(
+        ChatRequest(
+            message="hello",
+            user_id=VALID_UUID,
+            display_name="Alice",
+            profile_tags=["tag-a", "tag-b"],
+            bio="student",
+        )
+    )
+
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk)
+
+    assert "event: done" in "".join(chunks)
+    assert captured["user_profile"] == {
+        "display_name": "Alice",
+        "profile_tags": ["tag-a", "tag-b"],
+        "bio": "student",
+    }
 
 
 def test_list_sessions_endpoint(monkeypatch):

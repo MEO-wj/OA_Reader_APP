@@ -6,4 +6,5 @@ export type ChatMessage = {
   text: string;
   highlights?: string[];
   related?: RelatedArticle[];
+  isStreaming?: boolean;
 };
